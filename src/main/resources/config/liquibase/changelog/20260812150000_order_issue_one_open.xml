@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!-- TASK-016: at most one OPEN issue per order (nullable unique key for non-OPEN) -->
+    <changeSet id="20260812150000-1" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="order_issue" columnName="open_order_key"/>
+            </not>
+        </preConditions>
+        <sql>
+            ALTER TABLE order_issue
+            ADD COLUMN open_order_key BIGINT
+            GENERATED ALWAYS AS (CASE WHEN issue_status = 'OPEN' THEN order_id ELSE NULL END) STORED;
+        </sql>
+    </changeSet>
+
+    <changeSet id="20260812150000-2" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="order_issue" columnName="open_order_key"/>
+            <not>
+                <indexExists tableName="order_issue" indexName="ux_order_issue_one_open"/>
+            </not>
+        </preConditions>
+        <sql>
+            CREATE UNIQUE INDEX ux_order_issue_one_open ON order_issue (open_order_key);
+        </sql>
+    </changeSet>
+</databaseChangeLog>

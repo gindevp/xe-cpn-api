@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+        C3 Issue O2O: history link order_issue.order_id (ManyToOne).
+        shipment_order.issue_id remains the current-issue pointer.
+    -->
+    <changeSet id="20260812120000-1" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="order_issue" columnName="order_id"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="order_issue">
+            <column name="order_id" type="bigint">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20260812120000-2" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="order_issue" columnName="order_id"/>
+        </preConditions>
+        <sql>
+            UPDATE order_issue oi
+            INNER JOIN shipment_order so ON so.issue_id = oi.id
+            SET oi.order_id = so.id
+            WHERE oi.order_id IS NULL;
+        </sql>
+    </changeSet>
+
+    <changeSet id="20260812120000-3" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="order_issue" columnName="order_id"/>
+            <not>
+                <foreignKeyConstraintExists foreignKeyTableName="order_issue" foreignKeyName="fk_order_issue__order_id"/>
+            </not>
+        </preConditions>
+        <addForeignKeyConstraint
+            baseTableName="order_issue"
+            baseColumnNames="order_id"
+            constraintName="fk_order_issue__order_id"
+            referencedTableName="shipment_order"
+            referencedColumnNames="id"/>
+        <createIndex tableName="order_issue" indexName="idx_order_issue__order_id">
+            <column name="order_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

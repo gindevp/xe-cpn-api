@@ -1,0 +1,42 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151658"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "code",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "unique", "minlength", "maxlength"],
+      "fieldValidateRulesMaxlength": "20",
+      "fieldValidateRulesMinlength": "2"
+    },
+    {
+      "fieldName": "name",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "maxlength"],
+      "fieldValidateRulesMaxlength": "100"
+    },
+    {
+      "fieldName": "officeType",
+      "fieldType": "OfficeType",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "HUB,BRANCH,COUNTER,WAREHOUSE"
+    },
+    {
+      "fieldName": "isHub",
+      "fieldType": "Boolean",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "active",
+      "fieldType": "Boolean",
+      "fieldValidateRules": ["required"]
+    }
+  ],
+  "name": "Office",
+  "relationships": [],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

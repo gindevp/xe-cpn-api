@@ -51,6 +51,18 @@ public class AdminUserDTO implements Serializable {
 
     private Set<String> authorities;
 
+    /** Business role from StaffProfile (FE: Q/BX/G/KT/…). Null if no profile. */
+    private String roleCode;
+
+    /** Home office code, or {@code ALL} when scopeAllOffices. Null if no profile. */
+    private String officeCode;
+
+    private String staffCode;
+
+    private String staffDisplayName;
+
+    private Boolean scopeAllOffices;
+
     public AdminUserDTO() {
         // Empty constructor needed for Jackson.
     }
@@ -175,6 +187,46 @@ public class AdminUserDTO implements Serializable {
         this.authorities = authorities;
     }
 
+    public String getRoleCode() {
+        return roleCode;
+    }
+
+    public void setRoleCode(String roleCode) {
+        this.roleCode = roleCode;
+    }
+
+    public String getOfficeCode() {
+        return officeCode;
+    }
+
+    public void setOfficeCode(String officeCode) {
+        this.officeCode = officeCode;
+    }
+
+    public String getStaffCode() {
+        return staffCode;
+    }
+
+    public void setStaffCode(String staffCode) {
+        this.staffCode = staffCode;
+    }
+
+    public String getStaffDisplayName() {
+        return staffDisplayName;
+    }
+
+    public void setStaffDisplayName(String staffDisplayName) {
+        this.staffDisplayName = staffDisplayName;
+    }
+
+    public Boolean getScopeAllOffices() {
+        return scopeAllOffices;
+    }
+
+    public void setScopeAllOffices(Boolean scopeAllOffices) {
+        this.scopeAllOffices = scopeAllOffices;
+    }
+
     // prettier-ignore
     @Override
     public String toString() {
@@ -191,6 +243,11 @@ public class AdminUserDTO implements Serializable {
             ", lastModifiedBy='" + lastModifiedBy + '\'' +
             ", lastModifiedDate=" + lastModifiedDate +
             ", authorities=" + authorities +
+            ", roleCode='" + roleCode + '\'' +
+            ", officeCode='" + officeCode + '\'' +
+            ", staffCode='" + staffCode + '\'' +
+            ", staffDisplayName='" + staffDisplayName + '\'' +
+            ", scopeAllOffices=" + scopeAllOffices +
             "}";
     }
 }

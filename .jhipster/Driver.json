@@ -1,0 +1,36 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151701"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "driverCode",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "unique", "maxlength"],
+      "fieldValidateRulesMaxlength": "30"
+    },
+    {
+      "fieldName": "fullName",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "maxlength"],
+      "fieldValidateRulesMaxlength": "100"
+    },
+    {
+      "fieldName": "phone",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "20"
+    },
+    {
+      "fieldName": "active",
+      "fieldType": "Boolean",
+      "fieldValidateRules": ["required"]
+    }
+  ],
+  "name": "Driver",
+  "relationships": [],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

@@ -1,0 +1,11 @@
+target/
+.idea/
+*.iml
+.git/
+.gitignore
+node_modules/
+src/main/webapp/
+src/test/
+*.md
+.vscode/
+.DS_Store

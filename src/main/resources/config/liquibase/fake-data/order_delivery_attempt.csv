@@ -1,0 +1,11 @@
+id;attempt_no;attempt_at;result;reason;handled_by_username;delivery_partner;order_id
+1;16250;2026-08-10T21:43:37;FAILED;wetly;glass burly schedule;GRAB;1
+2;6346;2026-08-11T03:10:48;RETURNED_TO_BRANCH;at;scamper barring soft;XANH_SM;2
+3;17358;2026-08-10T17:37:15;SUCCESS;between ah loftily;if;XANH_SM;3
+4;18413;2026-08-11T01:04:56;FAILED;where recklessly mummify;dense plump rare;AHAMOVE;4
+5;7439;2026-08-11T00:23:41;FAILED;seldom plagiarise;generously worth needy;AHAMOVE;5
+6;19322;2026-08-11T06:33:14;FAILED;collaborate;plain submitter;GRAB;6
+7;27456;2026-08-11T11:48:21;FAILED;however drat;whether petal;XANH_SM;7
+8;31981;2026-08-11T12:26:54;RETURNED_TO_BRANCH;whitewash spectate;geez roger where;GRAB;8
+9;4819;2026-08-11T06:15:24;RETURNED_TO_BRANCH;sizzle evenly;uh-huh coaxingly;GRAB;9
+10;26806;2026-08-10T22:01:59;SUCCESS;shoulder ah;sustenance yahoo;XANH_SM;10

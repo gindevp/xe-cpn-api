@@ -1,0 +1,16 @@
+id;code;name;office_type;is_hub;active
+1;NGH;VP Ngọc Hồi;BRANCH;false;true
+2;LD;VP Lê Duẩn;BRANCH;false;true
+3;PV;VP Phố Vọng;BRANCH;false;true
+4;TDN;VP Trần Đại Nghĩa;BRANCH;false;true
+5;GP;VP Giải Phóng;HUB;true;true
+6;HD;VP Hà Đông;BRANCH;false;true
+7;BC;VP BigC;BRANCH;false;true
+8;NB;VP Ninh Bình;BRANCH;false;true
+9;ND;VP Nam Định;BRANCH;false;true
+10;SHN;VP 104 Song Hào - NĐ;BRANCH;false;true
+11;TB;VP Thái Bình;BRANCH;false;true
+12;PT;VP Phú Thọ;BRANCH;false;true
+13;VT;VP Việt Trì;BRANCH;false;true
+14;YB1;VP Yên Bái 1;BRANCH;false;true
+15;YB3;VP Yên Bái 3;BRANCH;false;true

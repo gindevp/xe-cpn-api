@@ -1,0 +1,46 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151703"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "customerType",
+      "fieldType": "CustomerType",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "SENDER,RECEIVER,CORPORATE"
+    },
+    {
+      "fieldName": "phone",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "unique", "pattern"],
+      "fieldValidateRulesPattern": "^(0[35789]\\d{8}|\\+84[35789]\\d{8})$"
+    },
+    {
+      "fieldName": "name",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "100"
+    },
+    {
+      "fieldName": "lastOrderAt",
+      "fieldType": "Instant"
+    },
+    {
+      "fieldName": "orderCount",
+      "fieldType": "Integer",
+      "fieldValidateRules": ["min"],
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "active",
+      "fieldType": "Boolean",
+      "fieldValidateRules": ["required"]
+    }
+  ],
+  "name": "Customer",
+  "relationships": [],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

@@ -1,0 +1,36 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151712"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "amountCollected",
+      "fieldType": "BigDecimal",
+      "fieldValidateRules": ["required", "min"],
+      "fieldValidateRulesMin": "0"
+    }
+  ],
+  "name": "ReceiptOrderLine",
+  "relationships": [
+    {
+      "otherEntityField": "receiptCode",
+      "otherEntityName": "receipt",
+      "relationshipName": "receipt",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    },
+    {
+      "otherEntityField": "orderCode",
+      "otherEntityName": "shipmentOrder",
+      "relationshipName": "order",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    }
+  ],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd
+                        http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd">
+
+    <!--
+        Added the entity ShipmentOrder.
+    -->
+    <changeSet id="20260811151704-1" author="jhipster">
+        <createTable tableName="shipment_order">
+            <column name="id" type="bigint" autoIncrement="true" startWith="1500">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="order_code" type="varchar(40)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_shipment_order__order_code" />
+            </column>
+            <column name="draft_code" type="varchar(40)">
+                <constraints nullable="true" unique="true" uniqueConstraintName="ux_shipment_order__draft_code" />
+            </column>
+            <column name="status" type="varchar(255)">
+                <constraints nullable="false" />
+            </column>
+            <column name="forward_stage" type="varchar(255)">
+                <constraints nullable="true" />
+            </column>
+            <column name="return_stage" type="varchar(255)">
+                <constraints nullable="true" />
+            </column>
+            <column name="payment_term" type="varchar(255)">
+                <constraints nullable="false" />
+            </column>
+            <column name="goods_type" type="varchar(255)">
+                <constraints nullable="false" />
+            </column>
+            <column name="service_type" type="varchar(255)">
+                <constraints nullable="false" />
+            </column>
+            <column name="sender_name" type="varchar(100)">
+                <constraints nullable="true" />
+            </column>
+            <column name="sender_phone" type="varchar(255)">
+                <constraints nullable="false" />
+            </column>
+            <column name="receiver_name" type="varchar(100)">
+                <constraints nullable="false" />
+            </column>
+            <column name="receiver_phone" type="varchar(255)">
+                <constraints nullable="false" />
+            </column>
+            <column name="delivery_address" type="varchar(500)">
+                <constraints nullable="true" />
+            </column>
+            <column name="pickup_address" type="varchar(500)">
+                <constraints nullable="true" />
+            </column>
+            <column name="home_pickup" type="boolean">
+                <constraints nullable="false" />
+            </column>
+            <column name="home_delivery" type="boolean">
+                <constraints nullable="false" />
+            </column>
+            <column name="qr_drop_off" type="boolean">
+                <constraints nullable="false" />
+            </column>
+            <column name="pickup_staff_username" type="varchar(50)">
+                <constraints nullable="true" />
+            </column>
+            <column name="picking_at" type="${datetimeType}">
+                <constraints nullable="true" />
+            </column>
+            <column name="picked_up_at" type="${datetimeType}">
+                <constraints nullable="true" />
+            </column>
+            <column name="receiver_actual_name" type="varchar(100)">
+                <constraints nullable="true" />
+            </column>
+            <column name="receiver_actual_phone" type="varchar(20)">
+                <constraints nullable="true" />
+            </column>
+            <column name="weight_kg" type="decimal(21,2)">
+                <constraints nullable="true" />
+            </column>
+            <column name="quantity" type="integer">
+                <constraints nullable="false" />
+            </column>
+            <column name="dimensions_text" type="varchar(120)">
+                <constraints nullable="true" />
+            </column>
+            <column name="fare_amount" type="decimal(21,2)">
+                <constraints nullable="false" />
+            </column>
+            <column name="pickup_fee_amount" type="decimal(21,2)">
+                <constraints nullable="true" />
+            </column>
+            <column name="delivery_fee_amount" type="decimal(21,2)">
+                <constraints nullable="true" />
+            </column>
+            <column name="partner_fee_amount" type="decimal(21,2)">
+                <constraints nullable="true" />
+            </column>
+            <column name="paid_amount" type="decimal(21,2)">
+                <constraints nullable="false" />
+            </column>
+            <column name="shelf_number" type="integer">
+                <constraints nullable="true" />
+            </column>
+            <column name="note" type="${clobType}">
+                <constraints nullable="true" />
+            </column>
+            <column name="cancel_reason" type="varchar(255)">
+                <constraints nullable="true" />
+            </column>
+            <column name="label_printed_at" type="${datetimeType}">
+                <constraints nullable="true" />
+            </column>
+            <column name="label_reprint_count" type="integer">
+                <constraints nullable="true" />
+            </column>
+            <column name="fail_count" type="integer">
+                <constraints nullable="false" />
+            </column>
+            <column name="partner_code" type="varchar(100)">
+                <constraints nullable="true" />
+            </column>
+            <column name="payment_percent" type="decimal(21,2)">
+                <constraints nullable="true" />
+            </column>
+            <column name="public_tracking_allowed" type="boolean">
+                <constraints nullable="false" />
+            </column>
+            <column name="issue_id" type="bigint">
+                <constraints nullable="true" unique="true" uniqueConstraintName="ux_shipment_order__issue_id" />
+            </column>
+            <column name="return_request_id" type="bigint">
+                <constraints nullable="true" unique="true" uniqueConstraintName="ux_shipment_order__return_request_id" />
+            </column>
+            <column name="fare_adjustment_request_id" type="bigint">
+                <constraints nullable="true" unique="true" uniqueConstraintName="ux_shipment_order__fare_adjustment_request_id" />
+            </column>
+            <column name="sender_customer_id" type="bigint">
+                <constraints nullable="true" />
+            </column>
+            <column name="from_office_id" type="bigint">
+                <constraints nullable="false" />
+            </column>
+            <column name="to_office_id" type="bigint">
+                <constraints nullable="false" />
+            </column>
+            <column name="hub_office_id" type="bigint">
+                <constraints nullable="true" />
+            </column>
+            <column name="final_to_office_id" type="bigint">
+                <constraints nullable="true" />
+            </column>
+            <column name="current_trip_id" type="bigint">
+                <constraints nullable="true" />
+            </column>
+            <!-- jhipster-needle-liquibase-add-column - JHipster will add columns here -->
+        </createTable>
+        <dropDefaultValue tableName="shipment_order" columnName="picking_at" columnDataType="${datetimeType}"/>
+        <dropDefaultValue tableName="shipment_order" columnName="picked_up_at" columnDataType="${datetimeType}"/>
+        <dropDefaultValue tableName="shipment_order" columnName="label_printed_at" columnDataType="${datetimeType}"/>
+    </changeSet>
+
+    <!-- jhipster-needle-liquibase-add-changeset - JHipster will add changesets here -->
+
+    <!--
+        Load sample data generated with Faker.js
+        - This data can be easily edited using a CSV editor (or even MS Excel) and
+          is located in the 'src/main/resources/config/liquibase/fake-data' directory
+        - By default this data is applied when running with the JHipster 'dev' profile.
+          This can be customized by adding or removing 'faker' in the 'spring.liquibase.contexts'
+          Spring Boot configuration key.
+    -->
+    <changeSet id="20260811151704-1-data" author="jhipster" context="faker">
+        <loadData
+                  file="config/liquibase/fake-data/shipment_order.csv"
+                  separator=";"
+                  tableName="shipment_order"
+                  usePreparedStatements="true">
+            <column name="id" type="numeric"/>
+            <column name="order_code" type="string"/>
+            <column name="draft_code" type="string"/>
+            <column name="status" type="string"/>
+            <column name="forward_stage" type="string"/>
+            <column name="return_stage" type="string"/>
+            <column name="payment_term" type="string"/>
+            <column name="goods_type" type="string"/>
+            <column name="service_type" type="string"/>
+            <column name="sender_name" type="string"/>
+            <column name="sender_phone" type="string"/>
+            <column name="receiver_name" type="string"/>
+            <column name="receiver_phone" type="string"/>
+            <column name="delivery_address" type="string"/>
+            <column name="pickup_address" type="string"/>
+            <column name="home_pickup" type="boolean"/>
+            <column name="home_delivery" type="boolean"/>
+            <column name="qr_drop_off" type="boolean"/>
+            <column name="pickup_staff_username" type="string"/>
+            <column name="picking_at" type="date"/>
+            <column name="picked_up_at" type="date"/>
+            <column name="receiver_actual_name" type="string"/>
+            <column name="receiver_actual_phone" type="string"/>
+            <column name="weight_kg" type="numeric"/>
+            <column name="quantity" type="numeric"/>
+            <column name="dimensions_text" type="string"/>
+            <column name="fare_amount" type="numeric"/>
+            <column name="pickup_fee_amount" type="numeric"/>
+            <column name="delivery_fee_amount" type="numeric"/>
+            <column name="partner_fee_amount" type="numeric"/>
+            <column name="paid_amount" type="numeric"/>
+            <column name="shelf_number" type="numeric"/>
+            <column name="note" type="clob"/>
+            <column name="cancel_reason" type="string"/>
+            <column name="label_printed_at" type="date"/>
+            <column name="label_reprint_count" type="numeric"/>
+            <column name="fail_count" type="numeric"/>
+            <column name="partner_code" type="string"/>
+            <column name="payment_percent" type="numeric"/>
+            <column name="public_tracking_allowed" type="boolean"/>
+            <column name="from_office_id" type="numeric"/>
+            <column name="to_office_id" type="numeric"/>
+            <!-- jhipster-needle-liquibase-add-loadcolumn - JHipster (and/or extensions) can add load columns here -->
+        </loadData>
+    </changeSet>
+</databaseChangeLog>

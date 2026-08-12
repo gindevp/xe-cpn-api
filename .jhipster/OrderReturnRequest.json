@@ -1,0 +1,62 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151716"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "reason",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "maxlength"],
+      "fieldValidateRulesMaxlength": "255"
+    },
+    {
+      "fieldName": "requestedByUsername",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    },
+    {
+      "fieldName": "requestedAt",
+      "fieldType": "Instant",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "status",
+      "fieldType": "ApprovalStatus",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "PENDING,APPROVED,REJECTED"
+    },
+    {
+      "fieldName": "decidedByUsername",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    },
+    {
+      "fieldName": "decidedAt",
+      "fieldType": "Instant"
+    },
+    {
+      "fieldName": "decisionNote",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "255"
+    }
+  ],
+  "name": "OrderReturnRequest",
+  "relationships": [
+    {
+      "otherEntityField": "orderCode",
+      "otherEntityName": "shipmentOrder",
+      "otherEntityRelationshipName": "returnRequest",
+      "relationshipName": "order",
+      "relationshipSide": "right",
+      "relationshipType": "one-to-one",
+      "relationshipValidateRules": "required"
+    }
+  ],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

@@ -1,0 +1,72 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151717"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "requestedFareAmount",
+      "fieldType": "BigDecimal",
+      "fieldValidateRules": ["required", "min"],
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "reason",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "maxlength"],
+      "fieldValidateRulesMaxlength": "255"
+    },
+    {
+      "fieldName": "requestedByUsername",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    },
+    {
+      "fieldName": "requestedAt",
+      "fieldType": "Instant",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "status",
+      "fieldType": "ApprovalStatus",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "PENDING,APPROVED,REJECTED"
+    },
+    {
+      "fieldName": "approvedByUsername",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    },
+    {
+      "fieldName": "approvedAt",
+      "fieldType": "Instant"
+    },
+    {
+      "fieldName": "rejectedByUsername",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    },
+    {
+      "fieldName": "rejectedAt",
+      "fieldType": "Instant"
+    }
+  ],
+  "name": "OrderFareAdjustmentRequest",
+  "relationships": [
+    {
+      "otherEntityField": "orderCode",
+      "otherEntityName": "shipmentOrder",
+      "otherEntityRelationshipName": "fareAdjustmentRequest",
+      "relationshipName": "order",
+      "relationshipSide": "right",
+      "relationshipType": "one-to-one",
+      "relationshipValidateRules": "required"
+    }
+  ],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

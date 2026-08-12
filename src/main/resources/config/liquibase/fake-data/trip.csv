@@ -1,0 +1,11 @@
+id;trip_code;status;depart_at;loaded_count;scanned_count;closed_at;force_closed;force_close_reason;office_id;route_id;vehicle_id;driver_id
+1;tut;LOADING;2026-08-11T02:09:11;29512;3351;2026-08-11T14:21:23;false;decryption;1;1;1;1
+2;behind;CANCELLED;2026-08-11T00:18:25;5121;32393;2026-08-10T16:00:50;false;orchestrate;2;2;2;2
+3;till battle reconstitute;DEPARTED;2026-08-11T06:56:46;16466;14000;2026-08-11T03:21:35;false;uniform inasmuch whether;3;3;3;3
+4;wallaby;CANCELLED;2026-08-10T15:34:41;26252;27881;2026-08-10T17:09:30;true;fencing before closely;4;4;4;4
+5;hmph hastily marathon;CREATED;2026-08-11T03:36:46;5707;17576;2026-08-10T18:20:16;false;woot gadzooks unfortunately;5;5;5;5
+6;urgently unsteady snoopy;UNLOADING;2026-08-11T06:35:38;17732;16408;2026-08-11T09:17:54;false;forage notwithstanding team;6;6;6;6
+7;daintily;CREATED;2026-08-11T14:38:39;30080;6044;2026-08-10T20:37:50;true;among;7;7;7;7
+8;kiss less major;CREATED;2026-08-10T21:08:22;14342;20896;2026-08-11T11:06:02;true;geez;8;8;8;8
+9;faithfully screw ew;CLOSED;2026-08-10T21:05:31;25134;21161;2026-08-11T07:07:31;false;uselessly when portray;9;9;9;9
+10;bathrobe;LOADING;2026-08-10T21:21:33;14714;15083;2026-08-11T10:31:44;true;undergo;10;10;10;10

@@ -1,0 +1,56 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151714"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "attemptNo",
+      "fieldType": "Integer",
+      "fieldValidateRules": ["required", "min"],
+      "fieldValidateRulesMin": "1"
+    },
+    {
+      "fieldName": "attemptAt",
+      "fieldType": "Instant",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "result",
+      "fieldType": "DeliveryAttemptResult",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "SUCCESS,FAILED,RETURNED_TO_BRANCH"
+    },
+    {
+      "fieldName": "reason",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "255"
+    },
+    {
+      "fieldName": "handledByUsername",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    },
+    {
+      "fieldName": "deliveryPartner",
+      "fieldType": "DeliveryPartner",
+      "fieldValues": "AHAMOVE,GRAB,XANH_SM"
+    }
+  ],
+  "name": "OrderDeliveryAttempt",
+  "relationships": [
+    {
+      "otherEntityField": "orderCode",
+      "otherEntityName": "shipmentOrder",
+      "relationshipName": "order",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    }
+  ],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

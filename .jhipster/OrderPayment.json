@@ -1,0 +1,56 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151710"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "paymentAt",
+      "fieldType": "Instant",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "amount",
+      "fieldType": "BigDecimal",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "method",
+      "fieldType": "PaymentMethod",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "TM,CK,THE"
+    },
+    {
+      "fieldName": "paymentKind",
+      "fieldType": "PaymentKind",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "TRUOC,SAU,HOAN,COD"
+    },
+    {
+      "fieldName": "note",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "255"
+    },
+    {
+      "fieldName": "collectorUsername",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    }
+  ],
+  "name": "OrderPayment",
+  "relationships": [
+    {
+      "otherEntityField": "orderCode",
+      "otherEntityName": "shipmentOrder",
+      "relationshipName": "order",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    }
+  ],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

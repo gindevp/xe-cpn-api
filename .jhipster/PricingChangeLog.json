@@ -1,0 +1,42 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151720"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "changedAt",
+      "fieldType": "Instant",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "changedByUsername",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    },
+    {
+      "fieldName": "beforeJson",
+      "fieldType": "TextBlob"
+    },
+    {
+      "fieldName": "afterJson",
+      "fieldType": "TextBlob",
+      "fieldValidateRules": ["required"]
+    }
+  ],
+  "name": "PricingChangeLog",
+  "relationships": [
+    {
+      "otherEntityField": "ruleCode",
+      "otherEntityName": "pricingRule",
+      "relationshipName": "pricingRule",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    }
+  ],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

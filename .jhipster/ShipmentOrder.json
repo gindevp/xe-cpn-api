@@ -1,0 +1,303 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151704"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "orderCode",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "unique", "maxlength"],
+      "fieldValidateRulesMaxlength": "40"
+    },
+    {
+      "fieldName": "draftCode",
+      "fieldType": "String",
+      "fieldValidateRules": ["unique", "maxlength"],
+      "fieldValidateRulesMaxlength": "40"
+    },
+    {
+      "fieldName": "status",
+      "fieldType": "OrderStatus",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "DRAFT,CONFIRMED,WAITING,IN_TRANSIT,AT_DEST,OUT_FOR_DELIVERY,DELIVERED,FAILED_DELIVERY,CANCELLED,RETURNING,RETURNED"
+    },
+    {
+      "fieldName": "forwardStage",
+      "fieldType": "ForwardStage",
+      "fieldValues": "PICKED,WH_IN,TRANSFER_PENDING,TRANSFERRING,DEST_WH_IN,DELIVERING,FAILED"
+    },
+    {
+      "fieldName": "returnStage",
+      "fieldType": "ReturnStage",
+      "fieldValues": "RETURN_PENDING,RT_TRANSFER_PENDING,RT_TRANSFERRING,RT_WH_IN,RT_DELIVERING,RT_FAILED,RT_DONE"
+    },
+    {
+      "fieldName": "paymentTerm",
+      "fieldType": "PaymentTerm",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "GUI_TRA,NHAN_TRA,P30_70,P50_50,P70_30,COD"
+    },
+    {
+      "fieldName": "goodsType",
+      "fieldType": "GoodsType",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "THUONG,DE_VO,DIEN_TU,THUC_PHAM_KHO,GIAY_TO,CONG_KENH"
+    },
+    {
+      "fieldName": "serviceType",
+      "fieldType": "ServiceType",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "COUNTER_TO_COUNTER,COUNTER_TO_HOME,HOME_TO_COUNTER,HOME_TO_HOME,HUB_TRANSIT"
+    },
+    {
+      "fieldName": "senderName",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "100"
+    },
+    {
+      "fieldName": "senderPhone",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "pattern"],
+      "fieldValidateRulesPattern": "^(0[35789]\\d{8}|\\+84[35789]\\d{8})$"
+    },
+    {
+      "fieldName": "receiverName",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "maxlength"],
+      "fieldValidateRulesMaxlength": "100"
+    },
+    {
+      "fieldName": "receiverPhone",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "pattern"],
+      "fieldValidateRulesPattern": "^(0[35789]\\d{8}|\\+84[35789]\\d{8})$"
+    },
+    {
+      "fieldName": "deliveryAddress",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "500"
+    },
+    {
+      "fieldName": "pickupAddress",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "500"
+    },
+    {
+      "fieldName": "homePickup",
+      "fieldType": "Boolean",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "homeDelivery",
+      "fieldType": "Boolean",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "qrDropOff",
+      "fieldType": "Boolean",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "pickupStaffUsername",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    },
+    {
+      "fieldName": "pickingAt",
+      "fieldType": "Instant"
+    },
+    {
+      "fieldName": "pickedUpAt",
+      "fieldType": "Instant"
+    },
+    {
+      "fieldName": "receiverActualName",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "100"
+    },
+    {
+      "fieldName": "receiverActualPhone",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "20"
+    },
+    {
+      "fieldName": "weightKg",
+      "fieldType": "BigDecimal",
+      "fieldValidateRules": ["min"],
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "quantity",
+      "fieldType": "Integer",
+      "fieldValidateRules": ["required", "min"],
+      "fieldValidateRulesMin": "1"
+    },
+    {
+      "fieldName": "dimensionsText",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "120"
+    },
+    {
+      "fieldName": "fareAmount",
+      "fieldType": "BigDecimal",
+      "fieldValidateRules": ["required", "min"],
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "pickupFeeAmount",
+      "fieldType": "BigDecimal",
+      "fieldValidateRules": ["min"],
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "deliveryFeeAmount",
+      "fieldType": "BigDecimal",
+      "fieldValidateRules": ["min"],
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "partnerFeeAmount",
+      "fieldType": "BigDecimal",
+      "fieldValidateRules": ["min"],
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "paidAmount",
+      "fieldType": "BigDecimal",
+      "fieldValidateRules": ["required", "min"],
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "shelfNumber",
+      "fieldType": "Integer",
+      "fieldValidateRules": ["min", "max"],
+      "fieldValidateRulesMax": "9",
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "note",
+      "fieldType": "TextBlob"
+    },
+    {
+      "fieldName": "cancelReason",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "255"
+    },
+    {
+      "fieldName": "labelPrintedAt",
+      "fieldType": "Instant"
+    },
+    {
+      "fieldName": "labelReprintCount",
+      "fieldType": "Integer",
+      "fieldValidateRules": ["min"],
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "failCount",
+      "fieldType": "Integer",
+      "fieldValidateRules": ["required", "min"],
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "partnerCode",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "100"
+    },
+    {
+      "fieldName": "paymentPercent",
+      "fieldType": "BigDecimal",
+      "fieldValidateRules": ["min", "max"],
+      "fieldValidateRulesMax": "100",
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "publicTrackingAllowed",
+      "fieldType": "Boolean",
+      "fieldValidateRules": ["required"]
+    }
+  ],
+  "jpaMetamodelFiltering": true,
+  "name": "ShipmentOrder",
+  "pagination": "pagination",
+  "relationships": [
+    {
+      "otherEntityName": "orderIssue",
+      "otherEntityRelationshipName": "order",
+      "relationshipName": "issue",
+      "relationshipSide": "left",
+      "relationshipType": "one-to-one"
+    },
+    {
+      "otherEntityName": "orderReturnRequest",
+      "otherEntityRelationshipName": "order",
+      "relationshipName": "returnRequest",
+      "relationshipSide": "left",
+      "relationshipType": "one-to-one"
+    },
+    {
+      "otherEntityName": "orderFareAdjustmentRequest",
+      "otherEntityRelationshipName": "order",
+      "relationshipName": "fareAdjustmentRequest",
+      "relationshipSide": "left",
+      "relationshipType": "one-to-one"
+    },
+    {
+      "otherEntityField": "phone",
+      "otherEntityName": "customer",
+      "relationshipName": "senderCustomer",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one"
+    },
+    {
+      "otherEntityField": "code",
+      "otherEntityName": "office",
+      "relationshipName": "fromOffice",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    },
+    {
+      "otherEntityField": "code",
+      "otherEntityName": "office",
+      "relationshipName": "toOffice",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    },
+    {
+      "otherEntityField": "code",
+      "otherEntityName": "office",
+      "relationshipName": "hubOffice",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one"
+    },
+    {
+      "otherEntityField": "code",
+      "otherEntityName": "office",
+      "relationshipName": "finalToOffice",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one"
+    },
+    {
+      "otherEntityField": "tripCode",
+      "otherEntityName": "trip",
+      "relationshipName": "currentTrip",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one"
+    }
+  ],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+        TASK-008 Return O2O: history link order_return_request.order_id (ManyToOne).
+        shipment_order.return_request_id remains the current-return pointer.
+    -->
+    <changeSet id="20260812140000-1" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="order_return_request" columnName="order_id"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="order_return_request">
+            <column name="order_id" type="bigint">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20260812140000-2" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="order_return_request" columnName="order_id"/>
+        </preConditions>
+        <sql>
+            UPDATE order_return_request rr
+            INNER JOIN shipment_order so ON so.return_request_id = rr.id
+            SET rr.order_id = so.id
+            WHERE rr.order_id IS NULL;
+        </sql>
+    </changeSet>
+
+    <changeSet id="20260812140000-3" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="order_return_request" columnName="order_id"/>
+            <not>
+                <foreignKeyConstraintExists foreignKeyTableName="order_return_request" foreignKeyName="fk_order_return_request__order_id"/>
+            </not>
+        </preConditions>
+        <addForeignKeyConstraint
+            baseTableName="order_return_request"
+            baseColumnNames="order_id"
+            constraintName="fk_order_return_request__order_id"
+            referencedTableName="shipment_order"
+            referencedColumnNames="id"/>
+        <createIndex tableName="order_return_request" indexName="idx_order_return_request__order_id">
+            <column name="order_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

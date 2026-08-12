@@ -1,0 +1,54 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151709"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "assignmentStatus",
+      "fieldType": "AssignmentStatus",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "SCANNED,LOADED,REMOVED"
+    },
+    {
+      "fieldName": "scannedAt",
+      "fieldType": "Instant"
+    },
+    {
+      "fieldName": "loadedAt",
+      "fieldType": "Instant"
+    },
+    {
+      "fieldName": "removedAt",
+      "fieldType": "Instant"
+    },
+    {
+      "fieldName": "remark",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "255"
+    }
+  ],
+  "name": "TripOrderAssignment",
+  "relationships": [
+    {
+      "otherEntityField": "tripCode",
+      "otherEntityName": "trip",
+      "relationshipName": "trip",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    },
+    {
+      "otherEntityField": "orderCode",
+      "otherEntityName": "shipmentOrder",
+      "relationshipName": "order",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    }
+  ],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

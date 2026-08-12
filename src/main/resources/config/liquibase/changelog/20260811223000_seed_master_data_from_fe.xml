@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+        Master data seed aligned with FE mock-data.ts (OFFICES, ROUTES_MASTER, VEHICLES, DRIVERS).
+        Context: seed — enabled in application-dev.yml as "dev, seed" (faker disabled to avoid collisions).
+    -->
+
+    <changeSet id="20260811223000-seed-office" author="cpn" context="seed">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">SELECT COUNT(*) FROM office</sqlCheck>
+        </preConditions>
+        <loadData
+            file="config/liquibase/seed-data/office.csv"
+            separator=";"
+            tableName="office"
+            usePreparedStatements="true">
+            <column name="id" type="numeric"/>
+            <column name="code" type="string"/>
+            <column name="name" type="string"/>
+            <column name="office_type" type="string"/>
+            <column name="is_hub" type="boolean"/>
+            <column name="active" type="boolean"/>
+        </loadData>
+    </changeSet>
+
+    <changeSet id="20260811223000-seed-route" author="cpn" context="seed">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">SELECT COUNT(*) FROM route</sqlCheck>
+        </preConditions>
+        <loadData
+            file="config/liquibase/seed-data/route.csv"
+            separator=";"
+            tableName="route"
+            usePreparedStatements="true">
+            <column name="id" type="numeric"/>
+            <column name="code" type="string"/>
+            <column name="name" type="string"/>
+            <column name="active" type="boolean"/>
+            <column name="from_office_id" type="numeric"/>
+            <column name="to_office_id" type="numeric"/>
+        </loadData>
+    </changeSet>
+
+    <changeSet id="20260811223000-seed-vehicle" author="cpn" context="seed">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">SELECT COUNT(*) FROM vehicle</sqlCheck>
+        </preConditions>
+        <loadData
+            file="config/liquibase/seed-data/vehicle.csv"
+            separator=";"
+            tableName="vehicle"
+            usePreparedStatements="true">
+            <column name="id" type="numeric"/>
+            <column name="plate_number" type="string"/>
+            <column name="capacity_kg" type="numeric"/>
+            <column name="active" type="boolean"/>
+        </loadData>
+    </changeSet>
+
+    <changeSet id="20260811223000-seed-driver" author="cpn" context="seed">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">SELECT COUNT(*) FROM driver</sqlCheck>
+        </preConditions>
+        <loadData
+            file="config/liquibase/seed-data/driver.csv"
+            separator=";"
+            tableName="driver"
+            usePreparedStatements="true">
+            <column name="id" type="numeric"/>
+            <column name="driver_code" type="string"/>
+            <column name="full_name" type="string"/>
+            <column name="phone" type="string"/>
+            <column name="active" type="boolean"/>
+        </loadData>
+    </changeSet>
+</databaseChangeLog>

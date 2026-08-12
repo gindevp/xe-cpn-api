@@ -1,0 +1,65 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151706"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "legIndex",
+      "fieldType": "Integer",
+      "fieldValidateRules": ["required", "min"],
+      "fieldValidateRulesMin": "0"
+    },
+    {
+      "fieldName": "status",
+      "fieldType": "LegStatus",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "PENDING,IN_TRANSIT,AT_HUB,AT_DEST"
+    },
+    {
+      "fieldName": "departedAt",
+      "fieldType": "Instant"
+    },
+    {
+      "fieldName": "arrivedAt",
+      "fieldType": "Instant"
+    }
+  ],
+  "name": "OrderLeg",
+  "relationships": [
+    {
+      "otherEntityField": "orderCode",
+      "otherEntityName": "shipmentOrder",
+      "relationshipName": "order",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    },
+    {
+      "otherEntityField": "code",
+      "otherEntityName": "office",
+      "relationshipName": "fromOffice",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    },
+    {
+      "otherEntityField": "code",
+      "otherEntityName": "office",
+      "relationshipName": "toOffice",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    },
+    {
+      "otherEntityField": "tripCode",
+      "otherEntityName": "trip",
+      "relationshipName": "trip",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one"
+    }
+  ],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

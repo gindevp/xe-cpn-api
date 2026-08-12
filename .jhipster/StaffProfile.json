@@ -1,0 +1,56 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151702"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "staffCode",
+      "fieldType": "String",
+      "fieldValidateRules": ["unique", "maxlength"],
+      "fieldValidateRulesMaxlength": "30"
+    },
+    {
+      "fieldName": "userLogin",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "unique", "maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    },
+    {
+      "fieldName": "displayName",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "100"
+    },
+    {
+      "fieldName": "roleCode",
+      "fieldType": "RoleCode",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "KH,Q,BX,G,KT,TCN,DH,BL,AD"
+    },
+    {
+      "fieldName": "scopeAllOffices",
+      "fieldType": "Boolean",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "active",
+      "fieldType": "Boolean",
+      "fieldValidateRules": ["required"]
+    }
+  ],
+  "name": "StaffProfile",
+  "relationships": [
+    {
+      "otherEntityField": "code",
+      "otherEntityName": "office",
+      "relationshipName": "office",
+      "relationshipSide": "left",
+      "relationshipType": "many-to-one",
+      "relationshipValidateRules": "required"
+    }
+  ],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}

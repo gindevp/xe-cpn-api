@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd
+                        http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd">
+    <!--
+        Added the constraints for entity ShipmentOrder.
+    -->
+    <changeSet id="20260811151704-2" author="jhipster">
+
+        <addForeignKeyConstraint baseColumnNames="issue_id"
+                                 baseTableName="shipment_order"
+                                 constraintName="fk_shipment_order__issue_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="order_issue"
+                                 />
+
+        <addForeignKeyConstraint baseColumnNames="return_request_id"
+                                 baseTableName="shipment_order"
+                                 constraintName="fk_shipment_order__return_request_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="order_return_request"
+                                 />
+
+        <addForeignKeyConstraint baseColumnNames="fare_adjustment_request_id"
+                                 baseTableName="shipment_order"
+                                 constraintName="fk_shipment_order__fare_adjustment_request_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="order_fare_adjustment_request"
+                                 />
+
+        <addForeignKeyConstraint baseColumnNames="sender_customer_id"
+                                 baseTableName="shipment_order"
+                                 constraintName="fk_shipment_order__sender_customer_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="customer"
+                                 />
+
+        <addForeignKeyConstraint baseColumnNames="from_office_id"
+                                 baseTableName="shipment_order"
+                                 constraintName="fk_shipment_order__from_office_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="office"
+                                 />
+
+        <addForeignKeyConstraint baseColumnNames="to_office_id"
+                                 baseTableName="shipment_order"
+                                 constraintName="fk_shipment_order__to_office_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="office"
+                                 />
+
+        <addForeignKeyConstraint baseColumnNames="hub_office_id"
+                                 baseTableName="shipment_order"
+                                 constraintName="fk_shipment_order__hub_office_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="office"
+                                 />
+
+        <addForeignKeyConstraint baseColumnNames="final_to_office_id"
+                                 baseTableName="shipment_order"
+                                 constraintName="fk_shipment_order__final_to_office_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="office"
+                                 />
+
+        <addForeignKeyConstraint baseColumnNames="current_trip_id"
+                                 baseTableName="shipment_order"
+                                 constraintName="fk_shipment_order__current_trip_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="trip"
+                                 />
+    </changeSet>
+</databaseChangeLog>

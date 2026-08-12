@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd
+                        http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd">
+
+    <!--
+        Added the entity PricingRule.
+    -->
+    <changeSet id="20260811151719-1" author="jhipster">
+        <createTable tableName="pricing_rule">
+            <column name="id" type="bigint" autoIncrement="true" startWith="1500">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="rule_code" type="varchar(40)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_pricing_rule__rule_code" />
+            </column>
+            <column name="tier_label" type="varchar(50)">
+                <constraints nullable="false" />
+            </column>
+            <column name="min_kg" type="decimal(21,2)">
+                <constraints nullable="false" />
+            </column>
+            <column name="max_kg" type="decimal(21,2)">
+                <constraints nullable="false" />
+            </column>
+            <column name="unit_price" type="decimal(21,2)">
+                <constraints nullable="false" />
+            </column>
+            <column name="surcharge_amount" type="decimal(21,2)">
+                <constraints nullable="false" />
+            </column>
+            <column name="dim_divisor" type="integer">
+                <constraints nullable="true" />
+            </column>
+            <column name="km_min" type="decimal(21,2)">
+                <constraints nullable="true" />
+            </column>
+            <column name="km_rate" type="decimal(21,2)">
+                <constraints nullable="true" />
+            </column>
+            <column name="step_gram" type="integer">
+                <constraints nullable="true" />
+            </column>
+            <column name="add_fee_amount" type="decimal(21,2)">
+                <constraints nullable="true" />
+            </column>
+            <column name="effective_from" type="${datetimeType}">
+                <constraints nullable="false" />
+            </column>
+            <column name="effective_to" type="${datetimeType}">
+                <constraints nullable="true" />
+            </column>
+            <column name="active" type="boolean">
+                <constraints nullable="false" />
+            </column>
+            <column name="route_id" type="bigint">
+                <constraints nullable="false" />
+            </column>
+            <!-- jhipster-needle-liquibase-add-column - JHipster will add columns here -->
+        </createTable>
+        <dropDefaultValue tableName="pricing_rule" columnName="effective_from" columnDataType="${datetimeType}"/>
+        <dropDefaultValue tableName="pricing_rule" columnName="effective_to" columnDataType="${datetimeType}"/>
+    </changeSet>
+
+    <!-- jhipster-needle-liquibase-add-changeset - JHipster will add changesets here -->
+
+    <!--
+        Load sample data generated with Faker.js
+        - This data can be easily edited using a CSV editor (or even MS Excel) and
+          is located in the 'src/main/resources/config/liquibase/fake-data' directory
+        - By default this data is applied when running with the JHipster 'dev' profile.
+          This can be customized by adding or removing 'faker' in the 'spring.liquibase.contexts'
+          Spring Boot configuration key.
+    -->
+    <changeSet id="20260811151719-1-data" author="jhipster" context="faker">
+        <loadData
+                  file="config/liquibase/fake-data/pricing_rule.csv"
+                  separator=";"
+                  tableName="pricing_rule"
+                  usePreparedStatements="true">
+            <column name="id" type="numeric"/>
+            <column name="rule_code" type="string"/>
+            <column name="tier_label" type="string"/>
+            <column name="min_kg" type="numeric"/>
+            <column name="max_kg" type="numeric"/>
+            <column name="unit_price" type="numeric"/>
+            <column name="surcharge_amount" type="numeric"/>
+            <column name="dim_divisor" type="numeric"/>
+            <column name="km_min" type="numeric"/>
+            <column name="km_rate" type="numeric"/>
+            <column name="step_gram" type="numeric"/>
+            <column name="add_fee_amount" type="numeric"/>
+            <column name="effective_from" type="date"/>
+            <column name="effective_to" type="date"/>
+            <column name="active" type="boolean"/>
+            <column name="route_id" type="numeric"/>
+            <!-- jhipster-needle-liquibase-add-loadcolumn - JHipster (and/or extensions) can add load columns here -->
+        </loadData>
+    </changeSet>
+</databaseChangeLog>

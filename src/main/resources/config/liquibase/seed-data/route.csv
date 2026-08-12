@@ -1,0 +1,6 @@
+id;code;name;active;from_office_id;to_office_id
+1;GP-NB;GP → NB;true;5;8
+2;GP-VT;GP → VT;true;5;13
+3;VT-NB;VT → NB;true;13;8
+4;NB-TB;NB → TB;true;8;11
+5;GP-ND;GP → ND;true;5;9

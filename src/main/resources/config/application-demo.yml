@@ -1,0 +1,14 @@
+# ===================================================================
+# Demo profile — customer UAT / Railway demo (not for hardened production)
+#
+# Activate with: SPRING_PROFILES_ACTIVE=prod,demo
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: demo
+  liquibase:
+    # Master offices/routes/vehicles/drivers (context=seed) + schema (prod)
+    contexts: prod,seed
+# application:

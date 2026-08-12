@@ -13,7 +13,7 @@ public class LoginVM {
     private String username;
 
     @NotNull
-    @Size(min = 4, max = 100)
+    @Size(min = 1, max = 100) // FE demo passwords can be 3 chars (e.g. "123")
     private String password;
 
     private boolean rememberMe;

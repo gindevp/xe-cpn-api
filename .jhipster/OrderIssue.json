@@ -1,0 +1,70 @@
+{
+  "annotations": {
+    "changelogDate": "20260811151715"
+  },
+  "applications": ["cpn"],
+  "dto": "mapstruct",
+  "fields": [
+    {
+      "fieldName": "issueType",
+      "fieldType": "IssueType",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "EXCEPTION,LOST,DAMAGED"
+    },
+    {
+      "fieldName": "issueStatus",
+      "fieldType": "IssueStatus",
+      "fieldValidateRules": ["required"],
+      "fieldValues": "OPEN,RESOLVED,CLOSED"
+    },
+    {
+      "fieldName": "reason",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "255"
+    },
+    {
+      "fieldName": "openedAt",
+      "fieldType": "Instant",
+      "fieldValidateRules": ["required"]
+    },
+    {
+      "fieldName": "openedByUsername",
+      "fieldType": "String",
+      "fieldValidateRules": ["required", "maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    },
+    {
+      "fieldName": "resolvedAt",
+      "fieldType": "Instant"
+    },
+    {
+      "fieldName": "resolvedByUsername",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "50"
+    },
+    {
+      "fieldName": "resolutionNote",
+      "fieldType": "String",
+      "fieldValidateRules": ["maxlength"],
+      "fieldValidateRulesMaxlength": "255"
+    }
+  ],
+  "jpaMetamodelFiltering": true,
+  "name": "OrderIssue",
+  "pagination": "pagination",
+  "relationships": [
+    {
+      "otherEntityField": "orderCode",
+      "otherEntityName": "shipmentOrder",
+      "otherEntityRelationshipName": "issue",
+      "relationshipName": "order",
+      "relationshipSide": "right",
+      "relationshipType": "one-to-one",
+      "relationshipValidateRules": "required"
+    }
+  ],
+  "searchEngine": "no",
+  "service": "serviceClass"
+}
