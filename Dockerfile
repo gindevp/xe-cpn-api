@@ -24,4 +24,7 @@ COPY --from=build /app/target/cpn-0.0.1-SNAPSHOT.jar /app/app.jar
 USER 1001
 EXPOSE 8080
 ENV SPRING_PROFILES_ACTIVE=prod,demo
-ENTRYPOINT ["sh", "-c", "java -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Djava.security.egd=file:/dev/./urandom -jar /app/app.jar --server.port=${PORT:-8080}"]
+# Railway Hobby often ~512MB–1GB; 75% MaxRAM + metaspace OOMs during Liquibase/Hibernate.
+# Override at runtime with JAVA_OPTS if you raise service memory.
+ENV JAVA_OPTS="-Xms128m -Xmx400m -XX:MaxMetaspaceSize=160m -XX:+UseSerialGC -XX:+UseContainerSupport"
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Djava.security.egd=file:/dev/./urandom -jar /app/app.jar --server.port=${PORT:-8080}"]
