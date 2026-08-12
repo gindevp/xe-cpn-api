@@ -5,7 +5,13 @@ target/
 .gitignore
 node_modules/
 src/main/webapp/
-src/test/
 *.md
 .vscode/
 .DS_Store
+.husky/
+.devcontainer/
+webpack/
+*.log
+runtime-*.json
+runtime-*.log
+build-*.log
