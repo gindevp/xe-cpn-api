@@ -66,4 +66,5 @@
     <include file="config/liquibase/changelog/20260813140001_added_entity_Itinerary.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260813140001_added_entity_constraints_Itinerary.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260813140100_seed_branch_itinerary.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260813153000_seed_branch_itinerary_prod.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>

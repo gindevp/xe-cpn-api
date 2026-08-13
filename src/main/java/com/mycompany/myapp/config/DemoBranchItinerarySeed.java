@@ -21,11 +21,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Ensures Branch/Itinerary master rows exist on demo/dev when Liquibase seed
- * did not run or tables were created empty. Idempotent: only fills when branch count is 0.
+ * Ensures Branch/Itinerary master rows exist when Liquibase seed did not populate them.
+ * Runs on dev/demo/prod — only fills when {@code branch} count is 0 (idempotent).
  */
 @Component
-@Profile({ "dev", "demo" })
+@Profile({ "dev", "demo", "prod" })
 @Order(110)
 public class DemoBranchItinerarySeed implements ApplicationRunner {
 
