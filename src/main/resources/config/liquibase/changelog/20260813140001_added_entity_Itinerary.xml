@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260813140001-1" author="cpn">
+        <createTable tableName="itinerary">
+            <column name="id" type="bigint" autoIncrement="true" startWith="283000">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="code" type="varchar(60)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_itinerary__code"/>
+            </column>
+            <column name="name" type="varchar(120)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="branch_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="departure_point" type="varchar(120)"/>
+            <column name="destination_point" type="varchar(120)"/>
+            <column name="route_direction" type="varchar(120)"/>
+            <column name="route_type" type="integer"/>
+            <column name="price" type="decimal(21,2)"/>
+            <column name="priority" type="integer"/>
+            <column name="display_order" type="integer"/>
+            <column name="active" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+            <column name="shortest_itinerary" type="varchar(255)"/>
+        </createTable>
+    </changeSet>
+</databaseChangeLog>

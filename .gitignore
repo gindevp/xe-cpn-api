@@ -154,3 +154,7 @@ coverage/
 
 runtime-api-smoke.json
 
+
+docs/cpn-local-to-railway.sql
+*.sql.gz
+

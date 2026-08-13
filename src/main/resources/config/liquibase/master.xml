@@ -62,4 +62,8 @@
     <include file="config/liquibase/changelog/20260812120000_order_issue_history_order_id.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260812140000_order_return_history_order_id.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260812150000_order_issue_one_open.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260813140000_added_entity_Branch.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260813140001_added_entity_Itinerary.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260813140001_added_entity_constraints_Itinerary.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260813140100_seed_branch_itinerary.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>

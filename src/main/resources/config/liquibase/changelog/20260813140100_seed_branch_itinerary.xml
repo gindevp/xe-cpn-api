@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+        Branch (Tuyến) + Itinerary (Lộ trình) from customer itinerary CSV.
+        Context: seed — application-dev.yml spring.liquibase.contexts = "dev, seed"
+    -->
+
+    <changeSet id="20260813140100-seed-branch" author="cpn" context="seed">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">SELECT COUNT(*) FROM branch</sqlCheck>
+        </preConditions>
+        <loadData
+            file="config/liquibase/seed-data/branch.csv"
+            separator=";"
+            tableName="branch"
+            usePreparedStatements="true">
+            <column name="id" type="numeric"/>
+            <column name="code" type="string"/>
+            <column name="name" type="string"/>
+            <column name="active" type="boolean"/>
+        </loadData>
+    </changeSet>
+
+    <changeSet id="20260813140100-seed-itinerary" author="cpn" context="seed">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">SELECT COUNT(*) FROM itinerary</sqlCheck>
+        </preConditions>
+        <loadData
+            file="config/liquibase/seed-data/itinerary.csv"
+            separator=";"
+            tableName="itinerary"
+            usePreparedStatements="true">
+            <column name="id" type="numeric"/>
+            <column name="code" type="string"/>
+            <column name="name" type="string"/>
+            <column name="branch_id" type="numeric"/>
+            <column name="departure_point" type="string"/>
+            <column name="destination_point" type="string"/>
+            <column name="route_direction" type="string"/>
+            <column name="route_type" type="numeric"/>
+            <column name="price" type="numeric"/>
+            <column name="priority" type="numeric"/>
+            <column name="display_order" type="numeric"/>
+            <column name="active" type="boolean"/>
+            <column name="shortest_itinerary" type="string"/>
+        </loadData>
+    </changeSet>
+</databaseChangeLog>

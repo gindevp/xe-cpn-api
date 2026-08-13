@@ -1,0 +1,43 @@
+id;code;name;branch_id;departure_point;destination_point;route_direction;route_type;price;priority;display_order;active;shortest_itinerary
+5;GA-ND;GA - NĐ;1;Ga Hà Nội;Nam Định;Hà Nội-Nam Định;1;145000.00;130;130;true;A - B - C - D
+8;GA-TB;GA - TB;5;Ga Hà Nội;Thái Bình;Hà Nội-Thái Bình;3;155000.00;6;0;true;a-v-c-d-a
+9;HD-TB;HĐ - TB;5;Hà Đông;Thái Bình;Hà Nội-Thái Bình;3;155000.00;5;0;true;a
+10;TB-HD;TB - HĐ;5;Thái Bình;Hà Đông;Thái Bình-Hà Nội;3;155000.00;2;0;true;a-v-z-s-a
+11;TB-GA;TB - GA;5;Thái Bình;Ga Hà Nội;Thái Bình-Hà Nội;3;155000.00;3;0;true;NA
+12;TB-BC;TB - BC;5;Thái Bình;Big C;Thái Bình-Hà Nội;3;155000.00;1;0;true;NA
+13;HD-YB;HĐ - YB;7;Hà Đông;Yên Bái;Hà Nội-Yên Bái;4;200000.00;120;120;true;
+14;GA-YB;GA - YB;7;Ga Hà Nội;Yên Bái;Hà Nội-Yên Bái;4;200000.00;130;130;true;
+15;BC-PT;BC - PT;4;Big C;Phú Thọ;Hà Nội-Phú Thọ;5;160000.00;1;0;false;
+16;PT-GA;PT - GA;4;Phú Thọ;Ga Hà Nội;Phú Thọ-Hà Nội;5;160000.00;30;30;true;
+25;GA-PT;GA - PT;4;Ga Hà Nội;Phú Thọ;Hà Nội-Phú Thọ;5;160000.00;130;130;true;
+121;BC-TB;BC - TB;5;Big C;Thái Bình;Hà Nội-Thái Bình;3;155000.00;4;0;true;NA
+151;BC-VT;BC- VT;6;Big C;Việt Trì;Hà Nội-Việt Trì;6;150000.00;4;0;false;
+161;VT-GA;VT - GA;6;Việt Trì;Ga Hà Nội;Việt Trì-Hà Nội;6;150000.00;30;30;true;
+251;GA-VT;GA - VT;6;Ga Hà Nội;Việt Trì;Hà Nội-Việt Trì;6;150000.00;130;130;true;09
+501;NB-GA;NB - GA;2;Ninh Bình;Ga Hà Nội;Ninh Bình-Hà Nội;2;155000.00;30;3;true;3
+662;BC-NB;BC - NB;2;Big C;Ninh Bình;Hà Nội-Ninh Bình;2;155000.00;110;5;true;0
+664;HD-NB;HĐ - NB;2;Hà Đông;Ninh Bình;Hà Nội-Ninh Bình;2;155000.00;20;6;true;100
+1002;ND-GA;NĐ - GA;1;Nam Định;Ga Hà Nội;Nam Định-Hà Nội;1;145000.00;30;30;true;20
+1003;ND-HD;NĐ - HĐ;1;Nam Định;Hà Đông;Nam Định-Hà Nội;1;145000.00;20;20;true;NA
+1004;HD-ND;HĐ - NĐ;1;Hà Đông;Nam Định;Hà Nội-Nam Định;1;145000.00;120;120;true;avb
+2001;YB-HD;YB - HĐ;7;Yên Bái;Hà Đông;Yên Bái-Hà Nội;4;200000.00;20;20;true;K - X - Z - T - D - B
+4001;ND-BC;NĐ - BC;1;Nam Định;Big C;Nam Định-Hà Nội;1;145000.00;10;10;true;Khuất Duy Tiến
+5004;YB-GA;YB - GA;7;Yên Bái;Ga Hà Nội;Yên Bái-Hà Nội;4;200000.00;30;30;true;123123
+5008;PT-BC;PT - BC;4;Phú Thọ;Big C;Phú Thọ-Hà Nội;5;160000.00;4;0;false;123
+5009;VT-BC;VT - BC;6;Việt Trì;Big C;Việt Trì-Hà Nội;6;150000.00;1;0;false;123
+5010;GA-NB;GA - NB;2;Ga Hà Nội;Ninh Bình;Hà Nội-Ninh Bình;2;155000.00;130;7;true;12gwaf
+6003;BC-ND;BC - NĐ;1;Big C;Nam Định;Hà Nội-Nam Định;1;145000.00;110;110;true;a >b>B
+6666;NB-HD;NB - HĐ;2;Ninh Bình;Hà Đông;Ninh Bình-Hà Nội;2;155000.00;120;2;true;a>b
+7001;PT-HD;PT - HĐ;4;Phú Thọ;Hà Đông;Phú Thọ-Hà Nội;5;140000.00;20;20;true;Phú Thọ - Hà Đông
+7002;HD-PT;HĐ - PT;4;Hà Đông;Phú Thọ;Hà Nội-Phú Thọ;5;140000.00;120;120;true;Hà Đông - Phú Thọ
+7003;VT-HD;VT - HĐ;6;Việt Trì;Hà Đông;Việt Trì-Hà Nội;6;140000.00;20;20;true;Việt Trì - Hà Đông
+7004;HD-VT;HĐ - VT;6;Hà Đông;Việt Trì;Hà Nội-Việt Trì;6;140000.00;120;120;true;Hà Đông - Việt Trì
+280073;NB-ND;NB-NĐ;2;Ninh Bình;Nam Định;Ninh Bình - Nam Định;2;0;131;0;false;
+280074;NB-TB;NB-TB;2;Ninh Bình;Thái Bình;Ninh Bình - Thái Bình;2;0;132;0;false;
+280075;NB-YB;NB-YB;2;Ninh Bình;Yên Bái;Ninh Bình - Yên Bái;2;0;133;0;false;
+280076;NB-PT;NB-PT;2;Ninh Bình;Phú Thọ;Ninh Bình - Phú Thọ;2;0;134;0;false;
+280077;NB-VT;NB-VT;2;Ninh Bình;Việt Trì;Ninh Bình - Việt Trì;2;0;135;0;false;
+280078;NB-NB;NB-NB;2;Ninh Bình;Nội Bài;Ninh Bình - Nội Bài;2;0;136;0;false;
+281003;PHOCO-TC;PHOCO - TC;2;PHOCO;Tam Cốc;Hà Nội-Ninh Bình;2;1000.00;8;8;true;zz
+281004;TC-PHOCO;TC - PHOCO;2;Tam Cốc;PHOCO;Ninh Bình-Hà Nội;2;7000.00;9;4;true;zz
+282001;NB-BC;NB - BC;2;Ninh Bình;Big C;Ninh Bình-Hà Nội;2;3000.00;9;1;true;2
