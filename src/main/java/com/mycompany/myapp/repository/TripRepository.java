@@ -1,6 +1,8 @@
 package com.mycompany.myapp.repository;
 
 import com.mycompany.myapp.domain.Trip;
+import com.mycompany.myapp.domain.enumeration.TripStatus;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -56,4 +58,6 @@ public interface TripRepository extends JpaRepository<Trip, Long>, JpaSpecificat
 
     @Query("select count(trip) from Trip trip where trip.tripCode like concat(:prefix, '%')")
     long countByTripCodePrefix(@Param("prefix") String prefix);
+
+    Optional<Trip> findFirstByVehicle_PlateNumberAndStatusInOrderByIdDesc(String plateNumber, Collection<TripStatus> statuses);
 }

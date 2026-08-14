@@ -449,9 +449,16 @@ public class TripFacadeService {
                 .orElseThrow(() -> new BadRequestAlertException("Vehicle not found", ENTITY, "vehicleNotFound"));
         }
         if (req.getVehiclePlate() != null && !req.getVehiclePlate().isBlank()) {
+            String plate = req.getVehiclePlate().trim();
             return vehicleRepository
-                .findOneByPlateNumber(req.getVehiclePlate().trim())
-                .orElseThrow(() -> new BadRequestAlertException("Vehicle plate not found", ENTITY, "vehicleNotFound"));
+                .findOneByPlateNumber(plate)
+                .orElseGet(() -> {
+                    Vehicle v = new Vehicle();
+                    v.setPlateNumber(plate.length() <= 20 ? plate : plate.substring(0, 20));
+                    v.setCapacityKg(java.math.BigDecimal.valueOf(500));
+                    v.setActive(true);
+                    return vehicleRepository.save(v);
+                });
         }
         throw new BadRequestAlertException("vehicleId or vehiclePlate required", ENTITY, "vehicleRequired");
     }
@@ -468,9 +475,20 @@ public class TripFacadeService {
                 .orElseThrow(() -> new BadRequestAlertException("Driver code not found", ENTITY, "driverNotFound"));
         }
         if (req.getDriverName() != null && !req.getDriverName().isBlank()) {
+            String name = req.getDriverName().trim();
             return driverRepository
-                .findFirstByFullNameIgnoreCase(req.getDriverName().trim())
-                .orElseThrow(() -> new BadRequestAlertException("Driver name not found", ENTITY, "driverNotFound"));
+                .findFirstByFullNameIgnoreCase(name)
+                .orElseGet(() -> {
+                    Driver d = new Driver();
+                    String code = "VTHK-" + Integer.toHexString(name.toLowerCase().hashCode()).toUpperCase();
+                    if (code.length() > 30) {
+                        code = code.substring(0, 30);
+                    }
+                    d.setDriverCode(code);
+                    d.setFullName(name.length() <= 100 ? name : name.substring(0, 100));
+                    d.setActive(true);
+                    return driverRepository.save(d);
+                });
         }
         throw new BadRequestAlertException("driverId, driverCode or driverName required", ENTITY, "driverRequired");
     }

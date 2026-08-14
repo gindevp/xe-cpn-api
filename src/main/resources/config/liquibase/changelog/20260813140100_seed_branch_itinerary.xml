@@ -10,6 +10,8 @@
     -->
 
     <changeSet id="20260813140100-seed-branch" author="cpn" context="seed">
+        <validCheckSum>9:b81f9d888053008e194988670b151268</validCheckSum>
+        <validCheckSum>9:847bcdff7147960c2ca5ce759cf99579</validCheckSum>
         <preConditions onFail="MARK_RAN">
             <sqlCheck expectedResult="0">SELECT COUNT(*) FROM branch</sqlCheck>
         </preConditions>
@@ -26,6 +28,8 @@
     </changeSet>
 
     <changeSet id="20260813140100-seed-itinerary" author="cpn" context="seed">
+        <validCheckSum>9:9b1d3d1e84c55ff973984280ad6c4809</validCheckSum>
+        <validCheckSum>9:1b7844029b49d98f5cf461af221a9b85</validCheckSum>
         <preConditions onFail="MARK_RAN">
             <sqlCheck expectedResult="0">SELECT COUNT(*) FROM itinerary</sqlCheck>
         </preConditions>

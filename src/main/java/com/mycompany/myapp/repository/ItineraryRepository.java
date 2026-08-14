@@ -15,6 +15,8 @@ import org.springframework.stereotype.Repository;
 public interface ItineraryRepository extends JpaRepository<Itinerary, Long> {
     Optional<Itinerary> findOneByCode(String code);
 
+    Optional<Itinerary> findFirstByNameIgnoreCase(String name);
+
     @Query(
         "select i from Itinerary i left join fetch i.branch where (:branchId is null or i.branch.id = :branchId) and (:activeOnly = false or i.active = true) order by i.displayOrder asc, i.priority desc, i.name asc"
     )

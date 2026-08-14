@@ -63,4 +63,6 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
     Optional<String> findMaxOrderCodeByPrefix(@Param("prefix") String prefix);
 
     boolean existsByDraftCode(String draftCode);
+
+    List<ShipmentOrder> findByCurrentTrip_Id(Long tripId);
 }

@@ -2,6 +2,7 @@ package com.mycompany.myapp.web.rest;
 
 import com.mycompany.myapp.domain.enumeration.TripStatus;
 import com.mycompany.myapp.service.dto.trip.AssignOrdersToTripRequest;
+import com.mycompany.myapp.service.dto.trip.AvailableTripDTO;
 import com.mycompany.myapp.service.dto.trip.CloseTripRequest;
 import com.mycompany.myapp.service.dto.trip.CreateTripRequest;
 import com.mycompany.myapp.service.dto.trip.HandoverRequest;
@@ -10,6 +11,7 @@ import com.mycompany.myapp.service.dto.trip.ScanOutRequest;
 import com.mycompany.myapp.service.dto.trip.TripSummaryDTO;
 import com.mycompany.myapp.service.dto.trip.TripTransitionRequest;
 import com.mycompany.myapp.service.dto.trip.TripTransitionResponse;
+import com.mycompany.myapp.service.partner.AvailableTripSearchService;
 import com.mycompany.myapp.service.trip.TripFacadeService;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -36,9 +38,26 @@ public class TripFacadeResource {
     private static final Logger LOG = LoggerFactory.getLogger(TripFacadeResource.class);
 
     private final TripFacadeService tripFacadeService;
+    private final AvailableTripSearchService availableTripSearchService;
 
-    public TripFacadeResource(TripFacadeService tripFacadeService) {
+    public TripFacadeResource(TripFacadeService tripFacadeService, AvailableTripSearchService availableTripSearchService) {
         this.tripFacadeService = tripFacadeService;
+        this.availableTripSearchService = availableTripSearchService;
+    }
+
+    /**
+     * Xe khả dụng from VTHK {@code search_trips}. Query by {@code date} + {@code itineraryCode}
+     * (or {@code lfid}/{@code ltid}). Optional {@code timeSlot} e.g. {@code 08:00-10:00}.
+     */
+    @GetMapping("/available")
+    public List<AvailableTripDTO> available(
+        @RequestParam String date,
+        @RequestParam(required = false) String itineraryCode,
+        @RequestParam(required = false) String lfid,
+        @RequestParam(required = false) String ltid,
+        @RequestParam(required = false) String timeSlot
+    ) {
+        return availableTripSearchService.search(date, itineraryCode, lfid, ltid, timeSlot);
     }
 
     @GetMapping("")
