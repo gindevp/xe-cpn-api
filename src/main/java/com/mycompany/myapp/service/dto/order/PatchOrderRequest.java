@@ -21,6 +21,10 @@ public class PatchOrderRequest {
     private String pickupStaffUsername;
     private String partnerCode;
     private BigDecimal partnerFeeAmount;
+    private String fromOfficeCode;
+    private String toOfficeCode;
+    private String hubOfficeCode;
+    private String finalToOfficeCode;
 
     public String getSenderName() {
         return senderName;
@@ -156,5 +160,37 @@ public class PatchOrderRequest {
 
     public void setPartnerFeeAmount(BigDecimal partnerFeeAmount) {
         this.partnerFeeAmount = partnerFeeAmount;
+    }
+
+    public String getFromOfficeCode() {
+        return fromOfficeCode;
+    }
+
+    public void setFromOfficeCode(String fromOfficeCode) {
+        this.fromOfficeCode = fromOfficeCode;
+    }
+
+    public String getToOfficeCode() {
+        return toOfficeCode;
+    }
+
+    public void setToOfficeCode(String toOfficeCode) {
+        this.toOfficeCode = toOfficeCode;
+    }
+
+    public String getHubOfficeCode() {
+        return hubOfficeCode;
+    }
+
+    public void setHubOfficeCode(String hubOfficeCode) {
+        this.hubOfficeCode = hubOfficeCode;
+    }
+
+    public String getFinalToOfficeCode() {
+        return finalToOfficeCode;
+    }
+
+    public void setFinalToOfficeCode(String finalToOfficeCode) {
+        this.finalToOfficeCode = finalToOfficeCode;
     }
 }

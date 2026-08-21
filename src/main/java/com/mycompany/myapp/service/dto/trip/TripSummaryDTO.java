@@ -20,6 +20,7 @@ public class TripSummaryDTO {
     private String officeCode;
     private String routeCode;
     private String routeName;
+    private String itineraryLabel;
     private String vehiclePlate;
     private String driverName;
     private String driverCode;
@@ -119,6 +120,14 @@ public class TripSummaryDTO {
 
     public void setRouteName(String routeName) {
         this.routeName = routeName;
+    }
+
+    public String getItineraryLabel() {
+        return itineraryLabel;
+    }
+
+    public void setItineraryLabel(String itineraryLabel) {
+        this.itineraryLabel = itineraryLabel;
     }
 
     public String getVehiclePlate() {

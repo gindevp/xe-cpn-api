@@ -61,8 +61,9 @@ public class PricingRuleDTO implements Serializable {
     @NotNull
     private Boolean active;
 
-    @NotNull
     private RouteDTO route;
+
+    private BranchDTO branch;
 
     public Long getId() {
         return id;
@@ -192,6 +193,14 @@ public class PricingRuleDTO implements Serializable {
         this.route = route;
     }
 
+    public BranchDTO getBranch() {
+        return branch;
+    }
+
+    public void setBranch(BranchDTO branch) {
+        this.branch = branch;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -233,6 +242,7 @@ public class PricingRuleDTO implements Serializable {
             ", effectiveTo='" + getEffectiveTo() + "'" +
             ", active='" + getActive() + "'" +
             ", route=" + getRoute() +
+            ", branch=" + getBranch() +
             "}";
     }
 }

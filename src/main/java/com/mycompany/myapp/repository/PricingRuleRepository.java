@@ -27,14 +27,16 @@ public interface PricingRuleRepository extends JpaRepository<PricingRule, Long>,
     }
 
     @Query(
-        value = "select pricingRule from PricingRule pricingRule left join fetch pricingRule.route",
+        value = "select pricingRule from PricingRule pricingRule left join fetch pricingRule.route left join fetch pricingRule.branch",
         countQuery = "select count(pricingRule) from PricingRule pricingRule"
     )
     Page<PricingRule> findAllWithToOneRelationships(Pageable pageable);
 
-    @Query("select pricingRule from PricingRule pricingRule left join fetch pricingRule.route")
+    @Query("select pricingRule from PricingRule pricingRule left join fetch pricingRule.route left join fetch pricingRule.branch")
     List<PricingRule> findAllWithToOneRelationships();
 
-    @Query("select pricingRule from PricingRule pricingRule left join fetch pricingRule.route where pricingRule.id =:id")
+    @Query(
+        "select pricingRule from PricingRule pricingRule left join fetch pricingRule.route left join fetch pricingRule.branch where pricingRule.id =:id"
+    )
     Optional<PricingRule> findOneWithToOneRelationships(@Param("id") Long id);
 }

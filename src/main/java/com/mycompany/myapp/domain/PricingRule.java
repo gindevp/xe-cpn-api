@@ -83,10 +83,14 @@ public class PricingRule implements Serializable {
     @Column(name = "active", nullable = false)
     private Boolean active;
 
-    @ManyToOne(optional = false)
-    @NotNull
+    @ManyToOne
     @JsonIgnoreProperties(value = { "fromOffice", "toOffice" }, allowSetters = true)
     private Route route;
+
+    /** Master Tuyến — preferred match for create-order fare. */
+    @ManyToOne
+    @JsonIgnoreProperties(allowSetters = true)
+    private Branch branch;
 
     // jhipster-needle-entity-add-field - JHipster will add fields here
 
@@ -295,6 +299,19 @@ public class PricingRule implements Serializable {
 
     public PricingRule route(Route route) {
         this.setRoute(route);
+        return this;
+    }
+
+    public Branch getBranch() {
+        return this.branch;
+    }
+
+    public void setBranch(Branch branch) {
+        this.branch = branch;
+    }
+
+    public PricingRule branch(Branch branch) {
+        this.setBranch(branch);
         return this;
     }
 

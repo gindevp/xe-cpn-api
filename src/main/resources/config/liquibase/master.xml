@@ -67,4 +67,9 @@
     <include file="config/liquibase/changelog/20260813140001_added_entity_constraints_Itinerary.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260813140100_seed_branch_itinerary.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260813153000_seed_branch_itinerary_prod.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260814120000_pricing_rule_branch.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260814163000_vehicle_detail_fields.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260817161000_shipment_order_timestamps.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260818113000_trip_vehicle_driver_optional.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260818120000_trip_itinerary_label.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>

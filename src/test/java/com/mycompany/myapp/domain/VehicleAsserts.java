@@ -52,7 +52,12 @@ public class VehicleAsserts {
             .satisfies(e ->
                 assertThat(e.getCapacityKg()).as("check capacityKg").usingComparator(bigDecimalCompareTo).isEqualTo(actual.getCapacityKg())
             )
-            .satisfies(e -> assertThat(e.getActive()).as("check active").isEqualTo(actual.getActive()));
+            .satisfies(e -> assertThat(e.getActive()).as("check active").isEqualTo(actual.getActive()))
+            .satisfies(e -> assertThat(e.getVehicleType()).as("check vehicleType").isEqualTo(actual.getVehicleType()))
+            .satisfies(e ->
+                assertThat(e.getVolumeM3()).as("check volumeM3").usingComparator(bigDecimalCompareTo).isEqualTo(actual.getVolumeM3())
+            )
+            .satisfies(e -> assertThat(e.getNote()).as("check note").isEqualTo(actual.getNote()));
     }
 
     /**

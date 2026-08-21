@@ -56,6 +56,9 @@ public class CreateDraftOrderRequest {
     @Size(max = 2000)
     private String note;
 
+    /** Tuyến (Branch) code or name — preferred fare table. */
+    private String branchCode;
+
     public String getSenderPhone() {
         return senderPhone;
     }
@@ -174,5 +177,13 @@ public class CreateDraftOrderRequest {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public String getBranchCode() {
+        return branchCode;
+    }
+
+    public void setBranchCode(String branchCode) {
+        this.branchCode = branchCode;
     }
 }

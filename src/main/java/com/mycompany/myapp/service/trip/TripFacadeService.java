@@ -9,6 +9,7 @@ import com.mycompany.myapp.domain.Trip;
 import com.mycompany.myapp.domain.TripOrderAssignment;
 import com.mycompany.myapp.domain.Vehicle;
 import com.mycompany.myapp.domain.enumeration.AssignmentStatus;
+import com.mycompany.myapp.domain.enumeration.ForwardStage;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.TripStatus;
 import com.mycompany.myapp.repository.DriverRepository;
@@ -146,6 +147,7 @@ public class TripFacadeService {
         trip.setRoute(route);
         trip.setVehicle(vehicle);
         trip.setDriver(driver);
+        applyItineraryLabel(trip, req.getItineraryLabel());
         trip = tripRepository.save(trip);
         return toSummary(trip, false);
     }
@@ -172,6 +174,7 @@ public class TripFacadeService {
         if (trip.getStatus() == TripStatus.CLOSED || trip.getStatus() == TripStatus.CANCELLED) {
             throw new BadRequestAlertException("Cannot assign to closed/cancelled trip", ENTITY, "tripclosed");
         }
+        applyItineraryLabel(trip, req.getItineraryLabel());
         for (String code : distinct(req.getOrderCodes())) {
             ShipmentOrder order = requireOrder(code);
             if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.DELIVERED) {
@@ -179,10 +182,12 @@ public class TripFacadeService {
             }
             ensureActiveAssignment(trip, order);
             order.setCurrentTrip(trip);
+            order.setForwardStage(ForwardStage.TRANSFER_PENDING);
             shipmentOrderRepository.save(order);
             appendOrderEvent(order, "ASSIGN_TRIP", "Trip " + trip.getTripCode(), currentActor());
         }
         refreshCounts(trip);
+        tripRepository.save(trip);
         return toSummary(trip, true);
     }
 
@@ -237,6 +242,7 @@ public class TripFacadeService {
 
         if (order.getCurrentTrip() != null && order.getCurrentTrip().getId().equals(trip.getId())) {
             order.setCurrentTrip(null);
+            order.setForwardStage(ForwardStage.WH_IN);
             shipmentOrderRepository.save(order);
         }
         if (order.getStatus() == OrderStatus.IN_TRANSIT) {
@@ -287,7 +293,8 @@ public class TripFacadeService {
         if (officeCode != null) {
             String dest = order.getToOffice() != null ? order.getToOffice().getCode() : null;
             String hub = order.getHubOffice() != null ? order.getHubOffice().getCode() : null;
-            boolean okOffice = officeCode.equals(dest) || officeCode.equals(hub);
+            String finalDest = order.getFinalToOffice() != null ? order.getFinalToOffice().getCode() : null;
+            boolean okOffice = officeCode.equals(dest) || officeCode.equals(hub) || officeCode.equals(finalDest);
             if (!okOffice && !req.isOverrideWrongOffice()) {
                 throw new BadRequestAlertException("Wrong office for order (E-VP-001)", ENTITY, "wrongOffice");
             }
@@ -389,6 +396,7 @@ public class TripFacadeService {
         dto.setLoadedCount(trip.getLoadedCount());
         dto.setScannedCount(trip.getScannedCount());
         dto.setOfficeCode(trip.getOffice() != null ? trip.getOffice().getCode() : null);
+        dto.setItineraryLabel(trip.getItineraryLabel());
         if (trip.getRoute() != null) {
             dto.setRouteCode(trip.getRoute().getCode());
             dto.setRouteName(trip.getRoute().getName());
@@ -433,6 +441,14 @@ public class TripFacadeService {
             .orElseThrow(() -> new BadRequestAlertException("Unknown office: " + code, ENTITY, "officeNotFound"));
     }
 
+    private void applyItineraryLabel(Trip trip, String label) {
+        if (label == null || label.isBlank()) {
+            return;
+        }
+        String trimmed = label.trim();
+        trip.setItineraryLabel(trimmed.length() <= 160 ? trimmed : trimmed.substring(0, 160));
+    }
+
     private Route resolveRoute(String routeCodeOrName) {
         String raw = routeCodeOrName.trim();
         return routeRepository
@@ -450,6 +466,9 @@ public class TripFacadeService {
         }
         if (req.getVehiclePlate() != null && !req.getVehiclePlate().isBlank()) {
             String plate = req.getVehiclePlate().trim();
+            if (plate.matches("(?i)CH[0-9A-Z]+") || plate.toLowerCase().startsWith("chưa gán")) {
+                return null;
+            }
             return vehicleRepository
                 .findOneByPlateNumber(plate)
                 .orElseGet(() -> {
@@ -460,7 +479,7 @@ public class TripFacadeService {
                     return vehicleRepository.save(v);
                 });
         }
-        throw new BadRequestAlertException("vehicleId or vehiclePlate required", ENTITY, "vehicleRequired");
+        return null;
     }
 
     private Driver resolveDriver(CreateTripRequest req) {
@@ -476,6 +495,9 @@ public class TripFacadeService {
         }
         if (req.getDriverName() != null && !req.getDriverName().isBlank()) {
             String name = req.getDriverName().trim();
+            if (name.equalsIgnoreCase("Chưa gán tài")) {
+                return null;
+            }
             return driverRepository
                 .findFirstByFullNameIgnoreCase(name)
                 .orElseGet(() -> {
@@ -490,7 +512,7 @@ public class TripFacadeService {
                     return driverRepository.save(d);
                 });
         }
-        throw new BadRequestAlertException("driverId, driverCode or driverName required", ENTITY, "driverRequired");
+        return null;
     }
 
     private void appendOrderEvent(ShipmentOrder order, String action, String detail, String actor) {

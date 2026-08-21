@@ -34,6 +34,26 @@ public class Vehicle implements Serializable {
     @Column(name = "active", nullable = false)
     private Boolean active;
 
+    @Size(max = 80)
+    @Column(name = "vehicle_type", length = 80)
+    private String vehicleType;
+
+    @DecimalMin(value = "0")
+    @Column(name = "volume_m3", precision = 21, scale = 2)
+    private BigDecimal volumeM3;
+
+    @Size(max = 255)
+    @Column(name = "note", length = 255)
+    private String note;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "office_id")
+    private Office office;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "default_driver_id")
+    private Driver defaultDriver;
+
     // jhipster-needle-entity-add-field - JHipster will add fields here
 
     public Long getId() {
@@ -88,6 +108,71 @@ public class Vehicle implements Serializable {
         this.active = active;
     }
 
+    public String getVehicleType() {
+        return this.vehicleType;
+    }
+
+    public Vehicle vehicleType(String vehicleType) {
+        this.setVehicleType(vehicleType);
+        return this;
+    }
+
+    public void setVehicleType(String vehicleType) {
+        this.vehicleType = vehicleType;
+    }
+
+    public BigDecimal getVolumeM3() {
+        return this.volumeM3;
+    }
+
+    public Vehicle volumeM3(BigDecimal volumeM3) {
+        this.setVolumeM3(volumeM3);
+        return this;
+    }
+
+    public void setVolumeM3(BigDecimal volumeM3) {
+        this.volumeM3 = volumeM3;
+    }
+
+    public String getNote() {
+        return this.note;
+    }
+
+    public Vehicle note(String note) {
+        this.setNote(note);
+        return this;
+    }
+
+    public void setNote(String note) {
+        this.note = note;
+    }
+
+    public Office getOffice() {
+        return this.office;
+    }
+
+    public Vehicle office(Office office) {
+        this.setOffice(office);
+        return this;
+    }
+
+    public void setOffice(Office office) {
+        this.office = office;
+    }
+
+    public Driver getDefaultDriver() {
+        return this.defaultDriver;
+    }
+
+    public Vehicle defaultDriver(Driver defaultDriver) {
+        this.setDefaultDriver(defaultDriver);
+        return this;
+    }
+
+    public void setDefaultDriver(Driver defaultDriver) {
+        this.defaultDriver = defaultDriver;
+    }
+
     // jhipster-needle-entity-add-getters-setters - JHipster will add getters and setters here
 
     @Override
@@ -115,6 +200,9 @@ public class Vehicle implements Serializable {
             ", plateNumber='" + getPlateNumber() + "'" +
             ", capacityKg=" + getCapacityKg() +
             ", active='" + getActive() + "'" +
+            ", vehicleType='" + getVehicleType() + "'" +
+            ", volumeM3=" + getVolumeM3() +
+            ", note='" + getNote() + "'" +
             "}";
     }
 }

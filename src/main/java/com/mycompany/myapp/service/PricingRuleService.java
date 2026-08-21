@@ -1,7 +1,9 @@
 package com.mycompany.myapp.service;
 
 import com.mycompany.myapp.domain.PricingRule;
+import com.mycompany.myapp.repository.BranchRepository;
 import com.mycompany.myapp.repository.PricingRuleRepository;
+import com.mycompany.myapp.repository.RouteRepository;
 import com.mycompany.myapp.service.dto.PricingRuleDTO;
 import com.mycompany.myapp.service.mapper.PricingRuleMapper;
 import java.util.Optional;
@@ -25,9 +27,20 @@ public class PricingRuleService {
 
     private final PricingRuleMapper pricingRuleMapper;
 
-    public PricingRuleService(PricingRuleRepository pricingRuleRepository, PricingRuleMapper pricingRuleMapper) {
+    private final BranchRepository branchRepository;
+
+    private final RouteRepository routeRepository;
+
+    public PricingRuleService(
+        PricingRuleRepository pricingRuleRepository,
+        PricingRuleMapper pricingRuleMapper,
+        BranchRepository branchRepository,
+        RouteRepository routeRepository
+    ) {
         this.pricingRuleRepository = pricingRuleRepository;
         this.pricingRuleMapper = pricingRuleMapper;
+        this.branchRepository = branchRepository;
+        this.routeRepository = routeRepository;
     }
 
     /**
@@ -39,8 +52,9 @@ public class PricingRuleService {
     public PricingRuleDTO save(PricingRuleDTO pricingRuleDTO) {
         LOG.debug("Request to save PricingRule : {}", pricingRuleDTO);
         PricingRule pricingRule = pricingRuleMapper.toEntity(pricingRuleDTO);
+        attachRefs(pricingRuleDTO, pricingRule);
         pricingRule = pricingRuleRepository.save(pricingRule);
-        return pricingRuleMapper.toDto(pricingRule);
+        return toDtoEager(pricingRule);
     }
 
     /**
@@ -52,8 +66,9 @@ public class PricingRuleService {
     public PricingRuleDTO update(PricingRuleDTO pricingRuleDTO) {
         LOG.debug("Request to update PricingRule : {}", pricingRuleDTO);
         PricingRule pricingRule = pricingRuleMapper.toEntity(pricingRuleDTO);
+        attachRefs(pricingRuleDTO, pricingRule);
         pricingRule = pricingRuleRepository.save(pricingRule);
-        return pricingRuleMapper.toDto(pricingRule);
+        return toDtoEager(pricingRule);
     }
 
     /**
@@ -105,5 +120,25 @@ public class PricingRuleService {
     public void delete(Long id) {
         LOG.debug("Request to delete PricingRule : {}", id);
         pricingRuleRepository.deleteById(id);
+    }
+
+    private void attachRefs(PricingRuleDTO dto, PricingRule entity) {
+        if (dto.getBranch() != null && dto.getBranch().getId() != null) {
+            entity.setBranch(branchRepository.getReferenceById(dto.getBranch().getId()));
+        } else {
+            entity.setBranch(null);
+        }
+        if (dto.getRoute() != null && dto.getRoute().getId() != null) {
+            entity.setRoute(routeRepository.getReferenceById(dto.getRoute().getId()));
+        } else {
+            entity.setRoute(null);
+        }
+    }
+
+    private PricingRuleDTO toDtoEager(PricingRule saved) {
+        return pricingRuleRepository
+            .findOneWithEagerRelationships(saved.getId())
+            .map(pricingRuleMapper::toDto)
+            .orElseGet(() -> pricingRuleMapper.toDto(saved));
     }
 }

@@ -16,6 +16,8 @@ public class OrderSummaryDTO {
     private Long id;
     private String orderCode;
     private String draftCode;
+    private Instant createdAt;
+    private Instant updatedAt;
     private OrderStatus status;
     private ForwardStage forwardStage;
     private ReturnStage returnStage;
@@ -72,6 +74,22 @@ public class OrderSummaryDTO {
 
     public void setDraftCode(String draftCode) {
         this.draftCode = draftCode;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(Instant updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public OrderStatus getStatus() {

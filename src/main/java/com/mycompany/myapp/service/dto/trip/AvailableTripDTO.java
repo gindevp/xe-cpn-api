@@ -16,6 +16,8 @@ public class AvailableTripDTO {
     private String itineraryCode;
     private String timeSlot;
     private Instant departAt;
+    /** Trip end time from VTHK {@code NgayKetThuc}. */
+    private Instant endAt;
     private String vehicleType;
     private Integer seatTotal;
     private Integer seatAvailable;
@@ -89,6 +91,14 @@ public class AvailableTripDTO {
 
     public void setDepartAt(Instant departAt) {
         this.departAt = departAt;
+    }
+
+    public Instant getEndAt() {
+        return endAt;
+    }
+
+    public void setEndAt(Instant endAt) {
+        this.endAt = endAt;
     }
 
     public String getVehicleType() {

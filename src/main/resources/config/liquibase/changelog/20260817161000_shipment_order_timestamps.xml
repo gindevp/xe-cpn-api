@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260817161000-1" author="cursor">
+        <comment>
+            Persist real order creation/update timestamps. Existing rows are backfilled
+            from their first and last order events, with operational timestamps/current
+            time as safe fallbacks.
+        </comment>
+        <addColumn tableName="shipment_order">
+            <column name="created_at" type="${datetimeType}">
+                <constraints nullable="true"/>
+            </column>
+            <column name="updated_at" type="${datetimeType}">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <sql>
+            UPDATE shipment_order so
+            SET
+                created_at = COALESCE(
+                    (SELECT MIN(oe.event_at) FROM order_event oe WHERE oe.order_id = so.id),
+                    so.picking_at,
+                    so.picked_up_at,
+                    NOW(6)
+                ),
+                updated_at = COALESCE(
+                    (SELECT MAX(oe.event_at) FROM order_event oe WHERE oe.order_id = so.id),
+                    so.picked_up_at,
+                    so.picking_at,
+                    NOW(6)
+                )
+        </sql>
+
+        <addNotNullConstraint
+            tableName="shipment_order"
+            columnName="created_at"
+            columnDataType="${datetimeType}"/>
+        <addNotNullConstraint
+            tableName="shipment_order"
+            columnName="updated_at"
+            columnDataType="${datetimeType}"/>
+    </changeSet>
+</databaseChangeLog>

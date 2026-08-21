@@ -64,13 +64,15 @@ public class Trip implements Serializable {
     @JsonIgnoreProperties(value = { "fromOffice", "toOffice" }, allowSetters = true)
     private Route route;
 
-    @ManyToOne(optional = false)
-    @NotNull
+    @ManyToOne
     private Vehicle vehicle;
 
-    @ManyToOne(optional = false)
-    @NotNull
+    @ManyToOne
     private Driver driver;
+
+    @Size(max = 160)
+    @Column(name = "itinerary_label", length = 160)
+    private String itineraryLabel;
 
     // jhipster-needle-entity-add-field - JHipster will add fields here
 
@@ -241,6 +243,14 @@ public class Trip implements Serializable {
     public Trip driver(Driver driver) {
         this.setDriver(driver);
         return this;
+    }
+
+    public String getItineraryLabel() {
+        return itineraryLabel;
+    }
+
+    public void setItineraryLabel(String itineraryLabel) {
+        this.itineraryLabel = itineraryLabel;
     }
 
     // jhipster-needle-entity-add-getters-setters - JHipster will add getters and setters here

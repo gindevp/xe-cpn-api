@@ -23,6 +23,9 @@ public class CreateTripRequest {
     @NotNull
     private Instant departAt;
 
+    /** User-facing VTHK branch/itinerary (not office Route.name). */
+    private String itineraryLabel;
+
     public String getOfficeCode() {
         return officeCode;
     }
@@ -85,5 +88,13 @@ public class CreateTripRequest {
 
     public void setDepartAt(Instant departAt) {
         this.departAt = departAt;
+    }
+
+    public String getItineraryLabel() {
+        return itineraryLabel;
+    }
+
+    public void setItineraryLabel(String itineraryLabel) {
+        this.itineraryLabel = itineraryLabel;
     }
 }

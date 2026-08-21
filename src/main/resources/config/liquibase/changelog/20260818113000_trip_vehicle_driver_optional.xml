@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260818113000-1" author="cursor">
+        <comment>VTHK trips may exist before a plate/driver is assigned; do not invent BKS.</comment>
+        <dropNotNullConstraint tableName="trip" columnName="vehicle_id" columnDataType="bigint"/>
+        <dropNotNullConstraint tableName="trip" columnName="driver_id" columnDataType="bigint"/>
+    </changeSet>
+</databaseChangeLog>

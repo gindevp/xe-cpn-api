@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260814163000-1" author="cpn">
+        <addColumn tableName="vehicle">
+            <column name="vehicle_type" type="varchar(80)"/>
+            <column name="volume_m3" type="decimal(21,2)"/>
+            <column name="note" type="varchar(255)"/>
+            <column name="office_id" type="bigint"/>
+            <column name="default_driver_id" type="bigint"/>
+        </addColumn>
+        <addForeignKeyConstraint
+            baseTableName="vehicle"
+            baseColumnNames="office_id"
+            constraintName="fk_vehicle__office_id"
+            referencedTableName="office"
+            referencedColumnNames="id"/>
+        <addForeignKeyConstraint
+            baseTableName="vehicle"
+            baseColumnNames="default_driver_id"
+            constraintName="fk_vehicle__default_driver_id"
+            referencedTableName="driver"
+            referencedColumnNames="id"/>
+    </changeSet>
+</databaseChangeLog>

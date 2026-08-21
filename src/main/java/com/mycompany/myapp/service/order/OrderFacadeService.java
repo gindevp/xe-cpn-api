@@ -87,6 +87,18 @@ public class OrderFacadeService {
 
     @Transactional(readOnly = true)
     public Page<OrderSummaryDTO> list(OrderStatus status, String fromOfficeCode, String toOfficeCode, String keyword, Pageable pageable) {
+        return list(status, fromOfficeCode, toOfficeCode, null, keyword, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<OrderSummaryDTO> list(
+        OrderStatus status,
+        String fromOfficeCode,
+        String toOfficeCode,
+        String receiverOfficeCode,
+        String keyword,
+        Pageable pageable
+    ) {
         Specification<ShipmentOrder> spec = Specification.where(null);
         if (status != null) {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), status));
@@ -96,6 +108,10 @@ public class OrderFacadeService {
         }
         if (toOfficeCode != null && !toOfficeCode.isBlank()) {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("toOffice").get("code"), toOfficeCode.trim().toUpperCase()));
+        }
+        if (receiverOfficeCode != null && !receiverOfficeCode.isBlank()) {
+            String receiver = receiverOfficeCode.trim().toUpperCase();
+            spec = spec.and((root, q, cb) -> cb.equal(receiverOfficePath(root, cb), receiver));
         }
         if (keyword != null && !keyword.isBlank()) {
             String like = "%" + keyword.trim().toLowerCase() + "%";
@@ -112,10 +128,24 @@ public class OrderFacadeService {
         String scoped = staffAccessService.scopedOfficeCode().orElse(null);
         if (scoped != null) {
             spec = spec.and((root, q, cb) ->
-                cb.or(cb.equal(root.get("fromOffice").get("code"), scoped), cb.equal(root.get("toOffice").get("code"), scoped))
+                cb.or(
+                    cb.equal(root.get("fromOffice").get("code"), scoped),
+                    cb.equal(root.get("toOffice").get("code"), scoped),
+                    cb.equal(receiverOfficePath(root, cb), scoped)
+                )
             );
         }
         return shipmentOrderRepository.findAll(spec, pageable).map(this::toSummary);
+    }
+
+    /** VP nhận thật: finalToOffice khi có (đơn qua hub), ngược lại toOffice. */
+    private static jakarta.persistence.criteria.Expression<String> receiverOfficePath(
+        jakarta.persistence.criteria.Root<ShipmentOrder> root,
+        jakarta.persistence.criteria.CriteriaBuilder cb
+    ) {
+        var finalTo = root.join("finalToOffice", jakarta.persistence.criteria.JoinType.LEFT);
+        var to = root.join("toOffice", jakarta.persistence.criteria.JoinType.LEFT);
+        return cb.coalesce(finalTo.get("code"), to.get("code"));
     }
 
     @Transactional(readOnly = true)
@@ -151,7 +181,8 @@ public class OrderFacadeService {
             homePickup,
             homeDelivery,
             from,
-            fareTo
+            fareTo,
+            req.getBranchCode()
         );
         String draftCode = orderCodeGenerator.nextDraftCode(fromCode);
 
@@ -287,8 +318,22 @@ public class OrderFacadeService {
         Office to = requireOffice(req.getToOfficeCode());
         Office hub = isBlank(req.getHubOfficeCode()) ? null : requireOffice(req.getHubOfficeCode());
 
-        SimpleFareCalculator.FareBreakdown fare = fareCalculator.estimate(req.getWeightKg(), homePickup, homeDelivery, from, to);
-        BigDecimal total = req.getFareAmount() != null ? req.getFareAmount() : fare.total();
+        SimpleFareCalculator.FareBreakdown fare = fareCalculator.estimate(
+            req.getWeightKg(),
+            homePickup,
+            homeDelivery,
+            from,
+            to,
+            req.getBranchCode()
+        );
+        BigDecimal total;
+        if (fare.pricingRuleId() != null) {
+            total = fare.total();
+        } else if (req.getFareAmount() != null) {
+            total = req.getFareAmount();
+        } else {
+            total = fare.total();
+        }
 
         ShipmentOrder order = newBlankOrder();
         order.setOrderCode(orderCodeGenerator.nextOrderCode(from.getCode()));
@@ -391,6 +436,18 @@ public class OrderFacadeService {
         }
         if (req.getPartnerFeeAmount() != null) {
             order.setPartnerFeeAmount(req.getPartnerFeeAmount());
+        }
+        if (req.getFromOfficeCode() != null) {
+            order.setFromOffice(requireOffice(req.getFromOfficeCode()));
+        }
+        if (req.getToOfficeCode() != null) {
+            order.setToOffice(requireOffice(req.getToOfficeCode()));
+        }
+        if (req.getHubOfficeCode() != null) {
+            order.setHubOffice(requireOffice(req.getHubOfficeCode()));
+        }
+        if (req.getFinalToOfficeCode() != null) {
+            order.setFinalToOffice(requireOffice(req.getFinalToOfficeCode()));
         }
         shipmentOrderRepository.save(order);
         appendEvent(order, "PATCH", "Order fields updated", currentActor());
@@ -547,6 +604,8 @@ public class OrderFacadeService {
         dto.setId(o.getId());
         dto.setOrderCode(o.getOrderCode());
         dto.setDraftCode(o.getDraftCode());
+        dto.setCreatedAt(o.getCreatedAt());
+        dto.setUpdatedAt(o.getUpdatedAt());
         dto.setStatus(o.getStatus());
         dto.setForwardStage(o.getForwardStage());
         dto.setReturnStage(o.getReturnStage());

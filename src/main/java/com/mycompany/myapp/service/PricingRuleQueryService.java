@@ -74,6 +74,14 @@ public class PricingRuleQueryService extends QueryService<PricingRule> {
             if (criteria.getDistinct() != null) {
                 specification = specification.and(distinct(criteria.getDistinct()));
             }
+            specification = specification.and((root, query, cb) -> {
+                if (query != null && !Long.class.equals(query.getResultType()) && !long.class.equals(query.getResultType())) {
+                    root.fetch(PricingRule_.branch, JoinType.LEFT);
+                    root.fetch(PricingRule_.route, JoinType.LEFT);
+                    query.distinct(true);
+                }
+                return cb.conjunction();
+            });
             if (criteria.getId() != null) {
                 specification = specification.and(buildRangeSpecification(criteria.getId(), PricingRule_.id));
             }

@@ -68,6 +68,9 @@ public class CreateOrderRequest {
     /** Optional override; otherwise calculated. */
     private BigDecimal fareAmount;
 
+    /** Tuyến (Branch) code or name — preferred fare table. */
+    private String branchCode;
+
     public String getDraftCode() {
         return draftCode;
     }
@@ -226,5 +229,13 @@ public class CreateOrderRequest {
 
     public void setFareAmount(BigDecimal fareAmount) {
         this.fareAmount = fareAmount;
+    }
+
+    public String getBranchCode() {
+        return branchCode;
+    }
+
+    public void setBranchCode(String branchCode) {
+        this.branchCode = branchCode;
     }
 }

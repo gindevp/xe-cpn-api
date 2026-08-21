@@ -40,4 +40,6 @@ public interface OrderPaymentRepository extends JpaRepository<OrderPayment, Long
     Optional<OrderPayment> findOneWithToOneRelationships(@Param("id") Long id);
 
     long countByPaymentAtGreaterThanEqualAndPaymentAtLessThan(Instant from, Instant to);
+
+    Optional<OrderPayment> findFirstByOrder_IdOrderByPaymentAtDesc(Long orderId);
 }

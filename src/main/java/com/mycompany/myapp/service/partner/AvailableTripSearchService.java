@@ -151,11 +151,11 @@ public class AvailableTripSearchService {
         String plateRaw = text(thongTin, "BienSoXe");
         String plate = normalizePlate(plateRaw);
         dto.setVehiclePlate(plate);
-        dto.setAssignVehiclePlate(plate != null ? plate : syntheticPlate(id));
+        dto.setAssignVehiclePlate(plate);
 
         String driver = blankToNull(text(thongTin, "TenLaiXe"));
         dto.setDriverName(driver);
-        dto.setAssignDriverName(driver != null ? driver : "Chưa gán tài");
+        dto.setAssignDriverName(driver);
         dto.setDriverPhone(blankToNull(text(thongTin, "SoDienThoaiLienHe")));
         dto.setVehicleType(blankToNull(text(thongTin, "TenLoaiXe")));
 
@@ -168,6 +168,7 @@ public class AvailableTripSearchService {
 
         Instant depart = parseDepart(firstNonBlank(text(n, "NgayDiThuc"), text(n, "NgayDi")));
         dto.setDepartAt(depart);
+        dto.setEndAt(parseDepart(text(n, "NgayKetThuc")));
         if (depart != null) {
             dto.setTimeSlot(slotOf(depart));
         }

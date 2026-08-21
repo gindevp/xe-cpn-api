@@ -29,6 +29,14 @@ public class ShipmentOrder implements Serializable {
     private Long id;
 
     @NotNull
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @NotNull
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+    @NotNull
     @Size(max = 40)
     @Column(name = "order_code", length = 40, nullable = false, unique = true)
     private String orderCode;
@@ -195,6 +203,20 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "public_tracking_allowed", nullable = false)
     private Boolean publicTrackingAllowed;
 
+    @PrePersist
+    protected void setCreationTimestamps() {
+        Instant now = Instant.now();
+        if (createdAt == null) {
+            createdAt = now;
+        }
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    protected void setUpdateTimestamp() {
+        updatedAt = Instant.now();
+    }
+
     @JsonIgnoreProperties(value = { "order" }, allowSetters = true)
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(unique = true)
@@ -244,6 +266,22 @@ public class ShipmentOrder implements Serializable {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(Instant updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public String getOrderCode() {

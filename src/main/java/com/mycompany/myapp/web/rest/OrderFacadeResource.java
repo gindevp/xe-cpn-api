@@ -76,11 +76,12 @@ public class OrderFacadeResource {
         @RequestParam(required = false) OrderStatus status,
         @RequestParam(required = false) String fromOfficeCode,
         @RequestParam(required = false) String toOfficeCode,
+        @RequestParam(required = false) String receiverOfficeCode,
         @RequestParam(required = false) String keyword,
         Pageable pageable
     ) {
         LOG.debug("REST request to get orders facade list");
-        Page<OrderSummaryDTO> page = orderFacadeService.list(status, fromOfficeCode, toOfficeCode, keyword, pageable);
+        Page<OrderSummaryDTO> page = orderFacadeService.list(status, fromOfficeCode, toOfficeCode, receiverOfficeCode, keyword, pageable);
         HttpHeaders headers = PaginationUtil.generatePaginationHttpHeaders(ServletUriComponentsBuilder.fromCurrentRequest(), page);
         return ResponseEntity.ok()
             .headers(headers)

@@ -2,6 +2,7 @@ package com.mycompany.myapp.service.finance;
 
 import com.mycompany.myapp.domain.DayClosure;
 import com.mycompany.myapp.domain.Office;
+import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.Receipt;
 import com.mycompany.myapp.domain.ReceiptOrderLine;
@@ -12,6 +13,7 @@ import com.mycompany.myapp.domain.enumeration.PaymentKind;
 import com.mycompany.myapp.domain.enumeration.PaymentMethod;
 import com.mycompany.myapp.repository.DayClosureRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
+import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ReceiptRepository;
@@ -48,6 +50,7 @@ public class FinanceFacadeService {
     private final DayClosureRepository dayClosureRepository;
     private final OfficeRepository officeRepository;
     private final OrderPaymentRepository orderPaymentRepository;
+    private final OrderEventRepository orderEventRepository;
     private final DayClosureGuard dayClosureGuard;
 
     public FinanceFacadeService(
@@ -57,6 +60,7 @@ public class FinanceFacadeService {
         DayClosureRepository dayClosureRepository,
         OfficeRepository officeRepository,
         OrderPaymentRepository orderPaymentRepository,
+        OrderEventRepository orderEventRepository,
         DayClosureGuard dayClosureGuard
     ) {
         this.shipmentOrderRepository = shipmentOrderRepository;
@@ -65,6 +69,7 @@ public class FinanceFacadeService {
         this.dayClosureRepository = dayClosureRepository;
         this.officeRepository = officeRepository;
         this.orderPaymentRepository = orderPaymentRepository;
+        this.orderEventRepository = orderEventRepository;
         this.dayClosureGuard = dayClosureGuard;
     }
 
@@ -77,12 +82,8 @@ public class FinanceFacadeService {
                 cb.greaterThan(root.get("fareAmount"), root.get("paidAmount"))
             );
         if (officeCode != null && !officeCode.isBlank()) {
-            spec = spec.and((root, q, cb) ->
-                cb.or(
-                    cb.equal(root.get("fromOffice").get("code"), officeCode.trim().toUpperCase()),
-                    cb.equal(root.get("toOffice").get("code"), officeCode.trim().toUpperCase())
-                )
-            );
+            String scoped = officeCode.trim().toUpperCase();
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("fromOffice").get("code"), scoped));
         }
         if (keyword != null && !keyword.isBlank()) {
             String like = "%" + keyword.trim().toLowerCase() + "%";
@@ -107,7 +108,9 @@ public class FinanceFacadeService {
                     o.getFareAmount(),
                     o.getPaidAmount(),
                     due,
-                    o.getStatus().name()
+                    o.getStatus().name(),
+                    o.getFromOffice() != null ? o.getFromOffice().getCode() : null,
+                    resolveDebtOwner(o)
                 );
             })
             .toList();
@@ -362,6 +365,33 @@ public class FinanceFacadeService {
             .orElseThrow(() -> new BadRequestAlertException("Office not found", ENTITY, "officeNotFound"));
     }
 
+    private String resolveDebtOwner(ShipmentOrder order) {
+        if (order.getId() != null) {
+            var lastPay = orderPaymentRepository.findFirstByOrder_IdOrderByPaymentAtDesc(order.getId());
+            if (lastPay.isPresent()) {
+                String collector = lastPay.get().getCollectorUsername();
+                if (collector != null && !collector.isBlank()) {
+                    return collector.trim();
+                }
+            }
+        }
+        if (order.getPickupStaffUsername() != null && !order.getPickupStaffUsername().isBlank()) {
+            return order.getPickupStaffUsername().trim();
+        }
+        if (order.getId() != null) {
+            for (OrderEvent event : orderEventRepository.findByOrder_IdOrderByEventAtAsc(order.getId())) {
+                if ("CREATED".equalsIgnoreCase(event.getAction())) {
+                    String actor = event.getActorUsername();
+                    if (actor != null && !actor.isBlank()) {
+                        return actor.trim();
+                    }
+                    break;
+                }
+            }
+        }
+        return null;
+    }
+
     private static String actor() {
         return SecurityUtils.getCurrentUserLogin().orElse("system");
     }
@@ -373,7 +403,9 @@ public class FinanceFacadeService {
         BigDecimal fareAmount,
         BigDecimal paidAmount,
         BigDecimal dueAmount,
-        String status
+        String status,
+        String fromOfficeCode,
+        String debtOwnerUsername
     ) {}
 
     public record ReceiptLineRequest(String orderCode, BigDecimal amountCollected) {}

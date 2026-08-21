@@ -24,6 +24,19 @@ public class VehicleDTO implements Serializable {
     @NotNull
     private Boolean active;
 
+    @Size(max = 80)
+    private String vehicleType;
+
+    @DecimalMin(value = "0")
+    private BigDecimal volumeM3;
+
+    @Size(max = 255)
+    private String note;
+
+    private OfficeDTO office;
+
+    private DriverDTO defaultDriver;
+
     public Long getId() {
         return id;
     }
@@ -56,6 +69,46 @@ public class VehicleDTO implements Serializable {
         this.active = active;
     }
 
+    public String getVehicleType() {
+        return vehicleType;
+    }
+
+    public void setVehicleType(String vehicleType) {
+        this.vehicleType = vehicleType;
+    }
+
+    public BigDecimal getVolumeM3() {
+        return volumeM3;
+    }
+
+    public void setVolumeM3(BigDecimal volumeM3) {
+        this.volumeM3 = volumeM3;
+    }
+
+    public String getNote() {
+        return note;
+    }
+
+    public void setNote(String note) {
+        this.note = note;
+    }
+
+    public OfficeDTO getOffice() {
+        return office;
+    }
+
+    public void setOffice(OfficeDTO office) {
+        this.office = office;
+    }
+
+    public DriverDTO getDefaultDriver() {
+        return defaultDriver;
+    }
+
+    public void setDefaultDriver(DriverDTO defaultDriver) {
+        this.defaultDriver = defaultDriver;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -85,6 +138,9 @@ public class VehicleDTO implements Serializable {
             ", plateNumber='" + getPlateNumber() + "'" +
             ", capacityKg=" + getCapacityKg() +
             ", active='" + getActive() + "'" +
+            ", vehicleType='" + getVehicleType() + "'" +
+            ", volumeM3=" + getVolumeM3() +
+            ", note='" + getNote() + "'" +
             "}";
     }
 }
