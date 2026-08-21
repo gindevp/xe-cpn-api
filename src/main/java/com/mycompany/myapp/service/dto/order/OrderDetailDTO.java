@@ -11,7 +11,6 @@ public class OrderDetailDTO extends OrderSummaryDTO {
     private String receiverActualPhone;
     private Integer failCount;
     private List<OrderEventViewDTO> events = new ArrayList<>();
-    private List<String> podPhotos = new ArrayList<>();
     private List<OrderIssueViewDTO> issues = new ArrayList<>();
     private Long currentIssueId;
     private List<OrderReturnViewDTO> returns = new ArrayList<>();
@@ -55,14 +54,6 @@ public class OrderDetailDTO extends OrderSummaryDTO {
 
     public void setEvents(List<OrderEventViewDTO> events) {
         this.events = events;
-    }
-
-    public List<String> getPodPhotos() {
-        return podPhotos;
-    }
-
-    public void setPodPhotos(List<String> podPhotos) {
-        this.podPhotos = podPhotos;
     }
 
     public List<OrderIssueViewDTO> getIssues() {

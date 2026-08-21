@@ -110,6 +110,10 @@ spring:
         #- tls
   jmx:
     enabled: false
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
   data:
     jpa:
       repositories:
@@ -171,6 +175,10 @@ server:
     session:
       cookie:
         http-only: true
+  tomcat:
+    # POD data-URL từ mobile
+    max-http-form-post-size: 20MB
+    max-swallow-size: 20MB
 
 springdoc:
   show-actuator: true

@@ -51,6 +51,8 @@ public class OrderSummaryDTO {
     private BigDecimal partnerFeeAmount;
     private Integer currentLegIndex;
     private List<OrderLegViewDTO> legs = new ArrayList<>();
+    /** Ảnh POD (data-URL / URL) — thường chỉ gắn khi DELIVERED. */
+    private List<String> podPhotos = new ArrayList<>();
 
     public Long getId() {
         return id;
@@ -354,6 +356,14 @@ public class OrderSummaryDTO {
 
     public void setLegs(List<OrderLegViewDTO> legs) {
         this.legs = legs;
+    }
+
+    public List<String> getPodPhotos() {
+        return podPhotos;
+    }
+
+    public void setPodPhotos(List<String> podPhotos) {
+        this.podPhotos = podPhotos;
     }
 
     public static class OrderLegViewDTO {

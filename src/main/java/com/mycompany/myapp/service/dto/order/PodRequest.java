@@ -25,7 +25,7 @@ public class PodRequest {
 
     @NotEmpty
     @Size(max = 3)
-    private List<@NotBlank @Size(max = 500) String> photos = new ArrayList<>();
+    private List<@NotBlank @Size(max = 2_000_000) String> photos = new ArrayList<>();
 
     private BigDecimal collectedAmount;
 

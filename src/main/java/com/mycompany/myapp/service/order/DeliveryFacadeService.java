@@ -263,8 +263,13 @@ public class DeliveryFacadeService {
         if (status == OrderStatus.DELIVERED) {
             return;
         }
-        // FE allows AT_DEST / OUT_FOR_DELIVERY / CONFIRMED → DELIVERED
-        if (status != OrderStatus.AT_DEST && status != OrderStatus.OUT_FOR_DELIVERY && status != OrderStatus.CONFIRMED) {
+        // FE / app: AT_DEST, OUT_FOR_DELIVERY, CONFIRMED, WAITING → DELIVERED
+        if (
+            status != OrderStatus.AT_DEST &&
+            status != OrderStatus.OUT_FOR_DELIVERY &&
+            status != OrderStatus.CONFIRMED &&
+            status != OrderStatus.WAITING
+        ) {
             throw new BadRequestAlertException("Cannot POD from status " + status, ENTITY, "podInvalidStatus");
         }
         OrderTransitionRequest tr = new OrderTransitionRequest();
@@ -328,8 +333,10 @@ public class DeliveryFacadeService {
         if (url == null) {
             return "";
         }
+        // Cho phép data-URL ảnh POD từ app (LONGTEXT). Giới hạn cứng tránh payload quá lớn.
         String trimmed = url.trim();
-        return trimmed.length() <= 500 ? trimmed : trimmed.substring(0, 497) + "...";
+        final int max = 1_500_000;
+        return trimmed.length() <= max ? trimmed : trimmed.substring(0, max);
     }
 
     private static String currentActor() {

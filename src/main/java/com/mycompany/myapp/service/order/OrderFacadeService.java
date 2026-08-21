@@ -642,6 +642,11 @@ public class OrderFacadeService {
             : orderLegRepository.findByOrder_IdOrderByLegIndexAsc(o.getId());
         dto.setLegs(legs.stream().map(this::toLegView).toList());
         dto.setCurrentLegIndex(currentLegIndex(legs));
+        if (o.getStatus() == OrderStatus.DELIVERED && o.getId() != null) {
+            dto.setPodPhotos(
+                orderPodPhotoRepository.findByOrder_IdOrderBySequenceNoAsc(o.getId()).stream().map(p -> p.getPhotoUrl()).toList()
+            );
+        }
     }
 
     private OrderSummaryDTO.OrderLegViewDTO toLegView(OrderLeg leg) {

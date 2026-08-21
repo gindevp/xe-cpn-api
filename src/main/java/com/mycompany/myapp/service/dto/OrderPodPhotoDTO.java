@@ -14,7 +14,6 @@ public class OrderPodPhotoDTO implements Serializable {
     private Long id;
 
     @NotNull
-    @Size(max = 500)
     private String photoUrl;
 
     @NotNull

@@ -46,9 +46,11 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
     }
 
     private void enforceScreenWrite(String path) {
-        // POD (pod-quay + giao-tan-nha writers): Q, G, TCN, AD — KT/BX blocked
+        // POD (pod-quay + giao VP / mobile giao khách): Q, G, TCN, DH, BX, AD — KT/BL blocked
         if (path.matches(".*/api/orders/[^/]+/pod/?$")) {
-            staffAccessService.requireAnyRole(StaffAccessService.roles(RoleCode.Q, RoleCode.G, RoleCode.TCN, RoleCode.AD));
+            staffAccessService.requireAnyRole(
+                StaffAccessService.roles(RoleCode.Q, RoleCode.G, RoleCode.TCN, RoleCode.DH, RoleCode.BX, RoleCode.AD)
+            );
             return;
         }
         // Master CRUD

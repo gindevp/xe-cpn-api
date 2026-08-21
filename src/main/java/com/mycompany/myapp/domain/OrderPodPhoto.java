@@ -22,8 +22,8 @@ public class OrderPodPhoto implements Serializable {
     private Long id;
 
     @NotNull
-    @Size(max = 500)
-    @Column(name = "photo_url", length = 500, nullable = false)
+    @Lob
+    @Column(name = "photo_url", nullable = false, columnDefinition = "LONGTEXT")
     private String photoUrl;
 
     @NotNull
