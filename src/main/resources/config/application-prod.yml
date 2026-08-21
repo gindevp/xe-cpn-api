@@ -47,6 +47,10 @@ spring:
   # Replace by 'prod, faker' to add the faker context and have sample data loaded in production
   liquibase:
     contexts: prod
+    # Railway MySQL is case-sensitive: keep lowercase tables that already hold migration history.
+    # Avoids empty DATABASECHANGELOG* duplicates causing re-run of initial schema.
+    database-change-log-table: databasechangelog
+    database-change-log-lock-table: databasechangeloglock
   mail:
     host: localhost
     port: 25
