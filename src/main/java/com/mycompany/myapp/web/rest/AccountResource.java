@@ -4,6 +4,9 @@ import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.domain.User;
 import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.repository.UserRepository;
+import com.mycompany.myapp.security.PermissionService;
+import com.mycompany.myapp.security.ScreenKey;
+import com.mycompany.myapp.security.ScreenPerm;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.MailService;
 import com.mycompany.myapp.service.UserService;
@@ -44,16 +47,20 @@ public class AccountResource {
 
     private final StaffProfileRepository staffProfileRepository;
 
+    private final PermissionService permissionService;
+
     public AccountResource(
         UserRepository userRepository,
         UserService userService,
         MailService mailService,
-        StaffProfileRepository staffProfileRepository
+        StaffProfileRepository staffProfileRepository,
+        PermissionService permissionService
     ) {
         this.userRepository = userRepository;
         this.userService = userService;
         this.mailService = mailService;
         this.staffProfileRepository = staffProfileRepository;
+        this.permissionService = permissionService;
     }
 
     /**
@@ -118,6 +125,13 @@ public class AccountResource {
         } else if (profile.getOffice() != null) {
             dto.setOfficeCode(profile.getOffice().getCode());
         }
+        dto.setRoleGroupCode(permissionService.groupCodeOf(profile).orElse(null));
+        Map<ScreenKey, ScreenPerm> perms = permissionService.isSystemAdmin()
+            ? permissionService.fullAccessMap()
+            : permissionService.permissionsOf(profile);
+        Map<String, String> flat = new LinkedHashMap<>();
+        perms.forEach((screen, perm) -> flat.put(screen.key(), perm.name()));
+        dto.setPermissions(flat);
     }
 
     /**

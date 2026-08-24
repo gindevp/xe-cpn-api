@@ -1,6 +1,5 @@
 package com.mycompany.myapp.security;
 
-import com.mycompany.myapp.domain.enumeration.RoleCode;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,7 +13,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * BL/inactive write block + screen-level role map (TASK-010) aligned to FE rbac.ts.
+ * Read-only/inactive write block + screen-level write guard driven by the staff's permission group
+ * (TASK-010, generalised in TASK-RBAC-GROUPS). Screen keys match FE rbac.ts.
  */
 @Component
 @Order(Ordered.LOWEST_PRECEDENCE - 10)
@@ -46,11 +46,9 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
     }
 
     private void enforceScreenWrite(String path) {
-        // POD (pod-quay + giao VP / mobile giao khách): Q, G, TCN, DH, BX, AD — KT/BL blocked
+        // POD: quầy giao khách hoặc giao tận nhà (web + mobile)
         if (path.matches(".*/api/orders/[^/]+/pod/?$")) {
-            staffAccessService.requireAnyRole(
-                StaffAccessService.roles(RoleCode.Q, RoleCode.G, RoleCode.TCN, RoleCode.DH, RoleCode.BX, RoleCode.AD)
-            );
+            staffAccessService.requireScreenWrite(ScreenKey.POD_QUAY, ScreenKey.GIAO_TAN_NHA);
             return;
         }
         // Master CRUD
@@ -60,28 +58,39 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             path.startsWith("/api/vehicles") ||
             path.startsWith("/api/drivers")
         ) {
-            staffAccessService.requireAnyRole(StaffAccessService.roles(RoleCode.DH, RoleCode.AD));
+            staffAccessService.requireScreenWrite(ScreenKey.MASTER);
             return;
         }
         // Tài khoản
         if (path.startsWith("/api/staff-admin")) {
-            staffAccessService.requireAnyRole(StaffAccessService.roles(RoleCode.AD));
+            staffAccessService.requireScreenWrite(ScreenKey.TAI_KHOAN);
             return;
         }
-        // Bảng giá / phụ phí / tích hợp config writes
+        // Nhóm quyền
+        if (path.startsWith("/api/permission-groups")) {
+            staffAccessService.requireScreenWrite(ScreenKey.NHOM_QUYEN);
+            return;
+        }
+        // Bảng giá
         if (
-            path.startsWith("/api/pricing-rules") ||
-            path.startsWith("/api/door-fee-rules") ||
-            path.startsWith("/api/product-price-rules") ||
-            path.startsWith("/api/surcharge-policy") ||
-            path.startsWith("/api/integration-config")
+            path.startsWith("/api/pricing-rules") || path.startsWith("/api/door-fee-rules") || path.startsWith("/api/product-price-rules")
         ) {
-            staffAccessService.requireAnyRole(StaffAccessService.roles(RoleCode.AD));
+            staffAccessService.requireScreenWrite(ScreenKey.BANG_GIA);
+            return;
+        }
+        // Phụ phí
+        if (path.startsWith("/api/surcharge-policy")) {
+            staffAccessService.requireScreenWrite(ScreenKey.PHU_PHI);
+            return;
+        }
+        // Tích hợp
+        if (path.startsWith("/api/integration-config")) {
+            staffAccessService.requireScreenWrite(ScreenKey.TICH_HOP);
             return;
         }
         // Receipts
         if (path.startsWith("/api/receipts") && !path.contains("/candidates")) {
-            staffAccessService.requireAnyRole(StaffAccessService.roles(RoleCode.Q, RoleCode.TCN, RoleCode.DH, RoleCode.KT, RoleCode.AD));
+            staffAccessService.requireScreenWrite(ScreenKey.PHIEU_THU);
         }
     }
 

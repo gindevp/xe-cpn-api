@@ -6,6 +6,7 @@ import com.mycompany.myapp.domain.User;
 import jakarta.validation.constraints.*;
 import java.io.Serializable;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -62,6 +63,12 @@ public class AdminUserDTO implements Serializable {
     private String staffDisplayName;
 
     private Boolean scopeAllOffices;
+
+    /** Permission group (chức danh) code. Falls back to {@link #roleCode} when unassigned. */
+    private String roleGroupCode;
+
+    /** Effective screen permissions: screen key -> Y/R/N. Empty for non-staff accounts. */
+    private Map<String, String> permissions;
 
     public AdminUserDTO() {
         // Empty constructor needed for Jackson.
@@ -225,6 +232,22 @@ public class AdminUserDTO implements Serializable {
 
     public void setScopeAllOffices(Boolean scopeAllOffices) {
         this.scopeAllOffices = scopeAllOffices;
+    }
+
+    public String getRoleGroupCode() {
+        return roleGroupCode;
+    }
+
+    public void setRoleGroupCode(String roleGroupCode) {
+        this.roleGroupCode = roleGroupCode;
+    }
+
+    public Map<String, String> getPermissions() {
+        return permissions;
+    }
+
+    public void setPermissions(Map<String, String> permissions) {
+        this.permissions = permissions;
     }
 
     // prettier-ignore

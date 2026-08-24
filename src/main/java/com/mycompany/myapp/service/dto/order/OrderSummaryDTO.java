@@ -53,6 +53,9 @@ public class OrderSummaryDTO {
     private List<OrderLegViewDTO> legs = new ArrayList<>();
     /** Ảnh POD (data-URL / URL) — thường chỉ gắn khi DELIVERED. */
     private List<String> podPhotos = new ArrayList<>();
+    /** Người thực nhận — gắn khi DELIVERED. */
+    private String receiverActualName;
+    private String receiverActualPhone;
 
     public Long getId() {
         return id;
@@ -364,6 +367,22 @@ public class OrderSummaryDTO {
 
     public void setPodPhotos(List<String> podPhotos) {
         this.podPhotos = podPhotos;
+    }
+
+    public String getReceiverActualName() {
+        return receiverActualName;
+    }
+
+    public void setReceiverActualName(String receiverActualName) {
+        this.receiverActualName = receiverActualName;
+    }
+
+    public String getReceiverActualPhone() {
+        return receiverActualPhone;
+    }
+
+    public void setReceiverActualPhone(String receiverActualPhone) {
+        this.receiverActualPhone = receiverActualPhone;
     }
 
     public static class OrderLegViewDTO {

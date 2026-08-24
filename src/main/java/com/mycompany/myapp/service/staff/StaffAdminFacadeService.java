@@ -2,6 +2,7 @@ package com.mycompany.myapp.service.staff;
 
 import com.mycompany.myapp.domain.Authority;
 import com.mycompany.myapp.domain.Office;
+import com.mycompany.myapp.domain.RoleGroup;
 import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.domain.User;
 import com.mycompany.myapp.domain.enumeration.RoleCode;
@@ -10,6 +11,9 @@ import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.repository.UserRepository;
 import com.mycompany.myapp.security.AuthoritiesConstants;
+import com.mycompany.myapp.security.PermissionService;
+import com.mycompany.myapp.security.SecurityUtils;
+import com.mycompany.myapp.service.security.RoleGroupService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.util.HashSet;
 import java.util.List;
@@ -32,19 +36,25 @@ public class StaffAdminFacadeService {
     private final OfficeRepository officeRepository;
     private final AuthorityRepository authorityRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RoleGroupService roleGroupService;
+    private final PermissionService permissionService;
 
     public StaffAdminFacadeService(
         UserRepository userRepository,
         StaffProfileRepository staffProfileRepository,
         OfficeRepository officeRepository,
         AuthorityRepository authorityRepository,
-        PasswordEncoder passwordEncoder
+        PasswordEncoder passwordEncoder,
+        RoleGroupService roleGroupService,
+        PermissionService permissionService
     ) {
         this.userRepository = userRepository;
         this.staffProfileRepository = staffProfileRepository;
         this.officeRepository = officeRepository;
         this.authorityRepository = authorityRepository;
         this.passwordEncoder = passwordEncoder;
+        this.roleGroupService = roleGroupService;
+        this.permissionService = permissionService;
     }
 
     @Transactional(readOnly = true)
@@ -57,11 +67,23 @@ public class StaffAdminFacadeService {
             throw new BadRequestAlertException("username required", ENTITY, "usernameRequired");
         }
         String login = req.username().trim().toLowerCase();
+        RoleGroup group = null;
+        if (req.roleGroupCode() != null && !req.roleGroupCode().isBlank()) {
+            group = roleGroupService
+                .findByCode(req.roleGroupCode())
+                .orElseThrow(() -> new BadRequestAlertException("Nhóm quyền không tồn tại", ENTITY, "roleGroupNotFound"));
+        }
         RoleCode role;
-        try {
-            role = RoleCode.valueOf(req.roleCode() == null ? "Q" : req.roleCode().trim().toUpperCase());
-        } catch (Exception ex) {
-            throw new BadRequestAlertException("Invalid roleCode", ENTITY, "invalidRole");
+        if (group != null) {
+            role = group.getBaseRoleCode();
+        } else {
+            try {
+                role = RoleCode.valueOf(req.roleCode() == null ? "Q" : req.roleCode().trim().toUpperCase());
+            } catch (Exception ex) {
+                throw new BadRequestAlertException("Invalid roleCode", ENTITY, "invalidRole");
+            }
+            // Không chọn nhóm → dùng nhóm dựng sẵn của chức danh.
+            group = roleGroupService.findByCode(role.name()).orElse(null);
         }
 
         User user = userRepository.findOneByLogin(login).orElse(null);
@@ -88,6 +110,7 @@ public class StaffAdminFacadeService {
             if (req.password() != null && !req.password().isBlank()) {
                 user.setPassword(passwordEncoder.encode(req.password()));
             }
+            syncAdminAuthority(user, role);
             user = userRepository.save(user);
         }
 
@@ -99,6 +122,7 @@ public class StaffAdminFacadeService {
             profile.setDisplayName(login);
         }
         profile.setRoleCode(role);
+        profile.setRoleGroup(group);
         profile.setActive(req.active() == null || Boolean.TRUE.equals(req.active()));
         boolean allOffices = req.officeCode() != null && "ALL".equalsIgnoreCase(req.officeCode());
         profile.setScopeAllOffices(allOffices);
@@ -120,7 +144,30 @@ public class StaffAdminFacadeService {
             userRepository.save(user);
         }
         profile = staffProfileRepository.save(profile);
+        permissionService.invalidateCache();
         return toDto(profile);
+    }
+
+    /** ROLE_ADMIN follows the AD job title, and nobody may demote their own admin account. */
+    private void syncAdminAuthority(User user, RoleCode role) {
+        Set<Authority> authorities = new HashSet<>(user.getAuthorities());
+        boolean hasAdmin = authorities.stream().anyMatch(a -> AuthoritiesConstants.ADMIN.equals(a.getName()));
+        if (role == RoleCode.AD) {
+            if (!hasAdmin) {
+                authorityRepository.findById(AuthoritiesConstants.ADMIN).ifPresent(authorities::add);
+                user.setAuthorities(authorities);
+            }
+            return;
+        }
+        if (!hasAdmin) {
+            return;
+        }
+        boolean self = SecurityUtils.getCurrentUserLogin().filter(login -> login.equalsIgnoreCase(user.getLogin())).isPresent();
+        if (self) {
+            throw new BadRequestAlertException("Không thể tự bỏ quyền Admin của chính mình", ENTITY, "cannotDemoteSelf");
+        }
+        authorities.removeIf(a -> AuthoritiesConstants.ADMIN.equals(a.getName()));
+        user.setAuthorities(authorities);
     }
 
     private StaffUserDTO toDto(StaffProfile p) {
@@ -131,9 +178,17 @@ public class StaffAdminFacadeService {
             p.getRoleCode() != null ? p.getRoleCode().name() : null,
             Boolean.TRUE.equals(p.getScopeAllOffices()) ? "ALL" : (p.getOffice() != null ? p.getOffice().getCode() : null),
             activated,
-            null
+            null,
+            p.getRoleGroup() != null ? p.getRoleGroup().getCode() : (p.getRoleCode() != null ? p.getRoleCode().name() : null)
         );
     }
 
-    public record StaffUserDTO(String username, String roleCode, String officeCode, Boolean active, String password) {}
+    public record StaffUserDTO(
+        String username,
+        String roleCode,
+        String officeCode,
+        Boolean active,
+        String password,
+        String roleGroupCode
+    ) {}
 }

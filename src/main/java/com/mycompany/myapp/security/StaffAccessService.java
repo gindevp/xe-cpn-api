@@ -3,9 +3,7 @@ package com.mycompany.myapp.security;
 import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.domain.enumeration.RoleCode;
 import com.mycompany.myapp.repository.StaffProfileRepository;
-import java.util.EnumSet;
 import java.util.Optional;
-import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,9 +14,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class StaffAccessService {
 
     private final StaffProfileRepository staffProfileRepository;
+    private final PermissionService permissionService;
 
-    public StaffAccessService(StaffProfileRepository staffProfileRepository) {
+    public StaffAccessService(StaffProfileRepository staffProfileRepository, PermissionService permissionService) {
         this.staffProfileRepository = staffProfileRepository;
+        this.permissionService = permissionService;
     }
 
     public Optional<StaffProfile> current() {
@@ -34,17 +34,20 @@ public class StaffAccessService {
         if (Boolean.FALSE.equals(p.getActive())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Staff profile inactive");
         }
-        if (p.getRoleCode() == RoleCode.BL) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Read-only role (BL)");
-        }
         if (p.getRoleCode() == RoleCode.KH) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Customer role cannot mutate ops APIs");
         }
+        if (permissionService.isSystemAdmin()) {
+            return;
+        }
+        if (!permissionService.hasAnyWrite(p)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Read-only permission group");
+        }
     }
 
-    /** FE rbac.ts screen write (Y) — ADMIN JWT without profile always allowed. */
-    public void requireAnyRole(Set<RoleCode> allowed) {
-        if (SecurityUtils.hasCurrentUserThisAuthority(AuthoritiesConstants.ADMIN)) {
+    /** Screen write (Y) on at least one of the given screens — ADMIN JWT always allowed. */
+    public void requireScreenWrite(ScreenKey... screens) {
+        if (permissionService.isSystemAdmin()) {
             return;
         }
         Optional<StaffProfile> profile = current();
@@ -52,16 +55,19 @@ public class StaffAccessService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Staff profile required");
         }
         requireWritable();
-        RoleCode role = profile.get().getRoleCode();
-        if (role == null || !allowed.contains(role)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Role not allowed for this screen write");
+        StaffProfile p = profile.get();
+        for (ScreenKey screen : screens) {
+            if (permissionService.permOf(p, screen).canWrite()) {
+                return;
+            }
         }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Role not allowed for this screen write");
     }
 
     public void requireForceCloseRole() {
         Optional<StaffProfile> profile = current();
         if (profile.isEmpty()) {
-            if (SecurityUtils.hasCurrentUserThisAuthority(AuthoritiesConstants.ADMIN)) {
+            if (permissionService.isSystemAdmin()) {
                 return;
             }
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Force close requires DH or AD");
@@ -77,9 +83,5 @@ public class StaffAccessService {
             .filter(p -> !Boolean.TRUE.equals(p.getScopeAllOffices()))
             .map(p -> p.getOffice() != null ? p.getOffice().getCode() : null)
             .filter(code -> code != null && !code.isBlank());
-    }
-
-    public static Set<RoleCode> roles(RoleCode... codes) {
-        return EnumSet.copyOf(Set.of(codes));
     }
 }

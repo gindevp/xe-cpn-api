@@ -245,6 +245,10 @@ public class OrderFacadeService {
             }
         }
         order.setStatus(to);
+        // Leave warehouse pipeline: stale DEST_WH_IN/DELIVERING must not keep listing the order in Nhập kho giao.
+        if (to == OrderStatus.DELIVERED || to == OrderStatus.CANCELLED || to == OrderStatus.RETURNED || to == OrderStatus.RETURNING) {
+            order.setForwardStage(null);
+        }
         shipmentOrderRepository.save(order);
         String action = isBlank(req.getAction()) ? "TRANSITION_" + to.name() : req.getAction();
         appendEvent(order, action, req.getDetail(), currentActor());
@@ -646,6 +650,8 @@ public class OrderFacadeService {
             dto.setPodPhotos(
                 orderPodPhotoRepository.findByOrder_IdOrderBySequenceNoAsc(o.getId()).stream().map(p -> p.getPhotoUrl()).toList()
             );
+            dto.setReceiverActualName(o.getReceiverActualName());
+            dto.setReceiverActualPhone(o.getReceiverActualPhone());
         }
     }
 

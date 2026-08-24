@@ -50,6 +50,11 @@ public class StaffProfile implements Serializable {
     @NotNull
     private Office office;
 
+    /** Null = fall back to the built-in group matching {@link #roleCode}. */
+    @ManyToOne
+    @JoinColumn(name = "role_group_id")
+    private RoleGroup roleGroup;
+
     // jhipster-needle-entity-add-field - JHipster will add fields here
 
     public Long getId() {
@@ -154,6 +159,14 @@ public class StaffProfile implements Serializable {
     public StaffProfile office(Office office) {
         this.setOffice(office);
         return this;
+    }
+
+    public RoleGroup getRoleGroup() {
+        return this.roleGroup;
+    }
+
+    public void setRoleGroup(RoleGroup roleGroup) {
+        this.roleGroup = roleGroup;
     }
 
     // jhipster-needle-entity-add-getters-setters - JHipster will add getters and setters here

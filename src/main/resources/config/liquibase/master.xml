@@ -73,4 +73,5 @@
     <include file="config/liquibase/changelog/20260818113000_trip_vehicle_driver_optional.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260818120000_trip_itinerary_label.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260821180000_pod_photo_url_longtext.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822100000_role_group_rbac.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
