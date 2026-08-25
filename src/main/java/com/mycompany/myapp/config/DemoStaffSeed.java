@@ -40,16 +40,17 @@ public class DemoStaffSeed implements ApplicationRunner {
 
     private record DemoStaff(String login, RoleCode role, String officeCode, boolean scopeAll, String displayName) {}
 
+    /** Only three job titles remain: Admin, Điều phối, Kế toán. Office scope is per account. */
     private static final List<DemoStaff> DEMO = List.of(
         new DemoStaff("admin", RoleCode.AD, DEFAULT_HOME_OFFICE, true, "Administrator"),
-        new DemoStaff("quay.hn", RoleCode.Q, "GP", false, "Quầy HN"),
-        new DemoStaff("quay.hcm", RoleCode.Q, "NB", false, "Quầy NB"),
-        new DemoStaff("bx.hn", RoleCode.BX, "GP", false, "Bốc xếp HN"),
-        new DemoStaff("giao.hn.01", RoleCode.G, "GP", false, "Giao HN 01"),
+        new DemoStaff("quay.hn", RoleCode.DH, "GP", false, "Điều phối HN"),
+        new DemoStaff("quay.hcm", RoleCode.DH, "NB", false, "Điều phối NB"),
+        new DemoStaff("bx.hn", RoleCode.DH, "GP", false, "Điều phối kho HN"),
+        new DemoStaff("giao.hn.01", RoleCode.DH, "GP", false, "Giao HN 01"),
         new DemoStaff("kt.hn", RoleCode.KT, "GP", false, "Kế toán HN"),
-        new DemoStaff("tcn.hn", RoleCode.TCN, "GP", false, "Trưởng CN HN"),
-        new DemoStaff("dh", RoleCode.DH, DEFAULT_HOME_OFFICE, true, "Điều hành"),
-        new DemoStaff("bl", RoleCode.BL, DEFAULT_HOME_OFFICE, true, "Ban lãnh đạo")
+        new DemoStaff("tcn.hn", RoleCode.DH, "GP", false, "Điều phối CN HN"),
+        new DemoStaff("dh", RoleCode.DH, DEFAULT_HOME_OFFICE, true, "Điều phối toàn hệ thống"),
+        new DemoStaff("bl", RoleCode.DH, DEFAULT_HOME_OFFICE, true, "Điều phối giám sát")
     );
 
     private final UserRepository userRepository;

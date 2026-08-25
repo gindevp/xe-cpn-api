@@ -78,7 +78,7 @@ public class StaffAdminFacadeService {
             role = group.getBaseRoleCode();
         } else {
             try {
-                role = RoleCode.valueOf(req.roleCode() == null ? "Q" : req.roleCode().trim().toUpperCase());
+                role = RoleCode.valueOf(req.roleCode() == null ? "DH" : req.roleCode().trim().toUpperCase());
             } catch (Exception ex) {
                 throw new BadRequestAlertException("Invalid roleCode", ENTITY, "invalidRole");
             }

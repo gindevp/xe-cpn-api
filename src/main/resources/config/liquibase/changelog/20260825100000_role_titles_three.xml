@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+      Job titles are reduced to three: AD (Admin), DH (Điều phối), KT (Kế toán).
+      Staff on the retired titles (Q, BX, G, TCN, BL) move to Điều phối.
+      RoleCode enum keeps every value so historical rows still resolve.
+    -->
+
+    <changeSet id="20260825100000-1" author="cpn">
+        <comment>Unlink staff from retired role groups before those groups are removed</comment>
+        <sql>
+            UPDATE staff_profile
+            SET role_group_id = NULL
+            WHERE role_group_id IN (SELECT id FROM role_group WHERE code IN ('Q', 'BX', 'G', 'TCN', 'BL'));
+        </sql>
+    </changeSet>
+
+    <changeSet id="20260825100000-2" author="cpn">
+        <comment>Move staff on retired titles to Điều phối</comment>
+        <sql>
+            UPDATE staff_profile SET role_code = 'DH' WHERE role_code IN ('Q', 'BX', 'G', 'TCN', 'BL');
+        </sql>
+    </changeSet>
+
+    <changeSet id="20260825100000-3" author="cpn">
+        <comment>Point Điều phối staff at the Điều phối group when it already exists</comment>
+        <sql>
+            UPDATE staff_profile
+            SET role_group_id = (SELECT id FROM role_group WHERE code = 'DH')
+            WHERE role_code = 'DH' AND role_group_id IS NULL AND EXISTS (SELECT 1 FROM role_group WHERE code = 'DH');
+        </sql>
+    </changeSet>
+
+    <changeSet id="20260825100000-4" author="cpn">
+        <comment>Điều phối absorbs home delivery, so it needs write on giao-tan-nha</comment>
+        <sql>
+            UPDATE role_group SET name = 'Điều phối' WHERE code = 'DH' AND builtin = 1;
+
+            UPDATE role_group_screen
+            SET perm_level = 'Y'
+            WHERE screen_key = 'giao-tan-nha' AND role_group_id IN (SELECT id FROM role_group WHERE code = 'DH');
+
+            INSERT INTO role_group_screen (role_group_id, screen_key, perm_level)
+            SELECT rg.id, 'giao-tan-nha', 'Y'
+            FROM role_group rg
+            WHERE rg.code = 'DH'
+              AND NOT EXISTS (
+                SELECT 1 FROM role_group_screen s WHERE s.role_group_id = rg.id AND s.screen_key = 'giao-tan-nha'
+              );
+        </sql>
+    </changeSet>
+
+    <changeSet id="20260825100000-5" author="cpn">
+        <comment>Drop the retired built-in groups (grants cascade)</comment>
+        <sql>
+            DELETE FROM role_group WHERE code IN ('Q', 'BX', 'G', 'TCN', 'BL') AND builtin = 1;
+        </sql>
+    </changeSet>
+
+    <changeSet id="20260825100000-6" author="cpn">
+        <comment>Link the remaining staff to their job-title group so the admin screen shows it</comment>
+        <sql>
+            UPDATE staff_profile
+            SET role_group_id = (SELECT id FROM role_group WHERE code = 'AD')
+            WHERE role_code = 'AD' AND role_group_id IS NULL AND EXISTS (SELECT 1 FROM role_group WHERE code = 'AD');
+
+            UPDATE staff_profile
+            SET role_group_id = (SELECT id FROM role_group WHERE code = 'KT')
+            WHERE role_code = 'KT' AND role_group_id IS NULL AND EXISTS (SELECT 1 FROM role_group WHERE code = 'KT');
+        </sql>
+    </changeSet>
+</databaseChangeLog>

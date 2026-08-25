@@ -33,9 +33,12 @@ public final class DefaultScreenMatrix {
         return GROUP_LABELS.getOrDefault(role, role.name());
     }
 
-    /** Roles that get a built-in group (KH = customer, not a staff job title). */
+    /**
+     * Job titles that get a built-in group. Only three remain in use: Admin, Điều phối, Kế toán.
+     * The other RoleCode values stay in the enum so legacy rows keep resolving via the fallback matrix.
+     */
     public static RoleCode[] builtinRoles() {
-        return new RoleCode[] { RoleCode.AD, RoleCode.DH, RoleCode.TCN, RoleCode.KT, RoleCode.Q, RoleCode.BX, RoleCode.G, RoleCode.BL };
+        return new RoleCode[] { RoleCode.AD, RoleCode.DH, RoleCode.KT };
     }
 
     private static Map<RoleCode, String> groupLabels() {
@@ -46,7 +49,7 @@ public final class DefaultScreenMatrix {
         m.put(RoleCode.G, "Giao");
         m.put(RoleCode.KT, "Kế toán");
         m.put(RoleCode.TCN, "Trưởng CN");
-        m.put(RoleCode.DH, "Điều hành");
+        m.put(RoleCode.DH, "Điều phối");
         m.put(RoleCode.BL, "Ban lãnh đạo");
         m.put(RoleCode.AD, "Admin");
         return Collections.unmodifiableMap(m);
@@ -76,7 +79,7 @@ public final class DefaultScreenMatrix {
         put(m, ScreenKey.QUET_NHAP, "BX=Y,Q=Y,DH=Y,AD=Y");
         put(m, ScreenKey.DOI_SOAT, "BX=Y,TCN=Y,DH=Y,BL=R,AD=Y");
         put(m, ScreenKey.POD_QUAY, "Q=Y,TCN=Y,DH=Y,BX=Y,AD=Y");
-        put(m, ScreenKey.GIAO_TAN_NHA, "G=Y,BX=Y,TCN=R,DH=R,AD=Y");
+        put(m, ScreenKey.GIAO_TAN_NHA, "G=Y,BX=Y,TCN=R,DH=Y,AD=Y");
         put(m, ScreenKey.DAY_SHIP, "Q=Y,DH=Y,AD=Y");
         put(m, ScreenKey.BAO_CAO_THU, "KT=Y,Q=R,TCN=R,DH=R,BL=R,AD=Y");
         put(m, ScreenKey.BANG_GIA, "AD=Y,TCN=R,DH=R,BL=R");

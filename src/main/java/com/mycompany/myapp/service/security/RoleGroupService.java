@@ -129,7 +129,7 @@ public class RoleGroupService implements ApplicationRunner {
         group.setActive(req.active() == null || Boolean.TRUE.equals(req.active()));
         RoleCode base;
         try {
-            base = RoleCode.valueOf(req.baseRoleCode() == null ? "Q" : req.baseRoleCode().trim().toUpperCase());
+            base = RoleCode.valueOf(req.baseRoleCode() == null ? "DH" : req.baseRoleCode().trim().toUpperCase());
         } catch (Exception ex) {
             throw new BadRequestAlertException("Chức danh gốc không hợp lệ", ENTITY, "invalidBaseRole");
         }
