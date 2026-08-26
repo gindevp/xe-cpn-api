@@ -6,6 +6,7 @@ import com.mycompany.myapp.domain.OrderLeg;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.LegStatus;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.domain.enumeration.ServiceType;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
@@ -19,6 +20,7 @@ import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.CreateDraftOrderRequest;
 import com.mycompany.myapp.service.dto.order.CreateDraftOrderResponse;
 import com.mycompany.myapp.service.dto.order.CreateOrderRequest;
+import com.mycompany.myapp.service.dto.order.MarkCodExportedRequest;
 import com.mycompany.myapp.service.dto.order.OrderDetailDTO;
 import com.mycompany.myapp.service.dto.order.OrderSummaryDTO;
 import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
@@ -30,6 +32,8 @@ import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -87,7 +91,7 @@ public class OrderFacadeService {
 
     @Transactional(readOnly = true)
     public Page<OrderSummaryDTO> list(OrderStatus status, String fromOfficeCode, String toOfficeCode, String keyword, Pageable pageable) {
-        return list(status, fromOfficeCode, toOfficeCode, null, keyword, pageable);
+        return list(status, fromOfficeCode, toOfficeCode, null, keyword, null, null, null, null, null, pageable);
     }
 
     @Transactional(readOnly = true)
@@ -99,9 +103,29 @@ public class OrderFacadeService {
         String keyword,
         Pageable pageable
     ) {
+        return list(status, fromOfficeCode, toOfficeCode, receiverOfficeCode, keyword, null, null, null, null, null, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<OrderSummaryDTO> list(
+        OrderStatus status,
+        String fromOfficeCode,
+        String toOfficeCode,
+        String receiverOfficeCode,
+        String keyword,
+        PaymentTerm paymentTerm,
+        String createdFrom,
+        String createdTo,
+        String routeLabel,
+        String itineraryLabel,
+        Pageable pageable
+    ) {
         Specification<ShipmentOrder> spec = Specification.where(null);
         if (status != null) {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (paymentTerm != null) {
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("paymentTerm"), paymentTerm));
         }
         if (fromOfficeCode != null && !fromOfficeCode.isBlank()) {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("fromOffice").get("code"), fromOfficeCode.trim().toUpperCase()));
@@ -121,9 +145,26 @@ public class OrderFacadeService {
                     cb.like(cb.lower(root.get("draftCode")), like),
                     cb.like(cb.lower(root.get("senderPhone")), like),
                     cb.like(cb.lower(root.get("receiverPhone")), like),
-                    cb.like(cb.lower(root.get("receiverName")), like)
+                    cb.like(cb.lower(root.get("receiverName")), like),
+                    cb.like(cb.lower(cb.coalesce(root.get("senderName"), "")), like)
                 )
             );
+        }
+        Instant rangeStart = parseDayStart(createdFrom);
+        Instant rangeEndExclusive = parseDayEndExclusive(createdTo);
+        if (rangeStart != null) {
+            spec = spec.and((root, q, cb) -> cb.greaterThanOrEqualTo(root.get("createdAt"), rangeStart));
+        }
+        if (rangeEndExclusive != null) {
+            spec = spec.and((root, q, cb) -> cb.lessThan(root.get("createdAt"), rangeEndExclusive));
+        }
+        if (routeLabel != null && !routeLabel.isBlank()) {
+            String route = routeLabel.trim();
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("routeLabel"), route));
+        }
+        if (itineraryLabel != null && !itineraryLabel.isBlank()) {
+            String it = itineraryLabel.trim();
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("itineraryLabel"), it));
         }
         String scoped = staffAccessService.scopedOfficeCode().orElse(null);
         if (scoped != null) {
@@ -136,6 +177,49 @@ public class OrderFacadeService {
             );
         }
         return shipmentOrderRepository.findAll(spec, pageable).map(this::toSummary);
+    }
+
+    public int markCodExported(MarkCodExportedRequest req) {
+        if (req == null || req.getOrderCodes() == null || req.getOrderCodes().isEmpty()) {
+            throw new BadRequestAlertException("orderCodes required", ENTITY, "orderCodesRequired");
+        }
+        Instant now = Instant.now();
+        int updated = 0;
+        for (String code : req.getOrderCodes()) {
+            if (code == null || code.isBlank()) {
+                continue;
+            }
+            ShipmentOrder order = shipmentOrderRepository.findOneByOrderCodeOrDraftCode(code.trim()).orElse(null);
+            if (order == null) {
+                continue;
+            }
+            if (order.getPaymentTerm() != PaymentTerm.COD) {
+                continue;
+            }
+            if (order.getStatus() != OrderStatus.DELIVERED) {
+                continue;
+            }
+            order.setCodExportedAt(now);
+            shipmentOrderRepository.save(order);
+            updated++;
+        }
+        return updated;
+    }
+
+    private static Instant parseDayStart(String day) {
+        if (day == null || day.isBlank()) {
+            return null;
+        }
+        LocalDate d = LocalDate.parse(day.trim());
+        return d.atStartOfDay(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant();
+    }
+
+    private static Instant parseDayEndExclusive(String day) {
+        if (day == null || day.isBlank()) {
+            return null;
+        }
+        LocalDate d = LocalDate.parse(day.trim());
+        return d.plusDays(1).atStartOfDay(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant();
     }
 
     /** VP nhận thật: finalToOffice khi có (đơn qua hub), ngược lại toOffice. */
@@ -453,6 +537,27 @@ public class OrderFacadeService {
         if (req.getFinalToOfficeCode() != null) {
             order.setFinalToOffice(requireOffice(req.getFinalToOfficeCode()));
         }
+        if (req.getCodAmount() != null) {
+            order.setCodAmount(req.getCodAmount());
+        }
+        if (req.getCodFeeAmount() != null) {
+            order.setCodFeeAmount(req.getCodFeeAmount());
+        }
+        if (req.getBankName() != null) {
+            order.setBankName(blankToNull(req.getBankName()));
+        }
+        if (req.getBankAccountNo() != null) {
+            order.setBankAccountNo(blankToNull(req.getBankAccountNo()));
+        }
+        if (req.getBankAccountName() != null) {
+            order.setBankAccountName(blankToNull(req.getBankAccountName()));
+        }
+        if (req.getRouteLabel() != null) {
+            order.setRouteLabel(blankToNull(req.getRouteLabel()));
+        }
+        if (req.getItineraryLabel() != null) {
+            order.setItineraryLabel(blankToNull(req.getItineraryLabel()));
+        }
         shipmentOrderRepository.save(order);
         appendEvent(order, "PATCH", "Order fields updated", currentActor());
         return getByCode(order.getOrderCode());
@@ -548,6 +653,35 @@ public class OrderFacadeService {
         if (req.getFareAmount() != null) {
             order.setFareAmount(req.getFareAmount());
         }
+        if (req.getCodAmount() != null) {
+            order.setCodAmount(req.getCodAmount());
+        }
+        if (req.getCodFeeAmount() != null) {
+            order.setCodFeeAmount(req.getCodFeeAmount());
+        }
+        if (req.getBankName() != null) {
+            order.setBankName(blankToNull(req.getBankName()));
+        }
+        if (req.getBankAccountNo() != null) {
+            order.setBankAccountNo(blankToNull(req.getBankAccountNo()));
+        }
+        if (req.getBankAccountName() != null) {
+            order.setBankAccountName(blankToNull(req.getBankAccountName()));
+        }
+        if (req.getRouteLabel() != null) {
+            order.setRouteLabel(blankToNull(req.getRouteLabel()));
+        }
+        if (req.getItineraryLabel() != null) {
+            order.setItineraryLabel(blankToNull(req.getItineraryLabel()));
+        }
+    }
+
+    private static String blankToNull(String s) {
+        if (s == null) {
+            return null;
+        }
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 
     private ShipmentOrder newBlankOrder() {
@@ -641,11 +775,44 @@ public class OrderFacadeService {
         dto.setPickupStaffUsername(o.getPickupStaffUsername());
         dto.setPartnerCode(o.getPartnerCode());
         dto.setPartnerFeeAmount(o.getPartnerFeeAmount());
+        dto.setCodAmount(o.getCodAmount());
+        dto.setCodFeeAmount(o.getCodFeeAmount());
+        dto.setBankName(o.getBankName());
+        dto.setBankAccountNo(o.getBankAccountNo());
+        dto.setBankAccountName(o.getBankAccountName());
+        dto.setRouteLabel(o.getRouteLabel());
+        dto.setItineraryLabel(o.getItineraryLabel());
+        dto.setCodExportedAt(o.getCodExportedAt());
+        if (o.getCurrentTrip() != null) {
+            if (o.getCurrentTrip().getVehicle() != null) {
+                dto.setVehiclePlate(o.getCurrentTrip().getVehicle().getPlateNumber());
+            }
+            if (o.getCurrentTrip().getDriver() != null) {
+                dto.setDriverName(o.getCurrentTrip().getDriver().getFullName());
+            }
+        }
         java.util.List<OrderLeg> legs = o.getId() == null
             ? java.util.List.of()
             : orderLegRepository.findByOrder_IdOrderByLegIndexAsc(o.getId());
         dto.setLegs(legs.stream().map(this::toLegView).toList());
         dto.setCurrentLegIndex(currentLegIndex(legs));
+        if ((dto.getVehiclePlate() == null || dto.getDriverName() == null) && !legs.isEmpty()) {
+            for (int i = legs.size() - 1; i >= 0; i--) {
+                OrderLeg leg = legs.get(i);
+                if (leg.getTrip() == null) {
+                    continue;
+                }
+                if (dto.getVehiclePlate() == null && leg.getTrip().getVehicle() != null) {
+                    dto.setVehiclePlate(leg.getTrip().getVehicle().getPlateNumber());
+                }
+                if (dto.getDriverName() == null && leg.getTrip().getDriver() != null) {
+                    dto.setDriverName(leg.getTrip().getDriver().getFullName());
+                }
+                if (dto.getVehiclePlate() != null && dto.getDriverName() != null) {
+                    break;
+                }
+            }
+        }
         if (o.getStatus() == OrderStatus.DELIVERED && o.getId() != null) {
             dto.setPodPhotos(
                 orderPodPhotoRepository.findByOrder_IdOrderBySequenceNoAsc(o.getId()).stream().map(p -> p.getPhotoUrl()).toList()

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260825160000-1" author="cpn">
+        <comment>COD amount/fee, bank payout, route labels, export stamp on shipment_order</comment>
+        <addColumn tableName="shipment_order">
+            <column name="cod_amount" type="decimal(21,2)"/>
+            <column name="cod_fee_amount" type="decimal(21,2)"/>
+            <column name="bank_name" type="varchar(120)"/>
+            <column name="bank_account_no" type="varchar(60)"/>
+            <column name="bank_account_name" type="varchar(120)"/>
+            <column name="route_label" type="varchar(120)"/>
+            <column name="itinerary_label" type="varchar(200)"/>
+            <column name="cod_exported_at" type="datetime"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20260825160000-2" author="cpn">
+        <comment>Grant Quản lý đơn COD on finance roles (AD/DH/KT write, others read where applicable)</comment>
+        <sql>
+            INSERT INTO role_group_screen (role_group_id, screen_key, perm_level)
+            SELECT rg.id, 'quan-ly-don-cod',
+                   CASE rg.code WHEN 'AD' THEN 'Y' WHEN 'DH' THEN 'Y' WHEN 'KT' THEN 'Y' ELSE 'R' END
+            FROM role_group rg
+            WHERE rg.code IN ('AD', 'DH', 'KT')
+              AND NOT EXISTS (
+                SELECT 1 FROM role_group_screen s
+                WHERE s.role_group_id = rg.id AND s.screen_key = 'quan-ly-don-cod'
+              );
+        </sql>
+    </changeSet>
+</databaseChangeLog>

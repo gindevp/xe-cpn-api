@@ -3,6 +3,7 @@ package com.mycompany.myapp.web.rest;
 import com.mycompany.myapp.domain.enumeration.ForwardStage;
 import com.mycompany.myapp.domain.enumeration.IssueType;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.domain.enumeration.ReturnStage;
 import com.mycompany.myapp.service.dto.order.AddPaymentRequest;
 import com.mycompany.myapp.service.dto.order.AssignShipperRequest;
@@ -11,6 +12,7 @@ import com.mycompany.myapp.service.dto.order.CreateDraftOrderResponse;
 import com.mycompany.myapp.service.dto.order.CreateOrderRequest;
 import com.mycompany.myapp.service.dto.order.FailDeliveryRequest;
 import com.mycompany.myapp.service.dto.order.FailDeliveryResponse;
+import com.mycompany.myapp.service.dto.order.MarkCodExportedRequest;
 import com.mycompany.myapp.service.dto.order.OrderDetailDTO;
 import com.mycompany.myapp.service.dto.order.OrderSummaryDTO;
 import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
@@ -78,14 +80,37 @@ public class OrderFacadeResource {
         @RequestParam(required = false) String toOfficeCode,
         @RequestParam(required = false) String receiverOfficeCode,
         @RequestParam(required = false) String keyword,
+        @RequestParam(required = false) PaymentTerm paymentTerm,
+        @RequestParam(required = false) String createdFrom,
+        @RequestParam(required = false) String createdTo,
+        @RequestParam(required = false) String routeLabel,
+        @RequestParam(required = false) String itineraryLabel,
         Pageable pageable
     ) {
         LOG.debug("REST request to get orders facade list");
-        Page<OrderSummaryDTO> page = orderFacadeService.list(status, fromOfficeCode, toOfficeCode, receiverOfficeCode, keyword, pageable);
+        Page<OrderSummaryDTO> page = orderFacadeService.list(
+            status,
+            fromOfficeCode,
+            toOfficeCode,
+            receiverOfficeCode,
+            keyword,
+            paymentTerm,
+            createdFrom,
+            createdTo,
+            routeLabel,
+            itineraryLabel,
+            pageable
+        );
         HttpHeaders headers = PaginationUtil.generatePaginationHttpHeaders(ServletUriComponentsBuilder.fromCurrentRequest(), page);
         return ResponseEntity.ok()
             .headers(headers)
             .body(new ListPage(page.getContent(), page.getNumber(), page.getSize(), page.getTotalElements()));
+    }
+
+    @PostMapping("/cod/mark-exported")
+    public Map<String, Object> markCodExported(@Valid @RequestBody MarkCodExportedRequest request) {
+        int updated = orderFacadeService.markCodExported(request);
+        return Map.of("updated", updated);
     }
 
     @GetMapping("/{orderCode}")

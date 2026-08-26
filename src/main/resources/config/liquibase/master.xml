@@ -75,4 +75,6 @@
     <include file="config/liquibase/changelog/20260821180000_pod_photo_url_longtext.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260822100000_role_group_rbac.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260825100000_role_titles_three.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260825140000_cod_fee_tiers.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260825160000_order_cod_fields.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>

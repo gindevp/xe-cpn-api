@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+      COD fee tiers (JSON): fixed bands by collected amount, last open band = percent.
+      Keeps legacy cod_percent / cod_min_fee columns for fallback if JSON empty.
+    -->
+    <changeSet id="20260825140000-1" author="cpn">
+        <addColumn tableName="surcharge_policy">
+            <column name="cod_tiers_json" type="longtext"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20260825140000-2" author="cpn">
+        <comment>Seed default 6 COD tiers matching customer fee card</comment>
+        <sql>
+            UPDATE surcharge_policy
+            SET cod_tiers_json = '[{"minAmount":0,"maxAmount":2000000,"feeAmount":30000,"feePercent":null},{"minAmount":2000000,"maxAmount":5000000,"feeAmount":40000,"feePercent":null},{"minAmount":5000000,"maxAmount":10000000,"feeAmount":60000,"feePercent":null},{"minAmount":10000000,"maxAmount":15000000,"feeAmount":80000,"feePercent":null},{"minAmount":15000000,"maxAmount":20000000,"feeAmount":100000,"feePercent":null},{"minAmount":20000000,"maxAmount":null,"feeAmount":null,"feePercent":1}]'
+            WHERE cod_tiers_json IS NULL OR TRIM(cod_tiers_json) = '';
+        </sql>
+    </changeSet>
+</databaseChangeLog>

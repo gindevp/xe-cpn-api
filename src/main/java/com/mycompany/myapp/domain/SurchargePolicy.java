@@ -45,6 +45,15 @@ public class SurchargePolicy implements Serializable {
     @Column(name = "cod_min_fee", precision = 21, scale = 2, nullable = false)
     private BigDecimal codMinFee;
 
+    /**
+     * JSON array of COD fee tiers:
+     * [{minAmount, maxAmount|null, feeAmount|null, feePercent|null}, ...]
+     * Band match: min=0 → [0, max]; min&gt;0 → (min, max]; max null → open-ended.
+     */
+    @Lob
+    @Column(name = "cod_tiers_json")
+    private String codTiersJson;
+
     @NotNull
     @Column(name = "storage_enabled", nullable = false)
     private Boolean storageEnabled;
@@ -171,6 +180,19 @@ public class SurchargePolicy implements Serializable {
 
     public void setCodMinFee(BigDecimal codMinFee) {
         this.codMinFee = codMinFee;
+    }
+
+    public String getCodTiersJson() {
+        return this.codTiersJson;
+    }
+
+    public SurchargePolicy codTiersJson(String codTiersJson) {
+        this.setCodTiersJson(codTiersJson);
+        return this;
+    }
+
+    public void setCodTiersJson(String codTiersJson) {
+        this.codTiersJson = codTiersJson;
     }
 
     public Boolean getStorageEnabled() {

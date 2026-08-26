@@ -57,6 +57,17 @@ public class OrderSummaryDTO {
     private String receiverActualName;
     private String receiverActualPhone;
 
+    private BigDecimal codAmount;
+    private BigDecimal codFeeAmount;
+    private String bankName;
+    private String bankAccountNo;
+    private String bankAccountName;
+    private String routeLabel;
+    private String itineraryLabel;
+    private Instant codExportedAt;
+    private String vehiclePlate;
+    private String driverName;
+
     public Long getId() {
         return id;
     }
@@ -383,6 +394,86 @@ public class OrderSummaryDTO {
 
     public void setReceiverActualPhone(String receiverActualPhone) {
         this.receiverActualPhone = receiverActualPhone;
+    }
+
+    public BigDecimal getCodAmount() {
+        return codAmount;
+    }
+
+    public void setCodAmount(BigDecimal codAmount) {
+        this.codAmount = codAmount;
+    }
+
+    public BigDecimal getCodFeeAmount() {
+        return codFeeAmount;
+    }
+
+    public void setCodFeeAmount(BigDecimal codFeeAmount) {
+        this.codFeeAmount = codFeeAmount;
+    }
+
+    public String getBankName() {
+        return bankName;
+    }
+
+    public void setBankName(String bankName) {
+        this.bankName = bankName;
+    }
+
+    public String getBankAccountNo() {
+        return bankAccountNo;
+    }
+
+    public void setBankAccountNo(String bankAccountNo) {
+        this.bankAccountNo = bankAccountNo;
+    }
+
+    public String getBankAccountName() {
+        return bankAccountName;
+    }
+
+    public void setBankAccountName(String bankAccountName) {
+        this.bankAccountName = bankAccountName;
+    }
+
+    public String getRouteLabel() {
+        return routeLabel;
+    }
+
+    public void setRouteLabel(String routeLabel) {
+        this.routeLabel = routeLabel;
+    }
+
+    public String getItineraryLabel() {
+        return itineraryLabel;
+    }
+
+    public void setItineraryLabel(String itineraryLabel) {
+        this.itineraryLabel = itineraryLabel;
+    }
+
+    public Instant getCodExportedAt() {
+        return codExportedAt;
+    }
+
+    public void setCodExportedAt(Instant codExportedAt) {
+        this.codExportedAt = codExportedAt;
+    }
+
+    public String getVehiclePlate() {
+        return vehiclePlate;
+    }
+
+    public void setVehiclePlate(String vehiclePlate) {
+        this.vehiclePlate = vehiclePlate;
+    }
+
+    public String getDriverName() {
+        return driverName;
+    }
+
+    public void setDriverName(String driverName) {
+        this.driverName = driverName;
     }
 
     public static class OrderLegViewDTO {

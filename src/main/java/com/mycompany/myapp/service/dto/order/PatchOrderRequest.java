@@ -25,6 +25,13 @@ public class PatchOrderRequest {
     private String toOfficeCode;
     private String hubOfficeCode;
     private String finalToOfficeCode;
+    private BigDecimal codAmount;
+    private BigDecimal codFeeAmount;
+    private String bankName;
+    private String bankAccountNo;
+    private String bankAccountName;
+    private String routeLabel;
+    private String itineraryLabel;
 
     public String getSenderName() {
         return senderName;
@@ -192,5 +199,61 @@ public class PatchOrderRequest {
 
     public void setFinalToOfficeCode(String finalToOfficeCode) {
         this.finalToOfficeCode = finalToOfficeCode;
+    }
+
+    public BigDecimal getCodAmount() {
+        return codAmount;
+    }
+
+    public void setCodAmount(BigDecimal codAmount) {
+        this.codAmount = codAmount;
+    }
+
+    public BigDecimal getCodFeeAmount() {
+        return codFeeAmount;
+    }
+
+    public void setCodFeeAmount(BigDecimal codFeeAmount) {
+        this.codFeeAmount = codFeeAmount;
+    }
+
+    public String getBankName() {
+        return bankName;
+    }
+
+    public void setBankName(String bankName) {
+        this.bankName = bankName;
+    }
+
+    public String getBankAccountNo() {
+        return bankAccountNo;
+    }
+
+    public void setBankAccountNo(String bankAccountNo) {
+        this.bankAccountNo = bankAccountNo;
+    }
+
+    public String getBankAccountName() {
+        return bankAccountName;
+    }
+
+    public void setBankAccountName(String bankAccountName) {
+        this.bankAccountName = bankAccountName;
+    }
+
+    public String getRouteLabel() {
+        return routeLabel;
+    }
+
+    public void setRouteLabel(String routeLabel) {
+        this.routeLabel = routeLabel;
+    }
+
+    public String getItineraryLabel() {
+        return itineraryLabel;
+    }
+
+    public void setItineraryLabel(String itineraryLabel) {
+        this.itineraryLabel = itineraryLabel;
     }
 }

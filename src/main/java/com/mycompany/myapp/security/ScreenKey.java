@@ -31,6 +31,7 @@ public enum ScreenKey {
 
     PHIEU_THU("phieu-thu", "Phiếu thu", "Tài chính"),
     DANH_SACH_PHIEU_THU("danh-sach-phieu-thu", "Danh sách phiếu thu", "Tài chính"),
+    QUAN_LY_DON_COD("quan-ly-don-cod", "Quản lý đơn COD", "Tài chính"),
 
     BANG_GIA("bang-gia", "Bảng giá", "Quản trị"),
     PHU_PHI("phu-phi", "Cài đặt phụ phí", "Quản trị"),

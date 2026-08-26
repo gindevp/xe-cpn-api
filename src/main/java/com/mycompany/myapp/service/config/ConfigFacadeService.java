@@ -87,6 +87,7 @@ public class ConfigFacadeService {
         if (incoming.getCodEnabled() != null) base.setCodEnabled(incoming.getCodEnabled());
         if (incoming.getCodPercent() != null) base.setCodPercent(incoming.getCodPercent());
         if (incoming.getCodMinFee() != null) base.setCodMinFee(incoming.getCodMinFee());
+        if (incoming.getCodTiersJson() != null) base.setCodTiersJson(incoming.getCodTiersJson());
         if (incoming.getStorageEnabled() != null) base.setStorageEnabled(incoming.getStorageEnabled());
         if (incoming.getStorageFreeDays() != null) base.setStorageFreeDays(incoming.getStorageFreeDays());
         if (incoming.getStorageFeePerDay() != null) base.setStorageFeePerDay(incoming.getStorageFeePerDay());
@@ -106,6 +107,16 @@ public class ConfigFacadeService {
         p.setCodEnabled(true);
         p.setCodPercent(BigDecimal.ONE);
         p.setCodMinFee(BigDecimal.valueOf(5_000));
+        p.setCodTiersJson(
+            "[" +
+            "{\"minAmount\":0,\"maxAmount\":2000000,\"feeAmount\":30000,\"feePercent\":null}," +
+            "{\"minAmount\":2000000,\"maxAmount\":5000000,\"feeAmount\":40000,\"feePercent\":null}," +
+            "{\"minAmount\":5000000,\"maxAmount\":10000000,\"feeAmount\":60000,\"feePercent\":null}," +
+            "{\"minAmount\":10000000,\"maxAmount\":15000000,\"feeAmount\":80000,\"feePercent\":null}," +
+            "{\"minAmount\":15000000,\"maxAmount\":20000000,\"feeAmount\":100000,\"feePercent\":null}," +
+            "{\"minAmount\":20000000,\"maxAmount\":null,\"feeAmount\":null,\"feePercent\":1}" +
+            "]"
+        );
         p.setStorageEnabled(false);
         p.setStorageFreeDays(3);
         p.setStorageFeePerDay(BigDecimal.valueOf(5_000));

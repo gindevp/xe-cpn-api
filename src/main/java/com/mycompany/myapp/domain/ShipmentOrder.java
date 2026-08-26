@@ -160,6 +160,40 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "partner_fee_amount", precision = 21, scale = 2)
     private BigDecimal partnerFeeAmount;
 
+    /** Tiền thu hộ COD (không gồm phí thu hộ). */
+    @DecimalMin(value = "0")
+    @Column(name = "cod_amount", precision = 21, scale = 2)
+    private BigDecimal codAmount;
+
+    /** Phí thu hộ COD (đã cộng vào fare_amount). */
+    @DecimalMin(value = "0")
+    @Column(name = "cod_fee_amount", precision = 21, scale = 2)
+    private BigDecimal codFeeAmount;
+
+    @Size(max = 120)
+    @Column(name = "bank_name", length = 120)
+    private String bankName;
+
+    @Size(max = 60)
+    @Column(name = "bank_account_no", length = 60)
+    private String bankAccountNo;
+
+    @Size(max = 120)
+    @Column(name = "bank_account_name", length = 120)
+    private String bankAccountName;
+
+    @Size(max = 120)
+    @Column(name = "route_label", length = 120)
+    private String routeLabel;
+
+    @Size(max = 200)
+    @Column(name = "itinerary_label", length = 200)
+    private String itineraryLabel;
+
+    /** Null = chưa xuất Excel thanh toán COD. */
+    @Column(name = "cod_exported_at")
+    private Instant codExportedAt;
+
     @NotNull
     @DecimalMin(value = "0")
     @Column(name = "paid_amount", precision = 21, scale = 2, nullable = false)
@@ -659,6 +693,70 @@ public class ShipmentOrder implements Serializable {
 
     public void setPartnerFeeAmount(BigDecimal partnerFeeAmount) {
         this.partnerFeeAmount = partnerFeeAmount;
+    }
+
+    public BigDecimal getCodAmount() {
+        return this.codAmount;
+    }
+
+    public void setCodAmount(BigDecimal codAmount) {
+        this.codAmount = codAmount;
+    }
+
+    public BigDecimal getCodFeeAmount() {
+        return this.codFeeAmount;
+    }
+
+    public void setCodFeeAmount(BigDecimal codFeeAmount) {
+        this.codFeeAmount = codFeeAmount;
+    }
+
+    public String getBankName() {
+        return this.bankName;
+    }
+
+    public void setBankName(String bankName) {
+        this.bankName = bankName;
+    }
+
+    public String getBankAccountNo() {
+        return this.bankAccountNo;
+    }
+
+    public void setBankAccountNo(String bankAccountNo) {
+        this.bankAccountNo = bankAccountNo;
+    }
+
+    public String getBankAccountName() {
+        return this.bankAccountName;
+    }
+
+    public void setBankAccountName(String bankAccountName) {
+        this.bankAccountName = bankAccountName;
+    }
+
+    public String getRouteLabel() {
+        return this.routeLabel;
+    }
+
+    public void setRouteLabel(String routeLabel) {
+        this.routeLabel = routeLabel;
+    }
+
+    public String getItineraryLabel() {
+        return this.itineraryLabel;
+    }
+
+    public void setItineraryLabel(String itineraryLabel) {
+        this.itineraryLabel = itineraryLabel;
+    }
+
+    public Instant getCodExportedAt() {
+        return this.codExportedAt;
+    }
+
+    public void setCodExportedAt(Instant codExportedAt) {
+        this.codExportedAt = codExportedAt;
     }
 
     public BigDecimal getPaidAmount() {

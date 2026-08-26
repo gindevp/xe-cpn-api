@@ -33,6 +33,8 @@ public class SurchargePolicyDTO implements Serializable {
     @DecimalMin(value = "0")
     private BigDecimal codMinFee;
 
+    private String codTiersJson;
+
     @NotNull
     private Boolean storageEnabled;
 
@@ -117,6 +119,14 @@ public class SurchargePolicyDTO implements Serializable {
 
     public void setCodMinFee(BigDecimal codMinFee) {
         this.codMinFee = codMinFee;
+    }
+
+    public String getCodTiersJson() {
+        return codTiersJson;
+    }
+
+    public void setCodTiersJson(String codTiersJson) {
+        this.codTiersJson = codTiersJson;
     }
 
     public Boolean getStorageEnabled() {

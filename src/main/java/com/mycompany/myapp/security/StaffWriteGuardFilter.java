@@ -91,6 +91,11 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         // Receipts
         if (path.startsWith("/api/receipts") && !path.contains("/candidates")) {
             staffAccessService.requireScreenWrite(ScreenKey.PHIEU_THU);
+            return;
+        }
+        // COD export mark
+        if (path.startsWith("/api/orders/cod/mark-exported")) {
+            staffAccessService.requireScreenWrite(ScreenKey.QUAN_LY_DON_COD);
         }
     }
 
