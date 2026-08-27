@@ -1,5 +1,6 @@
 package com.mycompany.myapp.service;
 
+import com.mycompany.myapp.domain.Driver;
 import com.mycompany.myapp.domain.Vehicle;
 import com.mycompany.myapp.repository.DriverRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
@@ -131,8 +132,21 @@ public class VehicleService {
             dto.getDefaultDriver().getFullName() != null &&
             !dto.getDefaultDriver().getFullName().isBlank()
         ) {
+            String name = dto.getDefaultDriver().getFullName().trim();
             vehicle.setDefaultDriver(
-                driverRepository.findFirstByFullNameIgnoreCase(dto.getDefaultDriver().getFullName().trim()).orElse(null)
+                driverRepository
+                    .findFirstByFullNameIgnoreCase(name)
+                    .orElseGet(() -> {
+                        Driver d = new Driver();
+                        String code = "VEH-" + Integer.toHexString(name.toLowerCase().hashCode()).toUpperCase();
+                        if (code.length() > 30) {
+                            code = code.substring(0, 30);
+                        }
+                        d.setDriverCode(code);
+                        d.setFullName(name.length() <= 100 ? name : name.substring(0, 100));
+                        d.setActive(true);
+                        return driverRepository.save(d);
+                    })
             );
         } else {
             vehicle.setDefaultDriver(null);

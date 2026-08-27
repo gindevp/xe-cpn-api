@@ -46,12 +46,12 @@ public class TripFacadeResource {
     }
 
     /**
-     * Xe khả dụng from VTHK {@code search_trips}. Query by {@code date} + {@code itineraryCode}
-     * (or {@code lfid}/{@code ltid}). Optional {@code timeSlot} e.g. {@code 08:00-10:00}.
+     * Xe khả dụng từ CRM {@code get_list_trips}. Bắt buộc {@code itineraryCode} (mã hoặc tên lộ trình).
+     * Cửa sổ giờ luôn now → now+1h (VN); {@code date}/{@code timeSlot} bỏ qua nếu có.
      */
     @GetMapping("/available")
     public List<AvailableTripDTO> available(
-        @RequestParam String date,
+        @RequestParam(required = false) String date,
         @RequestParam(required = false) String itineraryCode,
         @RequestParam(required = false) String lfid,
         @RequestParam(required = false) String ltid,

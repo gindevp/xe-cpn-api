@@ -109,11 +109,12 @@ jhipster:
 
 # application:
 
-# VTHK passenger catalog (xe khả dụng) — local/dev defaults
+# VTHK / CRM passenger trips — local defaults; override with CPN_VTHK_* env (prod: env only)
 cpn:
   vthk:
     enabled: true
-    base-url: https://113.20.107.133:8991
-    app-id-access: APP.XEVN
+    base-url: https://crmapi.xevietnam.com
+    app-id-access: CRM.XEVN
+    login-mobile: ${CPN_VTHK_MOBILE:}
+    login-password: ${CPN_VTHK_PASSWORD:}
     insecure-ssl: true
-    page-size: 50

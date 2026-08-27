@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Maps CPN itinerary → VTHK location slugs, searches trips, enriches with CPN cargo load.
+ * Maps CPN itinerary → CRM {@code MaHanhTrinhs}, searches trips in [now, now+1h], enriches cargo load.
  */
 @Service
 @Transactional(readOnly = true)
@@ -34,6 +34,7 @@ public class AvailableTripSearchService {
     private static final String ENTITY = "availableTrip";
     private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final DateTimeFormatter LOCAL_DT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+    private static final DateTimeFormatter CRM_DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final VthkTripSearchClient vthkClient;
     private final ItineraryRepository itineraryRepository;
@@ -52,38 +53,29 @@ public class AvailableTripSearchService {
         this.shipmentOrderRepository = shipmentOrderRepository;
     }
 
+    /**
+     * @param date ignored — window is always now → now+1h (VN)
+     * @param timeSlot ignored — no FE time-slot filter
+     * @param lfid / ltid ignored — CRM uses MaHanhTrinhs from itinerary name
+     */
     public List<AvailableTripDTO> search(String date, String itineraryCodeOrName, String lfid, String ltid, String timeSlot) {
-        if (date == null || date.isBlank()) {
-            throw new BadRequestAlertException("date is required (YYYY-MM-DD)", ENTITY, "dateRequired");
+        if (blankToNull(itineraryCodeOrName) == null) {
+            throw new BadRequestAlertException("itineraryCode (or name) is required", ENTITY, "itineraryRequired");
         }
-        String from = blankToNull(lfid);
-        String to = blankToNull(ltid);
-        Itinerary itinerary = null;
-        if (blankToNull(itineraryCodeOrName) != null) {
-            itinerary = resolveItinerary(itineraryCodeOrName);
-            if (from == null || to == null) {
-                String[] pair = toLocationPair(itinerary);
-                from = from != null ? from : pair[0];
-                to = to != null ? to : pair[1];
-            }
+        Itinerary itinerary = resolveItinerary(itineraryCodeOrName);
+        String maHanhTrinh = blankToNull(itinerary.getName());
+        if (maHanhTrinh == null) {
+            maHanhTrinh = blankToNull(itinerary.getCode());
         }
-        if (from == null || to == null) {
-            throw new BadRequestAlertException("Provide itineraryCode (or name) or both lfid and ltid", ENTITY, "locationRequired");
+        if (maHanhTrinh == null) {
+            throw new BadRequestAlertException("Itinerary has no name/code for MaHanhTrinhs", ENTITY, "maHanhTrinhMissing");
         }
 
-        List<JsonNode> raw = vthkClient.searchTrips(from, to, date.trim());
-        String slotFilter = blankToNull(timeSlot);
-        if (slotFilter != null && "ALL".equalsIgnoreCase(slotFilter)) {
-            slotFilter = null;
-        }
-
+        List<JsonNode> raw = vthkClient.searchTripsByItineraries(List.of(maHanhTrinh));
         List<AvailableTripDTO> items = new ArrayList<>();
         for (JsonNode n : raw) {
-            AvailableTripDTO dto = mapTrip(n, itinerary != null ? itinerary.getCode() : null);
+            AvailableTripDTO dto = mapTrip(n, itinerary.getCode());
             if (dto.getDepartAt() == null) {
-                continue;
-            }
-            if (slotFilter != null && !slotFilter.equals(dto.getTimeSlot())) {
                 continue;
             }
             items.add(dto);
@@ -136,39 +128,43 @@ public class AvailableTripSearchService {
 
     private AvailableTripDTO mapTrip(JsonNode n, String itineraryCode) {
         AvailableTripDTO dto = new AvailableTripDTO();
-        String id = text(n, "ChuyenDiId");
+        String id = text(n, "Ma");
         if (id == null || id.isBlank()) {
-            id = text(n, "Ma");
+            id = text(n, "ChuyenDiId");
         }
         if (id == null || id.isBlank()) {
             id = n.path("Id").asText(null);
         }
         dto.setExternalTripId(id);
         dto.setItineraryCode(itineraryCode);
-        dto.setRouteLabel(firstNonBlank(text(n, "TenLoTrinh"), text(n, "ProductName")));
+        dto.setRouteLabel(firstNonBlank(text(n, "TenHanhTrinh"), text(n, "TenLoTrinh"), text(n, "ProductName")));
 
         JsonNode thongTin = n.path("ThongTin");
-        String plateRaw = text(thongTin, "BienSoXe");
+        String plateRaw = firstNonBlank(text(n, "BienSoXe"), text(thongTin, "BienSoXe"));
         String plate = normalizePlate(plateRaw);
         dto.setVehiclePlate(plate);
         dto.setAssignVehiclePlate(plate);
 
-        String driver = blankToNull(text(thongTin, "TenLaiXe"));
+        String driver = blankToNull(firstNonBlank(text(n, "TenLaiXe"), text(thongTin, "TenLaiXe")));
         dto.setDriverName(driver);
         dto.setAssignDriverName(driver);
-        dto.setDriverPhone(blankToNull(text(thongTin, "SoDienThoaiLienHe")));
-        dto.setVehicleType(blankToNull(text(thongTin, "TenLoaiXe")));
+        dto.setDriverPhone(blankToNull(firstNonBlank(text(n, "SoDienThoaiLienHe"), text(thongTin, "SoDienThoaiLienHe"))));
+        dto.setVehicleType(blankToNull(firstNonBlank(text(n, "TenLoaiXe"), text(thongTin, "TenLoaiXe"))));
 
-        if (n.has("SoLuongGhe") && !n.get("SoLuongGhe").isNull()) {
+        if (n.has("SoGhe") && !n.get("SoGhe").isNull()) {
+            dto.setSeatTotal(n.get("SoGhe").asInt());
+        } else if (n.has("SoLuongGhe") && !n.get("SoLuongGhe").isNull()) {
             dto.setSeatTotal(n.get("SoLuongGhe").asInt());
         }
-        if (n.has("SoLuongConTrong") && !n.get("SoLuongConTrong").isNull()) {
+        if (n.has("SoGheTrong") && !n.get("SoGheTrong").isNull()) {
+            dto.setSeatAvailable(n.get("SoGheTrong").asInt());
+        } else if (n.has("SoLuongConTrong") && !n.get("SoLuongConTrong").isNull()) {
             dto.setSeatAvailable(n.get("SoLuongConTrong").asInt());
         }
 
-        Instant depart = parseDepart(firstNonBlank(text(n, "NgayDiThuc"), text(n, "NgayDi")));
+        Instant depart = parseDepart(firstNonBlank(text(n, "NgayDiThuc"), text(n, "ThoiGianDi"), text(n, "NgayDi")));
         dto.setDepartAt(depart);
-        dto.setEndAt(parseDepart(text(n, "NgayKetThuc")));
+        dto.setEndAt(parseDepart(firstNonBlank(text(n, "ThoiGianDen"), text(n, "NgayKetThuc"))));
         if (depart != null) {
             dto.setTimeSlot(slotOf(depart));
         }
@@ -184,7 +180,7 @@ public class AvailableTripSearchService {
             .orElseThrow(() -> new BadRequestAlertException("Unknown itinerary: " + codeOrName, ENTITY, "itineraryNotFound"));
     }
 
-    /** @return [lfid, ltid] */
+    /** @return [lfid, ltid] — kept for tests / legacy mapping helpers */
     static String[] toLocationPair(Itinerary itinerary) {
         String from = toSlug(itinerary.getDeparturePoint());
         String to = toSlug(itinerary.getDestinationPoint());
@@ -209,7 +205,6 @@ public class AvailableTripSearchService {
             return null;
         }
         String p = place.trim().toLowerCase(Locale.ROOT);
-        // Vietnamese Đ/đ does not NFD-decompose — normalize to ascii d first.
         p = p.replace('đ', 'd').replace('Đ', 'd');
         String ascii = java.text.Normalizer.normalize(p, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
         ascii = ascii.replaceAll("[^a-z0-9\\s-]", " ").replaceAll("\\s+", " ").trim();
@@ -289,6 +284,10 @@ public class AvailableTripSearchService {
             if (s.endsWith("Z") || s.contains("+")) {
                 return Instant.parse(s);
             }
+            if (s.length() >= 19 && s.charAt(10) == ' ') {
+                LocalDateTime ldt = LocalDateTime.parse(s.substring(0, 19), CRM_DT);
+                return ldt.atZone(VN).toInstant();
+            }
             LocalDateTime ldt = LocalDateTime.parse(s.length() >= 19 ? s.substring(0, 19) : s, LOCAL_DT);
             return ldt.atZone(VN).toInstant();
         } catch (Exception e) {
@@ -312,12 +311,14 @@ public class AvailableTripSearchService {
         return s == null || s.isBlank() ? null : s.trim();
     }
 
-    private static String firstNonBlank(String a, String b) {
-        if (a != null && !a.isBlank()) {
-            return a;
+    private static String firstNonBlank(String... vals) {
+        if (vals == null) {
+            return null;
         }
-        if (b != null && !b.isBlank()) {
-            return b;
+        for (String v : vals) {
+            if (v != null && !v.isBlank()) {
+                return v;
+            }
         }
         return null;
     }
