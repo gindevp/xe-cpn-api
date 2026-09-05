@@ -26,4 +26,9 @@ public class StaffAdminFacadeResource {
     public StaffUserDTO upsert(@RequestBody StaffUserDTO body) {
         return staffAdminFacadeService.upsert(body);
     }
+
+    @DeleteMapping("/{login}")
+    public void delete(@PathVariable("login") String login) {
+        staffAdminFacadeService.delete(login);
+    }
 }

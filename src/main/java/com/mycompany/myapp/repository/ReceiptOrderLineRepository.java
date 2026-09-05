@@ -43,4 +43,6 @@ public interface ReceiptOrderLineRepository extends JpaRepository<ReceiptOrderLi
     Optional<ReceiptOrderLine> findOneWithToOneRelationships(@Param("id") Long id);
 
     List<ReceiptOrderLine> findByReceipt_Id(Long receiptId);
+
+    boolean existsByOrder_Id(Long orderId);
 }

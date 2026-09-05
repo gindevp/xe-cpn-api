@@ -75,15 +75,20 @@ public class FinanceFacadeService {
 
     @Transactional(readOnly = true)
     public List<CandidateDTO> candidates(String officeCode, String keyword) {
-        Specification<ShipmentOrder> spec = (root, q, cb) ->
-            cb.and(
-                cb.notEqual(root.get("status"), OrderStatus.CANCELLED),
-                cb.notEqual(root.get("status"), OrderStatus.DRAFT),
-                cb.greaterThan(root.get("fareAmount"), root.get("paidAmount"))
-            );
+        // Phiếu thu: đơn đã giao thành công chưa lập phiếu; người trách nhiệm = người POD (xuất khỏi kho giao).
+        Specification<ShipmentOrder> spec = (root, q, cb) -> cb.equal(root.get("status"), OrderStatus.DELIVERED);
         if (officeCode != null && !officeCode.isBlank()) {
             String scoped = officeCode.trim().toUpperCase();
-            spec = spec.and((root, q, cb) -> cb.equal(root.get("fromOffice").get("code"), scoped));
+            spec = spec.and((root, q, cb) -> {
+                var toCode = root.get("toOffice").get("code");
+                var finalCode = root.get("finalToOffice").get("code");
+                var fromCode = root.get("fromOffice").get("code");
+                return cb.or(
+                    cb.equal(toCode, scoped),
+                    cb.and(cb.isNotNull(root.get("finalToOffice")), cb.equal(finalCode, scoped)),
+                    cb.equal(fromCode, scoped)
+                );
+            });
         }
         if (keyword != null && !keyword.isBlank()) {
             String like = "%" + keyword.trim().toLowerCase() + "%";
@@ -98,7 +103,8 @@ public class FinanceFacadeService {
         return shipmentOrderRepository
             .findAll(spec)
             .stream()
-            .limit(200)
+            .filter(o -> o.getId() == null || !receiptOrderLineRepository.existsByOrder_Id(o.getId()))
+            .limit(300)
             .map(o -> {
                 BigDecimal due = OrderMoney.due(o);
                 return new CandidateDTO(
@@ -110,7 +116,7 @@ public class FinanceFacadeService {
                     due,
                     o.getStatus().name(),
                     o.getFromOffice() != null ? o.getFromOffice().getCode() : null,
-                    resolveDebtOwner(o)
+                    resolveDeliveryActor(o)
                 );
             })
             .toList();
@@ -142,8 +148,11 @@ public class FinanceFacadeService {
                 .orElseThrow(() -> new BadRequestAlertException("Order not found: " + line.orderCode(), ENTITY, "orderNotFound"));
             dayClosureGuard.assertCollectionMutable(order);
             BigDecimal amount = line.amountCollected();
-            if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-                throw new BadRequestAlertException("amountCollected must be > 0", ENTITY, "amountInvalid");
+            if (amount == null) {
+                amount = BigDecimal.ZERO;
+            }
+            if (amount.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BadRequestAlertException("amountCollected must be >= 0", ENTITY, "amountInvalid");
             }
             BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
             BigDecimal due = OrderMoney.due(order);
@@ -156,18 +165,20 @@ public class FinanceFacadeService {
             }
             total = total.add(amount);
 
-            OrderPayment payment = new OrderPayment();
-            payment.setPaymentAt(now);
-            payment.setAmount(amount);
-            payment.setMethod(PaymentMethod.TM);
-            payment.setPaymentKind(PaymentKind.SAU);
-            payment.setNote("RECEIPT");
-            payment.setCollectorUsername(actor);
-            payment.setOrder(order);
-            orderPaymentRepository.save(payment);
+            if (amount.compareTo(BigDecimal.ZERO) > 0) {
+                OrderPayment payment = new OrderPayment();
+                payment.setPaymentAt(now);
+                payment.setAmount(amount);
+                payment.setMethod(PaymentMethod.TM);
+                payment.setPaymentKind(PaymentKind.SAU);
+                payment.setNote("RECEIPT");
+                payment.setCollectorUsername(actor);
+                payment.setOrder(order);
+                orderPaymentRepository.save(payment);
 
-            order.setPaidAmount(paid.add(amount));
-            shipmentOrderRepository.save(order);
+                order.setPaidAmount(paid.add(amount));
+                shipmentOrderRepository.save(order);
+            }
 
             ReceiptOrderLine rol = new ReceiptOrderLine();
             rol.setAmountCollected(amount);
@@ -363,6 +374,34 @@ public class FinanceFacadeService {
         return officeRepository
             .findOneByCode(code.trim().toUpperCase())
             .orElseThrow(() -> new BadRequestAlertException("Office not found", ENTITY, "officeNotFound"));
+    }
+
+    /**
+     * Người làm đơn ra khỏi kho giao (POD / giao thành công) — chịu trách nhiệm trên phiếu thu.
+     */
+    private String resolveDeliveryActor(ShipmentOrder order) {
+        if (order.getId() != null) {
+            List<OrderEvent> events = orderEventRepository.findByOrder_IdOrderByEventAtAsc(order.getId());
+            for (int i = events.size() - 1; i >= 0; i--) {
+                OrderEvent event = events.get(i);
+                String action = event.getAction() == null ? "" : event.getAction().trim().toUpperCase();
+                if ("POD".equals(action) || "POD_QUAY".equals(action) || "POD_HOME".equals(action) || "DELIVERED".equals(action)) {
+                    String actor = event.getActorUsername();
+                    if (actor != null && !actor.isBlank()) {
+                        return actor.trim();
+                    }
+                }
+            }
+            var lastPay = orderPaymentRepository.findFirstByOrder_IdOrderByPaymentAtDesc(order.getId());
+            if (lastPay.isPresent()) {
+                String note = lastPay.get().getNote() == null ? "" : lastPay.get().getNote().toUpperCase();
+                String collector = lastPay.get().getCollectorUsername();
+                if (collector != null && !collector.isBlank() && note.contains("POD")) {
+                    return collector.trim();
+                }
+            }
+        }
+        return resolveDebtOwner(order);
     }
 
     private String resolveDebtOwner(ShipmentOrder order) {

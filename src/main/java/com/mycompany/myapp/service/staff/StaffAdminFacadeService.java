@@ -148,6 +148,20 @@ public class StaffAdminFacadeService {
         return toDto(profile);
     }
 
+    public void delete(String loginRaw) {
+        if (loginRaw == null || loginRaw.isBlank()) {
+            throw new BadRequestAlertException("username required", ENTITY, "usernameRequired");
+        }
+        String login = loginRaw.trim().toLowerCase();
+        boolean self = SecurityUtils.getCurrentUserLogin().filter(cur -> cur.equalsIgnoreCase(login)).isPresent();
+        if (self) {
+            throw new BadRequestAlertException("Không thể xóa chính tài khoản đang đăng nhập", ENTITY, "cannotDeleteSelf");
+        }
+        staffProfileRepository.findOneByUserLoginIgnoreCase(login).ifPresent(staffProfileRepository::delete);
+        userRepository.findOneByLogin(login).ifPresent(userRepository::delete);
+        permissionService.invalidateCache();
+    }
+
     /** ROLE_ADMIN follows the AD job title, and nobody may demote their own admin account. */
     private void syncAdminAuthority(User user, RoleCode role) {
         Set<Authority> authorities = new HashSet<>(user.getAuthorities());
