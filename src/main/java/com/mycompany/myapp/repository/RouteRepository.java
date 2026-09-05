@@ -41,4 +41,6 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
     Optional<Route> findOneByCode(String code);
 
     Optional<Route> findFirstByNameIgnoreCase(String name);
+
+    Optional<Route> findFirstByFromOffice_CodeIgnoreCaseAndToOffice_CodeIgnoreCase(String fromCode, String toCode);
 }

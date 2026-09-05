@@ -450,12 +450,43 @@ public class TripFacadeService {
     }
 
     private Route resolveRoute(String routeCodeOrName) {
+        if (routeCodeOrName == null || routeCodeOrName.isBlank()) {
+            throw new BadRequestAlertException("Route required", ENTITY, "routeNotFound");
+        }
         String raw = routeCodeOrName.trim();
+        String normalized = normalizeRouteKey(raw);
+
         return routeRepository
             .findOneByCode(raw.toUpperCase())
+            .or(() -> routeRepository.findOneByCode(normalized))
             .or(() -> routeRepository.findFirstByNameIgnoreCase(raw))
-            .or(() -> routeRepository.findOneByCode(raw.replace(" → ", "-").replace("->", "-").replace(" ", "").toUpperCase()))
-            .orElseThrow(() -> new BadRequestAlertException("Unknown route: " + routeCodeOrName, ENTITY, "routeNotFound"));
+            .or(() -> findRouteByOfficePair(normalized))
+            .orElseThrow(() ->
+                new BadRequestAlertException(
+                    "Unknown route: " + routeCodeOrName + " (normalized=" + normalized + ")",
+                    ENTITY,
+                    "routeNotFound"
+                )
+            );
+    }
+
+    /** GP → NB / GP->NB / GP to NB / GP–NB → GP-NB */
+    private static String normalizeRouteKey(String raw) {
+        return raw.trim().replaceAll("(?i)\\s+to\\s+", "-").replaceAll("[\\s]*[→\\-–—>]+[\\s]*", "-").replaceAll("\\s+", "").toUpperCase();
+    }
+
+    private java.util.Optional<Route> findRouteByOfficePair(String normalized) {
+        int dash = normalized.indexOf('-');
+        if (dash <= 0 || dash >= normalized.length() - 1) {
+            return java.util.Optional.empty();
+        }
+        String from = normalized.substring(0, dash);
+        String to = normalized.substring(dash + 1);
+        // Only simple A-B codes (seed uses GP-NB); skip multi-segment
+        if (from.isBlank() || to.isBlank() || to.contains("-")) {
+            return java.util.Optional.empty();
+        }
+        return routeRepository.findFirstByFromOffice_CodeIgnoreCaseAndToOffice_CodeIgnoreCase(from, to);
     }
 
     private Vehicle resolveVehicle(CreateTripRequest req) {
