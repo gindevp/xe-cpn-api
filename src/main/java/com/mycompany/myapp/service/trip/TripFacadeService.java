@@ -476,7 +476,7 @@ public class TripFacadeService {
             );
     }
 
-    /** GP → NB / GP->NB / GP to NB / GP–NB → GP-NB */
+    /** A → B / A->B / A to B / A–B → A-B */
     private static String normalizeRouteKey(String raw) {
         return raw.trim().replaceAll("(?i)\\s+to\\s+", "-").replaceAll("[\\s]*[→\\-–—>]+[\\s]*", "-").replaceAll("\\s+", "").toUpperCase();
     }
@@ -488,7 +488,7 @@ public class TripFacadeService {
         }
         String from = normalized.substring(0, dash);
         String to = normalized.substring(dash + 1);
-        // Only simple A-B codes (seed uses GP-NB); skip multi-segment
+        // Only simple A-B codes; skip multi-segment
         if (from.isBlank() || to.isBlank() || to.contains("-")) {
             return java.util.Optional.empty();
         }
@@ -536,7 +536,7 @@ public class TripFacadeService {
         if (offices.size() < 2) {
             return java.util.Optional.empty();
         }
-        Office from = offices.stream().filter(o -> Boolean.TRUE.equals(o.getIsHub())).findFirst().orElse(offices.get(0));
+        Office from = offices.get(0);
         Office to = offices.stream().filter(o -> o.getId() != null && !o.getId().equals(from.getId())).findFirst().orElse(null);
         if (to == null) {
             return java.util.Optional.empty();
@@ -551,11 +551,12 @@ public class TripFacadeService {
                 code = code.substring(0, 30);
             }
         }
+        final String routeCode = code;
         return routeRepository
-            .findOneByCode(code)
+            .findOneByCode(routeCode)
             .or(() -> {
                 Route route = new Route();
-                route.setCode(code);
+                route.setCode(routeCode);
                 route.setName(from.getCode() + " → " + to.getCode());
                 route.setActive(true);
                 route.setFromOffice(from);

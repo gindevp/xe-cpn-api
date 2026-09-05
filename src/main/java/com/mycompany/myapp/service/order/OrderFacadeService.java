@@ -48,7 +48,6 @@ import org.springframework.web.server.ResponseStatusException;
 public class OrderFacadeService {
 
     private static final String ENTITY = "order";
-    private static final String DEFAULT_FROM_OFFICE = "GP";
     private static final Duration DRAFT_TTL = Duration.ofHours(24);
 
     private final ShipmentOrderRepository shipmentOrderRepository;
@@ -247,8 +246,11 @@ public class OrderFacadeService {
         if (!homeDelivery && isBlank(req.getToOfficeCode())) {
             throw new BadRequestAlertException("toOfficeCode is required when not home delivery", ENTITY, "toofficerequired");
         }
+        if (isBlank(req.getFromOfficeCode())) {
+            throw new BadRequestAlertException("fromOfficeCode is required", ENTITY, "fromofficerequired");
+        }
 
-        String fromCode = isBlank(req.getFromOfficeCode()) ? DEFAULT_FROM_OFFICE : req.getFromOfficeCode().trim().toUpperCase();
+        String fromCode = req.getFromOfficeCode().trim().toUpperCase();
         Office from = requireOffice(fromCode);
         Office to;
         Office hub = null;
@@ -323,7 +325,10 @@ public class OrderFacadeService {
             order.setCancelReason(req.getDetail());
         }
         if (from == OrderStatus.DRAFT && to == OrderStatus.CONFIRMED) {
-            String office = order.getFromOffice() != null ? order.getFromOffice().getCode() : DEFAULT_FROM_OFFICE;
+            if (order.getFromOffice() == null) {
+                throw new BadRequestAlertException("fromOfficeCode is required", ENTITY, "fromofficerequired");
+            }
+            String office = order.getFromOffice().getCode();
             if (order.getOrderCode() != null && order.getOrderCode().startsWith("N-")) {
                 order.setOrderCode(orderCodeGenerator.nextOrderCode(office));
             }

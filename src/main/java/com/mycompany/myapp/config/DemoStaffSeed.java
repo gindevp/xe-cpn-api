@@ -172,7 +172,7 @@ public class DemoStaffSeed implements ApplicationRunner {
         return true;
     }
 
-    /** Prefer exact code → GP → any hub → first office. */
+    /** Prefer exact office code, else first master office (no hub/GP fallback). */
     private Optional<Office> resolveOffice(String preferredCode) {
         if (preferredCode != null && !preferredCode.isBlank()) {
             Optional<Office> exact = officeRepository.findOneByCode(preferredCode.trim().toUpperCase());
@@ -185,11 +185,7 @@ public class DemoStaffSeed implements ApplicationRunner {
                 return exact;
             }
         }
-        Optional<Office> gp = officeRepository.findOneByCode(DEFAULT_HOME_OFFICE);
-        if (gp.isPresent()) {
-            return gp;
-        }
         List<Office> all = officeRepository.findAll();
-        return all.stream().filter(o -> Boolean.TRUE.equals(o.getIsHub())).findFirst().or(() -> all.stream().findFirst());
+        return all.stream().findFirst();
     }
 }

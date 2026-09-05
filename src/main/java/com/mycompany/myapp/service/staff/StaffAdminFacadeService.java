@@ -126,7 +126,7 @@ public class StaffAdminFacadeService {
         profile.setActive(req.active() == null || Boolean.TRUE.equals(req.active()));
         boolean allOffices = req.officeCode() != null && "ALL".equalsIgnoreCase(req.officeCode());
         profile.setScopeAllOffices(allOffices);
-        // StaffProfile.office is @NotNull — ALL scope still anchors to a home office (GP preferred).
+        // StaffProfile.office is @NotNull — ALL scope still needs a home office (any master office).
         Office office;
         if (!allOffices && req.officeCode() != null && !req.officeCode().isBlank()) {
             office = officeRepository
@@ -134,8 +134,9 @@ public class StaffAdminFacadeService {
                 .orElseThrow(() -> new BadRequestAlertException("Office not found", ENTITY, "officeNotFound"));
         } else {
             office = officeRepository
-                .findOneByCode("GP")
-                .or(() -> officeRepository.findAll().stream().findFirst())
+                .findAll()
+                .stream()
+                .findFirst()
                 .orElseThrow(() -> new BadRequestAlertException("No office available", ENTITY, "officeMissing"));
         }
         profile.setOffice(office);

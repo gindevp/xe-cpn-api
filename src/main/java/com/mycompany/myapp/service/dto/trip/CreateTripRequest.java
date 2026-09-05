@@ -9,7 +9,7 @@ public class CreateTripRequest {
     @NotBlank
     private String officeCode;
 
-    /** Route business code e.g. GP-NB, or display name {@code GP → NB}. */
+    /** Route business code or display name from master {@code route}. */
     @NotBlank
     private String routeCode;
 
