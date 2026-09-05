@@ -1,7 +1,8 @@
 package com.mycompany.myapp.service.order;
 
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
-import java.time.Year;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.stereotype.Component;
 
@@ -10,6 +11,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class OrderCodeGenerator {
+
+    private static final DateTimeFormatter DDMMYY = DateTimeFormatter.ofPattern("ddMMyy");
 
     private final ShipmentOrderRepository shipmentOrderRepository;
 
@@ -30,22 +33,26 @@ public class OrderCodeGenerator {
         return "N-" + office + "-" + (System.currentTimeMillis() % 10000);
     }
 
-    /** Format: {@code XE{yy}{office}{6 digits}} e.g. XE26GP000001 */
+    /**
+     * Format: {@code {office}{DDMMYY}{5 digits}} e.g. TDN05092600001
+     * (tên VP + ngày tạo + mã định danh).
+     */
     public String nextOrderCode(String officeCode) {
         String office = normalizeOffice(officeCode);
-        String yy = String.valueOf(Year.now().getValue()).substring(2);
-        String prefix = "XE" + yy + office;
+        String day = LocalDate.now().format(DDMMYY);
+        String prefix = office + day;
         int next = shipmentOrderRepository
             .findMaxOrderCodeByPrefix(prefix)
             .map(max -> {
                 try {
-                    return Integer.parseInt(max.substring(prefix.length())) + 1;
-                } catch (NumberFormatException ex) {
+                    String suffix = max.substring(prefix.length());
+                    return Integer.parseInt(suffix) + 1;
+                } catch (NumberFormatException | IndexOutOfBoundsException ex) {
                     return 1;
                 }
             })
             .orElse(1);
-        return prefix + String.format("%06d", next);
+        return prefix + String.format("%05d", next);
     }
 
     private static String normalizeOffice(String officeCode) {
