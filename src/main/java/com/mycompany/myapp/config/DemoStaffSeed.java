@@ -12,6 +12,7 @@ import com.mycompany.myapp.repository.UserRepository;
 import com.mycompany.myapp.security.AuthoritiesConstants;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,8 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Seeds demo staff users aligned with FE {@code MOCK_USERS} (password {@code 123}).
  * Profiles: {@code dev} (local) and {@code demo} (Railway/UAT with {@code prod,demo}).
- * Idempotent — safe on restart. Do not enable {@code demo} on hardened production long-term
- * without rotating passwords.
+ * Idempotent — safe on restart. Never fails application startup (missing offices → skip/fallback).
  */
 @Component
 @Profile({ "dev", "demo" })
@@ -76,20 +76,28 @@ public class DemoStaffSeed implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (officeRepository.count() == 0) {
-            LOG.warn("Skip DemoStaffSeed: no offices (run Liquibase seed first)");
-            return;
-        }
-        Authority userAuthority = authorityRepository
-            .findById(AuthoritiesConstants.USER)
-            .orElseThrow(() -> new IllegalStateException("ROLE_USER missing"));
-        Authority adminAuthority = authorityRepository.findById(AuthoritiesConstants.ADMIN).orElse(null);
+        try {
+            if (officeRepository.count() == 0) {
+                LOG.warn("Skip DemoStaffSeed: no offices (enable Liquibase context 'seed' or add VP in Master)");
+                return;
+            }
+            Authority userAuthority = authorityRepository
+                .findById(AuthoritiesConstants.USER)
+                .orElseThrow(() -> new IllegalStateException("ROLE_USER missing"));
+            Authority adminAuthority = authorityRepository.findById(AuthoritiesConstants.ADMIN).orElse(null);
 
-        for (DemoStaff demo : DEMO) {
-            ensureUser(demo, userAuthority, adminAuthority);
-            ensureStaffProfile(demo);
+            int profiles = 0;
+            for (DemoStaff demo : DEMO) {
+                ensureUser(demo, userAuthority, adminAuthority);
+                if (ensureStaffProfile(demo)) {
+                    profiles++;
+                }
+            }
+            LOG.info("Demo staff seed ready ({} users, {} new profiles, password '{}')", DEMO.size(), profiles, DEMO_PASSWORD);
+        } catch (Exception e) {
+            // Railway must stay up even if demo seed cannot attach profiles (missing GP, etc.)
+            LOG.error("DemoStaffSeed failed (non-fatal, app continues): {}", e.getMessage(), e);
         }
-        LOG.info("Demo staff seed ready ({} profiles, password '{}')", DEMO.size(), DEMO_PASSWORD);
     }
 
     private void ensureUser(DemoStaff demo, Authority userAuthority, Authority adminAuthority) {
@@ -136,14 +144,20 @@ public class DemoStaffSeed implements ApplicationRunner {
             );
     }
 
-    private void ensureStaffProfile(DemoStaff demo) {
+    /** @return true if a new profile was created */
+    private boolean ensureStaffProfile(DemoStaff demo) {
         if (staffProfileRepository.findOneByUserLoginIgnoreCase(demo.login()).isPresent()) {
-            return;
+            return false;
         }
-        String officeCode = demo.scopeAll() ? DEFAULT_HOME_OFFICE : demo.officeCode();
-        Office office = officeRepository
-            .findOneByCode(officeCode)
-            .orElseThrow(() -> new IllegalStateException("Office not found: " + officeCode));
+        String preferred = demo.scopeAll() ? DEFAULT_HOME_OFFICE : demo.officeCode();
+        Optional<Office> office = resolveOffice(preferred);
+        if (office.isEmpty()) {
+            LOG.warn("Skip staff profile {}: no usable office (wanted {})", demo.login(), preferred);
+            return false;
+        }
+        if (!preferred.equalsIgnoreCase(office.get().getCode())) {
+            LOG.warn("Demo staff {} office '{}' missing — attaching to '{}'", demo.login(), preferred, office.get().getCode());
+        }
 
         StaffProfile profile = new StaffProfile();
         profile.setStaffCode("STF-" + demo.role().name() + "-" + demo.login().toUpperCase().replace('.', '-'));
@@ -152,8 +166,30 @@ public class DemoStaffSeed implements ApplicationRunner {
         profile.setRoleCode(demo.role());
         profile.setScopeAllOffices(demo.scopeAll());
         profile.setActive(true);
-        profile.setOffice(office);
+        profile.setOffice(office.get());
         staffProfileRepository.save(profile);
         LOG.debug("Created staff profile for {}", demo.login());
+        return true;
+    }
+
+    /** Prefer exact code → GP → any hub → first office. */
+    private Optional<Office> resolveOffice(String preferredCode) {
+        if (preferredCode != null && !preferredCode.isBlank()) {
+            Optional<Office> exact = officeRepository.findOneByCode(preferredCode.trim().toUpperCase());
+            if (exact.isPresent()) {
+                return exact;
+            }
+            // CSV / UI may keep mixed case
+            exact = officeRepository.findOneByCode(preferredCode.trim());
+            if (exact.isPresent()) {
+                return exact;
+            }
+        }
+        Optional<Office> gp = officeRepository.findOneByCode(DEFAULT_HOME_OFFICE);
+        if (gp.isPresent()) {
+            return gp;
+        }
+        List<Office> all = officeRepository.findAll();
+        return all.stream().filter(o -> Boolean.TRUE.equals(o.getIsHub())).findFirst().or(() -> all.stream().findFirst());
     }
 }
