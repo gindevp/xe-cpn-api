@@ -451,7 +451,10 @@ public class TripFacadeService {
 
     private Route resolveRoute(String routeCodeOrName) {
         if (routeCodeOrName == null || routeCodeOrName.isBlank()) {
-            throw new BadRequestAlertException("Route required", ENTITY, "routeNotFound");
+            return anyExistingRoute()
+                .or(this::createFallbackRoute)
+                .orElseThrow(() -> new BadRequestAlertException("Route required and no office pair to create one", ENTITY, "routeNotFound")
+                );
         }
         String raw = routeCodeOrName.trim();
         String normalized = normalizeRouteKey(raw);
@@ -461,6 +464,9 @@ public class TripFacadeService {
             .or(() -> routeRepository.findOneByCode(normalized))
             .or(() -> routeRepository.findFirstByNameIgnoreCase(raw))
             .or(() -> findRouteByOfficePair(normalized))
+            .or(() -> createRouteFromOfficeCodes(normalized))
+            .or(this::anyExistingRoute)
+            .or(this::createFallbackRoute)
             .orElseThrow(() ->
                 new BadRequestAlertException(
                     "Unknown route: " + routeCodeOrName + " (normalized=" + normalized + ")",
@@ -487,6 +493,75 @@ public class TripFacadeService {
             return java.util.Optional.empty();
         }
         return routeRepository.findFirstByFromOffice_CodeIgnoreCaseAndToOffice_CodeIgnoreCase(from, to);
+    }
+
+    /** Demo/Railway often lack Liquibase route seed — create on the fly when both offices exist. */
+    private java.util.Optional<Route> createRouteFromOfficeCodes(String normalized) {
+        int dash = normalized.indexOf('-');
+        if (dash <= 0 || dash >= normalized.length() - 1) {
+            return java.util.Optional.empty();
+        }
+        String fromCode = normalized.substring(0, dash);
+        String toCode = normalized.substring(dash + 1);
+        if (fromCode.isBlank() || toCode.isBlank() || toCode.contains("-")) {
+            return java.util.Optional.empty();
+        }
+        java.util.Optional<Office> from = officeRepository.findOneByCode(fromCode);
+        java.util.Optional<Office> to = officeRepository.findOneByCode(toCode);
+        if (from.isEmpty() || to.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        String code = normalized.length() <= 30 ? normalized : normalized.substring(0, 30);
+        if (code.length() < 3) {
+            return java.util.Optional.empty();
+        }
+        Route route = new Route();
+        route.setCode(code);
+        route.setName((fromCode + " → " + toCode).length() <= 100 ? fromCode + " → " + toCode : code);
+        route.setActive(true);
+        route.setFromOffice(from.get());
+        route.setToOffice(to.get());
+        Route saved = routeRepository.save(route);
+        return java.util.Optional.of(saved);
+    }
+
+    private java.util.Optional<Route> anyExistingRoute() {
+        java.util.List<Route> all = routeRepository.findAll();
+        return all.stream().filter(r -> Boolean.TRUE.equals(r.getActive())).findFirst().or(() -> all.stream().findFirst());
+    }
+
+    /** Last resort when DB has offices but zero routes (common on Railway without seed). */
+    private java.util.Optional<Route> createFallbackRoute() {
+        java.util.List<Office> offices = officeRepository.findAll();
+        if (offices.size() < 2) {
+            return java.util.Optional.empty();
+        }
+        Office from = offices.stream().filter(o -> Boolean.TRUE.equals(o.getIsHub())).findFirst().orElse(offices.get(0));
+        Office to = offices.stream().filter(o -> o.getId() != null && !o.getId().equals(from.getId())).findFirst().orElse(null);
+        if (to == null) {
+            return java.util.Optional.empty();
+        }
+        String code = (from.getCode() + "-" + to.getCode()).toUpperCase();
+        if (code.length() > 30) {
+            code = code.substring(0, 30);
+        }
+        if (code.length() < 3) {
+            code = ("R" + from.getId() + to.getId());
+            if (code.length() > 30) {
+                code = code.substring(0, 30);
+            }
+        }
+        return routeRepository
+            .findOneByCode(code)
+            .or(() -> {
+                Route route = new Route();
+                route.setCode(code);
+                route.setName(from.getCode() + " → " + to.getCode());
+                route.setActive(true);
+                route.setFromOffice(from);
+                route.setToOffice(to);
+                return java.util.Optional.of(routeRepository.save(route));
+            });
     }
 
     private Vehicle resolveVehicle(CreateTripRequest req) {
