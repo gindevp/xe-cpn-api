@@ -32,6 +32,10 @@ public class PatchOrderRequest {
     private String bankAccountName;
     private String routeLabel;
     private String itineraryLabel;
+    /** Optional override for order_event.action (default PATCH). */
+    private String eventAction;
+    /** Optional override for order_event.detail (default "Order fields updated"). */
+    private String eventDetail;
 
     public String getSenderName() {
         return senderName;
@@ -255,5 +259,21 @@ public class PatchOrderRequest {
 
     public void setItineraryLabel(String itineraryLabel) {
         this.itineraryLabel = itineraryLabel;
+    }
+
+    public String getEventAction() {
+        return eventAction;
+    }
+
+    public void setEventAction(String eventAction) {
+        this.eventAction = eventAction;
+    }
+
+    public String getEventDetail() {
+        return eventDetail;
+    }
+
+    public void setEventDetail(String eventDetail) {
+        this.eventDetail = eventDetail;
     }
 }

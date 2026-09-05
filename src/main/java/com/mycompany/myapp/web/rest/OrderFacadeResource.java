@@ -12,6 +12,7 @@ import com.mycompany.myapp.service.dto.order.CreateDraftOrderResponse;
 import com.mycompany.myapp.service.dto.order.CreateOrderRequest;
 import com.mycompany.myapp.service.dto.order.FailDeliveryRequest;
 import com.mycompany.myapp.service.dto.order.FailDeliveryResponse;
+import com.mycompany.myapp.service.dto.order.LogOrderEventRequest;
 import com.mycompany.myapp.service.dto.order.MarkCodExportedRequest;
 import com.mycompany.myapp.service.dto.order.OrderDetailDTO;
 import com.mycompany.myapp.service.dto.order.OrderSummaryDTO;
@@ -135,6 +136,11 @@ public class OrderFacadeResource {
     @PatchMapping("/{orderCode}")
     public OrderDetailDTO patchOrder(@PathVariable String orderCode, @RequestBody(required = false) PatchOrderRequest request) {
         return orderFacadeService.patch(orderCode, request != null ? request : new PatchOrderRequest());
+    }
+
+    @PostMapping("/{orderCode}/events")
+    public OrderDetailDTO logOrderEvent(@PathVariable String orderCode, @Valid @RequestBody LogOrderEventRequest request) {
+        return orderFacadeService.logEvent(orderCode, request);
     }
 
     @PostMapping("/{orderCode}/pickup-start")

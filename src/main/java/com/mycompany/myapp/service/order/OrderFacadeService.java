@@ -20,6 +20,7 @@ import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.CreateDraftOrderRequest;
 import com.mycompany.myapp.service.dto.order.CreateDraftOrderResponse;
 import com.mycompany.myapp.service.dto.order.CreateOrderRequest;
+import com.mycompany.myapp.service.dto.order.LogOrderEventRequest;
 import com.mycompany.myapp.service.dto.order.MarkCodExportedRequest;
 import com.mycompany.myapp.service.dto.order.OrderDetailDTO;
 import com.mycompany.myapp.service.dto.order.OrderSummaryDTO;
@@ -564,7 +565,36 @@ public class OrderFacadeService {
             order.setItineraryLabel(blankToNull(req.getItineraryLabel()));
         }
         shipmentOrderRepository.save(order);
-        appendEvent(order, "PATCH", "Order fields updated", currentActor());
+        String eventAction = !isBlank(req.getEventAction()) ? req.getEventAction().trim() : "PATCH";
+        String eventDetail = !isBlank(req.getEventDetail()) ? req.getEventDetail().trim() : "Order fields updated";
+        appendEvent(order, eventAction, eventDetail, currentActor());
+        return getByCode(order.getOrderCode());
+    }
+
+    /**
+     * Append a history row without changing order fields.
+     * PRINT also updates labelPrintedAt / labelReprintCount.
+     */
+    public OrderDetailDTO logEvent(String code, LogOrderEventRequest req) {
+        ShipmentOrder order = requireByCode(code);
+        if (req == null || isBlank(req.getAction())) {
+            throw new BadRequestAlertException("action is required", ENTITY, "eventActionRequired");
+        }
+        String action = req.getAction().trim();
+        String detail = req.getDetail();
+        if ("PRINT".equalsIgnoreCase(action)) {
+            Instant now = Instant.now();
+            Integer prev = order.getLabelReprintCount();
+            if (order.getLabelPrintedAt() == null) {
+                order.setLabelPrintedAt(now);
+                order.setLabelReprintCount(0);
+            } else {
+                order.setLabelPrintedAt(now);
+                order.setLabelReprintCount(prev == null ? 1 : prev + 1);
+            }
+            shipmentOrderRepository.save(order);
+        }
+        appendEvent(order, action, detail, currentActor());
         return getByCode(order.getOrderCode());
     }
 
@@ -702,8 +732,11 @@ public class OrderFacadeService {
     private void appendEvent(ShipmentOrder order, String action, String detail, String actor) {
         OrderEvent event = new OrderEvent();
         event.setEventAt(Instant.now());
-        event.setAction(action);
-        event.setDetail(detail);
+        event.setAction(action == null ? "EVENT" : (action.length() > 100 ? action.substring(0, 100) : action));
+        if (detail != null && !detail.isBlank()) {
+            String d = detail.trim();
+            event.setDetail(d.length() > 255 ? d.substring(0, 255) : d);
+        }
         event.setActorUsername(actor == null ? "system" : actor);
         event.setOrder(order);
         orderEventRepository.save(event);

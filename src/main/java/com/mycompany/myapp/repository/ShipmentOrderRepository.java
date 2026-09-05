@@ -64,5 +64,7 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
 
     boolean existsByDraftCode(String draftCode);
 
+    boolean existsByOrderCode(String orderCode);
+
     List<ShipmentOrder> findByCurrentTrip_Id(Long tripId);
 }
