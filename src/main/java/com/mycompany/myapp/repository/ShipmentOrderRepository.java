@@ -59,8 +59,12 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
     )
     Optional<ShipmentOrder> findOneByOrderCodeOrDraftCode(@Param("code") String code);
 
-    @Query("select max(shipmentOrder.orderCode) from ShipmentOrder shipmentOrder where shipmentOrder.orderCode like concat(:prefix, '%')")
-    Optional<String> findMaxOrderCodeByPrefix(@Param("prefix") String prefix);
+    /**
+     * Mã đơn cùng VP + ngày, để lấy số thứ tự kế tiếp.
+     * Không dùng max() SQL vì so chuỗi sẽ sai khi có hậu tố 4 chữ số ("999" > "1000") — số lớn nhất tính trong Java.
+     */
+    @Query("select shipmentOrder.orderCode from ShipmentOrder shipmentOrder where shipmentOrder.orderCode like concat(:prefix, '%')")
+    List<String> findOrderCodesByPrefix(@Param("prefix") String prefix);
 
     boolean existsByDraftCode(String draftCode);
 

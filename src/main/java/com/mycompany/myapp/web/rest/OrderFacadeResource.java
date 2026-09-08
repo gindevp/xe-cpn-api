@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpHeaders;
@@ -56,6 +57,9 @@ import tech.jhipster.web.util.PaginationUtil;
 public class OrderFacadeResource {
 
     private static final Logger LOG = LoggerFactory.getLogger(OrderFacadeResource.class);
+
+    /** Số lần thử lại khi trùng mã đơn do tạo đồng thời (lần cuối để lỗi nổi lên nếu vẫn trùng). */
+    private static final int CREATE_CODE_RETRIES = 2;
 
     private final OrderFacadeService orderFacadeService;
     private final TripFacadeService tripFacadeService;
@@ -129,8 +133,23 @@ public class OrderFacadeResource {
     @PostMapping("")
     public ResponseEntity<OrderSummaryDTO> createOrder(@Valid @RequestBody CreateOrderRequest request) throws URISyntaxException {
         LOG.debug("REST request to create confirmed order");
-        OrderSummaryDTO created = orderFacadeService.createConfirmed(request);
+        OrderSummaryDTO created = createWithCodeRetry(request);
         return ResponseEntity.created(new URI("/api/orders/" + created.getOrderCode())).body(created);
+    }
+
+    /**
+     * Mã đơn là STT tăng dần theo VP/ngày nên hai quầy tạo cùng lúc có thể tính ra cùng số và vướng unique constraint.
+     * Transaction đã rollback nên phải gọi lại từ ngoài — lần sau đọc được số vừa bị chiếm.
+     */
+    private OrderSummaryDTO createWithCodeRetry(CreateOrderRequest request) {
+        for (int attempt = 0; attempt < CREATE_CODE_RETRIES; attempt++) {
+            try {
+                return orderFacadeService.createConfirmed(request);
+            } catch (DataIntegrityViolationException e) {
+                LOG.warn("Order code collision on create (attempt {}), retrying", attempt + 1);
+            }
+        }
+        return orderFacadeService.createConfirmed(request);
     }
 
     @PatchMapping("/{orderCode}")

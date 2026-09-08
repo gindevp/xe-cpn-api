@@ -15,6 +15,17 @@ public class OrderTransitionRequest {
     @Size(max = 255)
     private String detail;
 
+    /** DRAFT → CONFIRMED mới cấp mã thật: xác nhận khi VP đã vượt 1000 đơn/ngày. */
+    private Boolean confirmDailyOverflow = false;
+
+    public Boolean getConfirmDailyOverflow() {
+        return confirmDailyOverflow;
+    }
+
+    public void setConfirmDailyOverflow(Boolean confirmDailyOverflow) {
+        this.confirmDailyOverflow = confirmDailyOverflow;
+    }
+
     public OrderStatus getToStatus() {
         return toStatus;
     }

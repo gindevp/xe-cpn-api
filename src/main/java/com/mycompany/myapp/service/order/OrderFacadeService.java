@@ -331,7 +331,7 @@ public class OrderFacadeService {
             }
             String office = order.getFromOffice().getCode();
             if (order.getOrderCode() != null && order.getOrderCode().startsWith("N-")) {
-                order.setOrderCode(orderCodeGenerator.nextOrderCode(office));
+                order.setOrderCode(orderCodeGenerator.nextOrderCode(office, Boolean.TRUE.equals(req.getConfirmDailyOverflow())));
             }
         }
         order.setStatus(to);
@@ -397,7 +397,7 @@ public class OrderFacadeService {
         }
         applyCreateFields(order, req);
         String fromCode = order.getFromOffice().getCode();
-        order.setOrderCode(orderCodeGenerator.nextOrderCode(fromCode));
+        order.setOrderCode(orderCodeGenerator.nextOrderCode(fromCode, Boolean.TRUE.equals(req.getConfirmDailyOverflow())));
         order.setStatus(OrderStatus.CONFIRMED);
         order = shipmentOrderRepository.save(order);
         ensureLegs(order);
@@ -430,7 +430,7 @@ public class OrderFacadeService {
         }
 
         ShipmentOrder order = newBlankOrder();
-        order.setOrderCode(orderCodeGenerator.nextOrderCode(from.getCode()));
+        order.setOrderCode(orderCodeGenerator.nextOrderCode(from.getCode(), Boolean.TRUE.equals(req.getConfirmDailyOverflow())));
         order.setStatus(OrderStatus.CONFIRMED);
         applyCreateFields(order, req);
         order.setFromOffice(from);
