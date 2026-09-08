@@ -1,11 +1,13 @@
 package com.mycompany.myapp.web.rest.errors;
 
+import com.mycompany.myapp.security.UserNotActivatedException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -40,6 +42,12 @@ public class ExceptionTranslatorTestController {
     @GetMapping("/unauthorized")
     public void unauthorized() {
         throw new BadCredentialsException("test authentication failed!");
+    }
+
+    /** Mirrors how Spring wraps what {@code loadUserByUsername} throws for a deactivated account. */
+    @GetMapping("/user-not-activated")
+    public void userNotActivated() {
+        throw new InternalAuthenticationServiceException("wrapped", new UserNotActivatedException("User someone was not activated"));
     }
 
     @GetMapping("/response-status")

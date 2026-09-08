@@ -105,6 +105,10 @@ public class StaffAdminFacadeService {
             user = userRepository.save(user);
         } else {
             if (req.active() != null) {
+                // Tự khóa mình sẽ mất luôn đường vào (staff-admin cần ROLE_ADMIN) — chỉ mở lại được bằng DB.
+                if (Boolean.FALSE.equals(req.active()) && isCurrentUser(login)) {
+                    throw new BadRequestAlertException("Không thể khóa chính tài khoản đang đăng nhập", ENTITY, "cannotLockSelf");
+                }
                 user.setActivated(req.active());
             }
             if (req.password() != null && !req.password().isBlank()) {
@@ -154,13 +158,16 @@ public class StaffAdminFacadeService {
             throw new BadRequestAlertException("username required", ENTITY, "usernameRequired");
         }
         String login = loginRaw.trim().toLowerCase();
-        boolean self = SecurityUtils.getCurrentUserLogin().filter(cur -> cur.equalsIgnoreCase(login)).isPresent();
-        if (self) {
+        if (isCurrentUser(login)) {
             throw new BadRequestAlertException("Không thể xóa chính tài khoản đang đăng nhập", ENTITY, "cannotDeleteSelf");
         }
         staffProfileRepository.findOneByUserLoginIgnoreCase(login).ifPresent(staffProfileRepository::delete);
         userRepository.findOneByLogin(login).ifPresent(userRepository::delete);
         permissionService.invalidateCache();
+    }
+
+    private boolean isCurrentUser(String login) {
+        return SecurityUtils.getCurrentUserLogin().filter(cur -> cur.equalsIgnoreCase(login)).isPresent();
     }
 
     /** ROLE_ADMIN follows the AD job title, and nobody may demote their own admin account. */
@@ -177,8 +184,7 @@ public class StaffAdminFacadeService {
         if (!hasAdmin) {
             return;
         }
-        boolean self = SecurityUtils.getCurrentUserLogin().filter(login -> login.equalsIgnoreCase(user.getLogin())).isPresent();
-        if (self) {
+        if (isCurrentUser(user.getLogin())) {
             throw new BadRequestAlertException("Không thể tự bỏ quyền Admin của chính mình", ENTITY, "cannotDemoteSelf");
         }
         authorities.removeIf(a -> AuthoritiesConstants.ADMIN.equals(a.getName()));

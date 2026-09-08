@@ -34,6 +34,17 @@ class ExceptionTranslatorIT {
             .andExpect(jsonPath("$.message").value(ErrorConstants.ERR_CONCURRENCY_FAILURE));
     }
 
+    /** Tài khoản bị khóa phải ra 401 kèm mã lỗi rõ ràng, không phải 500 chung. */
+    @Test
+    void testUserNotActivated() throws Exception {
+        mockMvc
+            .perform(get("/api/exception-translator-test/user-not-activated"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.message").value(ErrorConstants.ERR_USER_NOT_ACTIVATED))
+            .andExpect(jsonPath("$.detail").value("Tài khoản đã bị khóa. Liên hệ quản trị viên để mở lại."));
+    }
+
     @Test
     void testMethodArgumentNotValid() throws Exception {
         mockMvc

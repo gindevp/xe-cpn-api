@@ -2,6 +2,7 @@ package com.mycompany.myapp.web.rest.errors;
 
 import static org.springframework.core.annotation.AnnotatedElementUtils.findMergedAnnotation;
 
+import com.mycompany.myapp.security.UserNotActivatedException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.util.Arrays;
@@ -189,8 +190,21 @@ public class ExceptionTranslator extends ResponseEntityExceptionHandler {
             return ErrorConstants.ERR_VALIDATION;
         } else if (err instanceof ConcurrencyFailureException || err.getCause() instanceof ConcurrencyFailureException) {
             return ErrorConstants.ERR_CONCURRENCY_FAILURE;
+        } else if (isUserNotActivated(err)) {
+            return ErrorConstants.ERR_USER_NOT_ACTIVATED;
         }
         return null;
+    }
+
+    /**
+     * Spring wraps anything {@code loadUserByUsername} throws (except UsernameNotFound) into
+     * InternalAuthenticationServiceException, so the cause chain must be walked.
+     */
+    private boolean isUserNotActivated(Throwable err) {
+        for (Throwable t = err; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof UserNotActivatedException) return true;
+        }
+        return false;
     }
 
     private String getCustomizedTitle(Throwable err) {
@@ -199,6 +213,9 @@ public class ExceptionTranslator extends ResponseEntityExceptionHandler {
     }
 
     private String getCustomizedErrorDetails(Throwable err) {
+        if (isUserNotActivated(err)) {
+            return "Tài khoản đã bị khóa. Liên hệ quản trị viên để mở lại.";
+        }
         Collection<String> activeProfiles = Arrays.asList(env.getActiveProfiles());
         if (activeProfiles.contains(JHipsterConstants.SPRING_PROFILE_PRODUCTION)) {
             if (err instanceof HttpMessageConversionException) return "Unable to convert http message";
@@ -213,6 +230,7 @@ public class ExceptionTranslator extends ResponseEntityExceptionHandler {
         if (err instanceof AccessDeniedException) return HttpStatus.FORBIDDEN;
         if (err instanceof ConcurrencyFailureException) return HttpStatus.CONFLICT;
         if (err instanceof BadCredentialsException) return HttpStatus.UNAUTHORIZED;
+        if (isUserNotActivated(err)) return HttpStatus.UNAUTHORIZED;
         return null;
     }
 
