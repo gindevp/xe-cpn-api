@@ -155,6 +155,14 @@ public class SimpleFareCalculator {
                 return new PricingRuleMatch(p, false);
             }
         }
+        // Bảng giá nhập kiểu "mức sau = max mức trước + 1 KG" để hở một quãng (vd 3,1–4,0 KG khi
+        // có (0,3] và (4,6]). Quãng đó phải tính theo mức kế tiếp, nếu trả null thì cước rơi vào
+        // giá fallback cứng bên dưới — sai so với bảng giá.
+        for (PricingRule p : sorted) {
+            if (chargeKg.compareTo(nz(p.getMaxKg())) <= 0) {
+                return new PricingRuleMatch(p, false);
+            }
+        }
         PricingRule last = sorted.get(sorted.size() - 1);
         if (chargeKg.compareTo(nz(last.getMaxKg())) > 0) {
             return new PricingRuleMatch(last, true);

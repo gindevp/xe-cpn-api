@@ -11,4 +11,6 @@ public enum ForwardStage {
     DEST_WH_IN,
     DELIVERING,
     FAILED,
+    /** Giao thất bại, điều phối đã xếp vào danh sách chờ giao lại (vẫn FAILED_DELIVERY). */
+    REDELIVER_WAIT,
 }

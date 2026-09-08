@@ -128,7 +128,7 @@ public class InventoryHourlyReportService {
         return switch (st) {
             case PICKED -> from == null ? null : new Classified("LAY", from);
             case WH_IN, TRANSFER_PENDING, TRANSFERRING -> from == null ? null : new Classified("TON_LC_GIAO", from);
-            case DEST_WH_IN, DELIVERING, FAILED -> to == null ? null : new Classified("GIAO", to);
+            case DEST_WH_IN, DELIVERING, FAILED, REDELIVER_WAIT -> to == null ? null : new Classified("GIAO", to);
             default -> null;
         };
     }
@@ -146,7 +146,11 @@ public class InventoryHourlyReportService {
         ForwardStage st = o.getForwardStage();
         ReturnStage rs = o.getReturnStage();
         boolean wh =
-            (st == ForwardStage.WH_IN || st == ForwardStage.DEST_WH_IN || st == ForwardStage.DELIVERING || st == ForwardStage.FAILED) ||
+            (st == ForwardStage.WH_IN ||
+                st == ForwardStage.DEST_WH_IN ||
+                st == ForwardStage.DELIVERING ||
+                st == ForwardStage.FAILED ||
+                st == ForwardStage.REDELIVER_WAIT) ||
             (rs == ReturnStage.RT_WH_IN || rs == ReturnStage.RT_DELIVERING || rs == ReturnStage.RT_FAILED || rs == ReturnStage.RT_DONE);
         if (wh) {
             Instant at = ageBase(o);

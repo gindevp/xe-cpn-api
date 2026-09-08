@@ -83,6 +83,24 @@ class SimpleFareCalculatorTest {
         assertThat(calc.estimate(new BigDecimal("3.001"), false, false, gp, nb).base()).isEqualByComparingTo("25000");
     }
 
+    /** Bảng giá nhập kiểu "mức sau = max mức trước + 1 KG" để hở quãng 3,1–4,0 KG. */
+    @Test
+    void estimate_weightInGapBetweenBandsUsesNextBand() {
+        PricingRule first = routeRule(1L, "0", "3", "15000", "0");
+        PricingRule second = routeRule(2L, "4", "6", "25000", "0");
+        when(pricingRuleRepository.findAll()).thenReturn(List.of(first, second));
+
+        assertThat(calc.estimate(new BigDecimal("3"), false, false, gp, nb).base()).isEqualByComparingTo("15000");
+
+        SimpleFareCalculator.FareBreakdown gap = calc.estimate(new BigDecimal("3.5"), false, false, gp, nb);
+        assertThat(gap.base()).isEqualByComparingTo("25000");
+        // Phải là mức trong bảng giá, không được rơi vào giá fallback cứng.
+        assertThat(gap.pricingRuleId()).isEqualTo(2L);
+
+        assertThat(calc.estimate(new BigDecimal("4"), false, false, gp, nb).base()).isEqualByComparingTo("25000");
+        assertThat(calc.estimate(new BigDecimal("6"), false, false, gp, nb).base()).isEqualByComparingTo("25000");
+    }
+
     @Test
     void estimate_overageUsesAddFeePerKgWhenNoStep() {
         PricingRule rule = routeRule(99L, "0", "5", "10000", "0");
