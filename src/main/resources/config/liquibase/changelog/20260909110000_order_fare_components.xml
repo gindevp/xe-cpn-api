@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260909110000-1" author="cpn">
+        <comment>
+            Fare components on shipment_order. fare_amount vẫn là tổng phải thu (không đổi);
+            các cột này chỉ để tách hiển thị cước hàng khỏi phí thu hộ COD / khai giá / giảm giá.
+            Đơn cũ để NULL — FE fallback về fare_amount nên số hiển thị không nhảy.
+        </comment>
+        <addColumn tableName="shipment_order">
+            <column name="goods_fare_amount" type="decimal(21,2)"/>
+            <column name="declared_fee_amount" type="decimal(21,2)"/>
+            <column name="discount_amount" type="decimal(21,2)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

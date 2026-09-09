@@ -143,10 +143,24 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "dimensions_text", length = 120)
     private String dimensionsText;
 
+    /** Tổng tiền phải thu (gồm cước hàng + các phí + phí thu hộ - giảm giá). Mọi tính toán due/H1 dựa trên cột này. */
     @NotNull
     @DecimalMin(value = "0")
     @Column(name = "fare_amount", precision = 21, scale = 2, nullable = false)
     private BigDecimal fareAmount;
+
+    /** Cước hàng thuần (không gồm phí tận nơi / thu hộ / khai giá). NULL với đơn tạo trước khi tách thành phần. */
+    @DecimalMin(value = "0")
+    @Column(name = "goods_fare_amount", precision = 21, scale = 2)
+    private BigDecimal goodsFareAmount;
+
+    @DecimalMin(value = "0")
+    @Column(name = "declared_fee_amount", precision = 21, scale = 2)
+    private BigDecimal declaredFeeAmount;
+
+    @DecimalMin(value = "0")
+    @Column(name = "discount_amount", precision = 21, scale = 2)
+    private BigDecimal discountAmount;
 
     @DecimalMin(value = "0")
     @Column(name = "pickup_fee_amount", precision = 21, scale = 2)
@@ -654,6 +668,45 @@ public class ShipmentOrder implements Serializable {
 
     public void setFareAmount(BigDecimal fareAmount) {
         this.fareAmount = fareAmount;
+    }
+
+    public BigDecimal getGoodsFareAmount() {
+        return this.goodsFareAmount;
+    }
+
+    public ShipmentOrder goodsFareAmount(BigDecimal goodsFareAmount) {
+        this.setGoodsFareAmount(goodsFareAmount);
+        return this;
+    }
+
+    public void setGoodsFareAmount(BigDecimal goodsFareAmount) {
+        this.goodsFareAmount = goodsFareAmount;
+    }
+
+    public BigDecimal getDeclaredFeeAmount() {
+        return this.declaredFeeAmount;
+    }
+
+    public ShipmentOrder declaredFeeAmount(BigDecimal declaredFeeAmount) {
+        this.setDeclaredFeeAmount(declaredFeeAmount);
+        return this;
+    }
+
+    public void setDeclaredFeeAmount(BigDecimal declaredFeeAmount) {
+        this.declaredFeeAmount = declaredFeeAmount;
+    }
+
+    public BigDecimal getDiscountAmount() {
+        return this.discountAmount;
+    }
+
+    public ShipmentOrder discountAmount(BigDecimal discountAmount) {
+        this.setDiscountAmount(discountAmount);
+        return this;
+    }
+
+    public void setDiscountAmount(BigDecimal discountAmount) {
+        this.discountAmount = discountAmount;
     }
 
     public BigDecimal getPickupFeeAmount() {

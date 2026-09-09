@@ -73,6 +73,10 @@ public class CreateOrderRequest {
 
     private BigDecimal codAmount;
     private BigDecimal codFeeAmount;
+    /** Thành phần của fareAmount — chỉ để tách hiển thị, fareAmount vẫn là tổng phải thu. */
+    private BigDecimal goodsFareAmount;
+    private BigDecimal declaredFeeAmount;
+    private BigDecimal discountAmount;
     private String bankName;
     private String bankAccountNo;
     private String bankAccountName;
@@ -272,6 +276,30 @@ public class CreateOrderRequest {
 
     public void setCodFeeAmount(BigDecimal codFeeAmount) {
         this.codFeeAmount = codFeeAmount;
+    }
+
+    public BigDecimal getGoodsFareAmount() {
+        return goodsFareAmount;
+    }
+
+    public void setGoodsFareAmount(BigDecimal goodsFareAmount) {
+        this.goodsFareAmount = goodsFareAmount;
+    }
+
+    public BigDecimal getDeclaredFeeAmount() {
+        return declaredFeeAmount;
+    }
+
+    public void setDeclaredFeeAmount(BigDecimal declaredFeeAmount) {
+        this.declaredFeeAmount = declaredFeeAmount;
+    }
+
+    public BigDecimal getDiscountAmount() {
+        return discountAmount;
+    }
+
+    public void setDiscountAmount(BigDecimal discountAmount) {
+        this.discountAmount = discountAmount;
     }
 
     public String getBankName() {

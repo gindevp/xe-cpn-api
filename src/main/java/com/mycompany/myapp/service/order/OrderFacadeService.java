@@ -420,14 +420,21 @@ public class OrderFacadeService {
             to,
             req.getBranchCode()
         );
+        // Bảng giá master chỉ quyết cước hàng + phí tận nơi; phí thu hộ COD / khai giá / giảm giá là khoản riêng
+        // của đơn nên phải cộng thêm, không thì đơn COD bị thu thiếu đúng phần phí thu hộ.
+        BigDecimal serviceFees = OrderMoney.nz(req.getCodFeeAmount())
+            .add(OrderMoney.nz(req.getDeclaredFeeAmount()))
+            .subtract(OrderMoney.nz(req.getDiscountAmount()));
         BigDecimal total;
         if (fare.pricingRuleId() != null) {
-            total = fare.total();
+            total = fare.total().add(serviceFees);
         } else if (req.getFareAmount() != null) {
+            // FE tự tính khi không có bảng giá — số này đã gộp đủ phí.
             total = req.getFareAmount();
         } else {
-            total = fare.total();
+            total = fare.total().add(serviceFees);
         }
+        total = total.max(BigDecimal.ZERO);
 
         ShipmentOrder order = newBlankOrder();
         order.setOrderCode(orderCodeGenerator.nextOrderCode(from.getCode(), Boolean.TRUE.equals(req.getConfirmDailyOverflow())));
@@ -440,6 +447,10 @@ public class OrderFacadeService {
         order.setFinalToOffice(dest);
         order.setServiceType(resolveServiceType(homePickup, homeDelivery));
         order.setFareAmount(total);
+        if (fare.pricingRuleId() != null) {
+            // Tổng lấy theo bảng giá master nên cước hàng cũng phải theo master, không thì kiện cộng lại lệch tổng.
+            order.setGoodsFareAmount(fare.base().add(OrderMoney.nz(fare.surcharge())));
+        }
         order.setPickupFeeAmount(fare.pickupFee());
         order.setDeliveryFeeAmount(fare.deliveryFee());
         order.setPublicTrackingAllowed(true);
@@ -511,8 +522,14 @@ public class OrderFacadeService {
             order.setDeliveryFeeAmount(fees.deliveryFee());
             // Recalc total only when client did not send explicit fareAmount in this PATCH
             if (req.getFareAmount() == null) {
-                assertFareNotBelowPaid(fees.total(), order.getPaidAmount());
-                order.setFareAmount(fees.total());
+                BigDecimal recalc = fees
+                    .total()
+                    .add(OrderMoney.nz(order.getCodFeeAmount()))
+                    .add(OrderMoney.nz(order.getDeclaredFeeAmount()))
+                    .subtract(OrderMoney.nz(order.getDiscountAmount()))
+                    .max(BigDecimal.ZERO);
+                assertFareNotBelowPaid(recalc, order.getPaidAmount());
+                order.setFareAmount(recalc);
             }
             // Legs: do not rebuild/wipe existing OrderLeg rows on door-flag PATCH (LEG regression safe)
         }
@@ -548,6 +565,15 @@ public class OrderFacadeService {
         }
         if (req.getCodFeeAmount() != null) {
             order.setCodFeeAmount(req.getCodFeeAmount());
+        }
+        if (req.getGoodsFareAmount() != null) {
+            order.setGoodsFareAmount(req.getGoodsFareAmount());
+        }
+        if (req.getDeclaredFeeAmount() != null) {
+            order.setDeclaredFeeAmount(req.getDeclaredFeeAmount());
+        }
+        if (req.getDiscountAmount() != null) {
+            order.setDiscountAmount(req.getDiscountAmount());
         }
         if (req.getBankName() != null) {
             order.setBankName(blankToNull(req.getBankName()));
@@ -694,6 +720,15 @@ public class OrderFacadeService {
         if (req.getCodFeeAmount() != null) {
             order.setCodFeeAmount(req.getCodFeeAmount());
         }
+        if (req.getGoodsFareAmount() != null) {
+            order.setGoodsFareAmount(req.getGoodsFareAmount());
+        }
+        if (req.getDeclaredFeeAmount() != null) {
+            order.setDeclaredFeeAmount(req.getDeclaredFeeAmount());
+        }
+        if (req.getDiscountAmount() != null) {
+            order.setDiscountAmount(req.getDiscountAmount());
+        }
         if (req.getBankName() != null) {
             order.setBankName(blankToNull(req.getBankName()));
         }
@@ -815,6 +850,9 @@ public class OrderFacadeService {
         dto.setPartnerFeeAmount(o.getPartnerFeeAmount());
         dto.setCodAmount(o.getCodAmount());
         dto.setCodFeeAmount(o.getCodFeeAmount());
+        dto.setGoodsFareAmount(o.getGoodsFareAmount());
+        dto.setDeclaredFeeAmount(o.getDeclaredFeeAmount());
+        dto.setDiscountAmount(o.getDiscountAmount());
         dto.setBankName(o.getBankName());
         dto.setBankAccountNo(o.getBankAccountNo());
         dto.setBankAccountName(o.getBankAccountName());
