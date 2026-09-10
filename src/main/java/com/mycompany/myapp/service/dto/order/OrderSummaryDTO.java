@@ -44,6 +44,8 @@ public class OrderSummaryDTO {
     private String currentTripCode;
     private Integer shelfNumber;
     private String note;
+    private String pickupAddress;
+    private String deliveryAddress;
     private Instant pickingAt;
     private Instant pickedUpAt;
     private String pickupStaffUsername;
@@ -320,6 +322,22 @@ public class OrderSummaryDTO {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public String getPickupAddress() {
+        return pickupAddress;
+    }
+
+    public void setPickupAddress(String pickupAddress) {
+        this.pickupAddress = pickupAddress;
+    }
+
+    public String getDeliveryAddress() {
+        return deliveryAddress;
+    }
+
+    public void setDeliveryAddress(String deliveryAddress) {
+        this.deliveryAddress = deliveryAddress;
     }
 
     public Instant getPickingAt() {

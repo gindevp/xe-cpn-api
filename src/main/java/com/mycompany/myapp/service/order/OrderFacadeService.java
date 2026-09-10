@@ -876,6 +876,8 @@ public class OrderFacadeService {
         dto.setCurrentTripCode(o.getCurrentTrip() != null ? o.getCurrentTrip().getTripCode() : null);
         dto.setShelfNumber(o.getShelfNumber());
         dto.setNote(o.getNote());
+        dto.setPickupAddress(o.getPickupAddress());
+        dto.setDeliveryAddress(o.getDeliveryAddress());
         dto.setPickingAt(o.getPickingAt());
         dto.setPickedUpAt(o.getPickedUpAt());
         dto.setPickupStaffUsername(o.getPickupStaffUsername());
