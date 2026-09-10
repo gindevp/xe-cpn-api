@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260909160000-1" author="cpn">
+        <comment>
+            Chính sách bắt buộc cập nhật app mobile — bảng singleton (1 row).
+            Không seed row: bảng rỗng thì GET /api/mobile/app-version trả mặc định 1.0.0 / null / true,
+            tức không chặn ai cho tới khi admin nâng mức trong màn Tích hợp.
+        </comment>
+        <createTable tableName="mobile_app_version_policy">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="minimum_version" type="varchar(30)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="minimum_android_version_code" type="int"/>
+            <column name="mandatory_update_enabled" type="boolean" defaultValueBoolean="true"/>
+            <column name="updated_at" type="${datetimeType}"/>
+        </createTable>
+    </changeSet>
+</databaseChangeLog>

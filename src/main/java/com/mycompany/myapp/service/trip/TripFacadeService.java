@@ -184,7 +184,7 @@ public class TripFacadeService {
             order.setCurrentTrip(trip);
             order.setForwardStage(ForwardStage.TRANSFER_PENDING);
             shipmentOrderRepository.save(order);
-            appendOrderEvent(order, "ASSIGN_TRIP", "Trip " + trip.getTripCode(), currentActor());
+            appendOrderEvent(order, "ASSIGN_TRIP", "Chuyến " + trip.getTripCode(), currentActor());
         }
         refreshCounts(trip);
         tripRepository.save(trip);
@@ -222,7 +222,7 @@ public class TripFacadeService {
             tr.setDetail("Trip " + trip.getTripCode());
             orderFacadeService.transition(order.getOrderCode(), tr);
         } else if (order.getStatus() != OrderStatus.IN_TRANSIT) {
-            appendOrderEvent(order, "SCAN_OUT", "Trip " + trip.getTripCode(), currentActor());
+            appendOrderEvent(order, "SCAN_OUT", "Chuyến " + trip.getTripCode(), currentActor());
         }
 
         refreshCounts(trip);
@@ -252,7 +252,7 @@ public class TripFacadeService {
             tr.setDetail("Trip " + trip.getTripCode());
             orderFacadeService.transition(order.getOrderCode(), tr);
         } else {
-            appendOrderEvent(order, "SCAN_REMOVE", "Trip " + trip.getTripCode(), currentActor());
+            appendOrderEvent(order, "SCAN_REMOVE", "Chuyến " + trip.getTripCode(), currentActor());
         }
         refreshCounts(trip);
         tripRepository.save(trip);
@@ -273,7 +273,7 @@ public class TripFacadeService {
             assignmentRepository.save(assignment);
             order.setCurrentTrip(trip);
             shipmentOrderRepository.save(order);
-            appendOrderEvent(order, "HANDOVER", "Trip " + trip.getTripCode(), currentActor());
+            appendOrderEvent(order, "HANDOVER", "Chuyến " + trip.getTripCode(), currentActor());
         }
         refreshCounts(trip);
         tripRepository.save(trip);

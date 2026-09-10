@@ -301,7 +301,7 @@ public class OrderFacadeService {
         order.setPublicTrackingAllowed(true);
 
         order = shipmentOrderRepository.save(order);
-        appendEvent(order, "DRAFT_CREATE", "Public draft", "customer");
+        appendEvent(order, "DRAFT_CREATE", "Tạo nháp công khai", "customer");
 
         Instant expiresAt = Instant.now().plus(DRAFT_TTL);
         return new CreateDraftOrderResponse(draftCode, order.getOrderCode(), OrderStatus.DRAFT, fare.total(), expiresAt);
@@ -354,7 +354,7 @@ public class OrderFacadeService {
         order.setStatus(OrderStatus.CONFIRMED);
         order.setCancelReason(null);
         shipmentOrderRepository.save(order);
-        appendEvent(order, "RESTORE", "Restored to CONFIRMED", currentActor());
+        appendEvent(order, "RESTORE", "Khôi phục về đã xác nhận", currentActor());
         return new OrderTransitionResponse(true, OrderStatus.CONFIRMED, order.getOrderCode());
     }
 
@@ -401,7 +401,7 @@ public class OrderFacadeService {
         order.setStatus(OrderStatus.CONFIRMED);
         order = shipmentOrderRepository.save(order);
         ensureLegs(order);
-        appendEvent(order, "CONFIRM", "Confirmed from draft", currentActor());
+        appendEvent(order, "CONFIRM", "Xác nhận từ nháp", currentActor());
         return toSummary(order);
     }
 
@@ -457,7 +457,7 @@ public class OrderFacadeService {
 
         order = shipmentOrderRepository.save(order);
         ensureLegs(order);
-        appendEvent(order, "CREATE", "Internal create", currentActor());
+        appendEvent(order, "CREATE", "Tạo đơn nội bộ", currentActor());
         return toSummary(order);
     }
 
@@ -634,7 +634,7 @@ public class OrderFacadeService {
             order.setPickupStaffUsername(currentActor());
         }
         shipmentOrderRepository.save(order);
-        appendEvent(order, "PICKUP_START", "Pickup started", currentActor());
+        appendEvent(order, "PICKUP_START", "Bắt đầu lấy hàng", currentActor());
         return getByCode(order.getOrderCode());
     }
 
@@ -643,7 +643,7 @@ public class OrderFacadeService {
         dayClosureGuard.assertOrderMutable(order);
         order.setPickedUpAt(Instant.now());
         shipmentOrderRepository.save(order);
-        appendEvent(order, "WAREHOUSE_RECEIVE", "Received at warehouse", currentActor());
+        appendEvent(order, "WAREHOUSE_RECEIVE", "Nhập kho gửi", currentActor());
         return getByCode(order.getOrderCode());
     }
 
@@ -669,14 +669,14 @@ public class OrderFacadeService {
         orderLegRepository.save(current);
         if (last) {
             order.setStatus(OrderStatus.AT_DEST);
-            appendEvent(order, "LEG_ARRIVE_DEST", "Last leg arrived", currentActor());
+            appendEvent(order, "LEG_ARRIVE_DEST", "Chặng cuối đã đến", currentActor());
         } else {
             OrderLeg next = legs.get(current.getLegIndex() + 1);
             order.setFromOffice(next.getFromOffice());
             order.setToOffice(next.getToOffice());
             order.setCurrentTrip(null);
             order.setStatus(OrderStatus.CONFIRMED);
-            appendEvent(order, "LEG_ADVANCE", "Advanced to next leg", currentActor());
+            appendEvent(order, "LEG_ADVANCE", "Chuyển sang chặng tiếp", currentActor());
         }
         shipmentOrderRepository.save(order);
         return getByCode(order.getOrderCode());
@@ -866,13 +866,14 @@ public class OrderFacadeService {
             if (o.getCurrentTrip().getDriver() != null) {
                 dto.setDriverName(o.getCurrentTrip().getDriver().getFullName());
             }
+            dto.setDepartAt(o.getCurrentTrip().getDepartAt());
         }
         java.util.List<OrderLeg> legs = o.getId() == null
             ? java.util.List.of()
             : orderLegRepository.findByOrder_IdOrderByLegIndexAsc(o.getId());
         dto.setLegs(legs.stream().map(this::toLegView).toList());
         dto.setCurrentLegIndex(currentLegIndex(legs));
-        if ((dto.getVehiclePlate() == null || dto.getDriverName() == null) && !legs.isEmpty()) {
+        if ((dto.getVehiclePlate() == null || dto.getDriverName() == null || dto.getDepartAt() == null) && !legs.isEmpty()) {
             for (int i = legs.size() - 1; i >= 0; i--) {
                 OrderLeg leg = legs.get(i);
                 if (leg.getTrip() == null) {
@@ -884,7 +885,10 @@ public class OrderFacadeService {
                 if (dto.getDriverName() == null && leg.getTrip().getDriver() != null) {
                     dto.setDriverName(leg.getTrip().getDriver().getFullName());
                 }
-                if (dto.getVehiclePlate() != null && dto.getDriverName() != null) {
+                if (dto.getDepartAt() == null && leg.getTrip().getDepartAt() != null) {
+                    dto.setDepartAt(leg.getTrip().getDepartAt());
+                }
+                if (dto.getVehiclePlate() != null && dto.getDriverName() != null && dto.getDepartAt() != null) {
                     break;
                 }
             }

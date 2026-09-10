@@ -71,6 +71,8 @@ public class OrderSummaryDTO {
     private Instant codExportedAt;
     private String vehiclePlate;
     private String driverName;
+    /** Giờ xuất phát chuyến hiện tại (trip.departAt) — FE tab Hàng trên xe. */
+    private Instant departAt;
 
     public Long getId() {
         return id;
@@ -502,6 +504,14 @@ public class OrderSummaryDTO {
 
     public void setDriverName(String driverName) {
         this.driverName = driverName;
+    }
+
+    public Instant getDepartAt() {
+        return departAt;
+    }
+
+    public void setDepartAt(Instant departAt) {
+        this.departAt = departAt;
     }
 
     public static class OrderLegViewDTO {

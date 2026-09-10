@@ -83,8 +83,8 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             staffAccessService.requireScreenWrite(ScreenKey.PHU_PHI);
             return;
         }
-        // Tích hợp
-        if (path.startsWith("/api/integration-config")) {
+        // Tích hợp (gồm chính sách bắt buộc cập nhật app mobile — cùng màn Tích hợp trên web)
+        if (path.startsWith("/api/integration-config") || path.startsWith("/api/admin/mobile-app-version")) {
             staffAccessService.requireScreenWrite(ScreenKey.TICH_HOP);
             return;
         }

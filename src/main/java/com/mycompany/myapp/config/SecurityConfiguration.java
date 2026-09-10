@@ -50,6 +50,8 @@ public class SecurityConfiguration {
                     .requestMatchers(mvc.pattern("/api/account/reset-password/finish")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/drafts")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/track")).permitAll()
+                    // App mobile hỏi chính sách phiên bản trước khi đăng nhập
+                    .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/mobile/app-version")).permitAll()
                     .requestMatchers(mvc.pattern("/api/admin/**")).hasAuthority(AuthoritiesConstants.ADMIN)
                     // Generated domain CRUD must not bypass facade money/status/day-close guards (TASK-007)
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/shipment-orders")).hasAuthority(AuthoritiesConstants.ADMIN)
