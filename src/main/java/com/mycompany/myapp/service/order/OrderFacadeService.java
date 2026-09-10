@@ -368,7 +368,7 @@ public class OrderFacadeService {
             res.setFound(false);
             return res;
         }
-        boolean phoneOk = phone.equals(order.getSenderPhone()) || phone.equals(order.getReceiverPhone());
+        boolean phoneOk = phoneMatchesSenderOrReceiver(phone, order.getSenderPhone(), order.getReceiverPhone());
         if (!phoneOk || !Boolean.TRUE.equals(order.getPublicTrackingAllowed())) {
             res.setFound(false);
             return res;
@@ -380,8 +380,41 @@ public class OrderFacadeService {
         res.setFromOfficeCode(officeCode(order.getFromOffice()));
         res.setToOfficeCode(officeCode(order.getToOffice()));
         res.setReceiverName(order.getReceiverName());
+        res.setReceiverPhone(order.getReceiverPhone());
+        res.setDeliveryAddress(order.getDeliveryAddress());
+        res.setGoodsType(order.getGoodsType() != null ? order.getGoodsType().name() : null);
+        res.setNote(order.getNote());
+        res.setHomeDelivery(order.getHomeDelivery());
+        res.setHomePickup(order.getHomePickup());
+        res.setFareAmount(order.getFareAmount());
+        res.setGoodsFareAmount(order.getGoodsFareAmount());
+        res.setDeliveryFeeAmount(order.getDeliveryFeeAmount());
+        res.setPickupFeeAmount(order.getPickupFeeAmount());
         res.setEvents(mapEvents(order.getId()));
         return res;
+    }
+
+    /**
+     * Public track: full phone OR last 4 digits must match sender or receiver (digits only).
+     */
+    static boolean phoneMatchesSenderOrReceiver(String input, String senderPhone, String receiverPhone) {
+        String in = digitsOnly(input);
+        if (in.isEmpty()) {
+            return false;
+        }
+        String sender = digitsOnly(senderPhone);
+        String receiver = digitsOnly(receiverPhone);
+        if (in.length() == 4) {
+            return (!sender.isEmpty() && sender.endsWith(in)) || (!receiver.isEmpty() && receiver.endsWith(in));
+        }
+        return in.equals(sender) || in.equals(receiver);
+    }
+
+    private static String digitsOnly(String s) {
+        if (s == null || s.isBlank()) {
+            return "";
+        }
+        return s.replaceAll("\\D+", "");
     }
 
     private OrderSummaryDTO confirmDraft(CreateOrderRequest req) {
