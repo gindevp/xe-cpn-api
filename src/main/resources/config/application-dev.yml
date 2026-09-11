@@ -118,3 +118,13 @@ cpn:
     login-mobile: ${CPN_VTHK_MOBILE:19001515_crm}
     login-password: ${CPN_VTHK_PASSWORD:CrmXEVN@01012026}
     insecure-ssl: true
+  misa:
+    enabled: ${CPN_MISA_ENABLED:false}
+    base-url: ${CPN_MISA_BASE_URL:https://api.meinvoice.vn/api/integration}
+    app-id: ${CPN_MISA_APP_ID:f623da8a-e2c8-46a9-ad37-66939a38bf96}
+    tax-code: ${CPN_MISA_TAX_CODE:0103179782}
+    username: ${CPN_MISA_USERNAME:0987427086}
+    password: ${CPN_MISA_PASSWORD:}
+    inv-series: ${CPN_MISA_INV_SERIES:1C26MYY}
+    sign-type: ${CPN_MISA_SIGN_TYPE:5}
+    issue-only-when-requested: ${CPN_MISA_ISSUE_ONLY_WHEN_REQUESTED:true}

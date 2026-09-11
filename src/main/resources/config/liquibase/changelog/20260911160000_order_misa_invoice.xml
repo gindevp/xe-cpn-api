@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260911160000-1" author="cpn">
+        <comment>Kết quả phát hành hóa đơn điện tử MISA meInvoice trên shipment_order</comment>
+        <addColumn tableName="shipment_order">
+            <column name="invoice_ref_id" type="varchar(80)"/>
+            <column name="invoice_status" type="varchar(20)"/>
+            <column name="invoice_transaction_id" type="varchar(80)"/>
+            <column name="invoice_no" type="varchar(40)"/>
+            <column name="invoice_series" type="varchar(40)"/>
+            <column name="invoice_code" type="varchar(80)"/>
+            <column name="invoice_gross_amount" type="decimal(21,2)"/>
+            <column name="invoice_net_amount" type="decimal(21,2)"/>
+            <column name="invoice_vat_amount" type="decimal(21,2)"/>
+            <column name="invoice_issued_at" type="datetime"/>
+            <column name="invoice_error" type="varchar(500)"/>
+            <column name="invoice_retry_count" type="int" defaultValueNumeric="0"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20260911160000-2" author="cpn">
+        <createIndex tableName="shipment_order" indexName="idx_shipment_order_invoice_ref">
+            <column name="invoice_ref_id"/>
+        </createIndex>
+        <createIndex tableName="shipment_order" indexName="idx_shipment_order_invoice_status">
+            <column name="invoice_status"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

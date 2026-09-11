@@ -68,6 +68,22 @@ public class OrderSummaryDTO {
     private String bankName;
     private String bankAccountNo;
     private String bankAccountName;
+    private Boolean invoiceRequested;
+    private String invoiceTaxCode;
+    private String invoiceCompanyName;
+    private String invoiceEmail;
+    private String invoiceCompanyAddress;
+    private String invoiceRefId;
+    private String invoiceStatus;
+    private String invoiceTransactionId;
+    private String invoiceNo;
+    private String invoiceSeries;
+    private String invoiceCode;
+    private BigDecimal invoiceGrossAmount;
+    private BigDecimal invoiceNetAmount;
+    private BigDecimal invoiceVatAmount;
+    private Instant invoiceIssuedAt;
+    private String invoiceError;
     private String routeLabel;
     private String itineraryLabel;
     private Instant codExportedAt;
@@ -482,6 +498,134 @@ public class OrderSummaryDTO {
 
     public void setBankAccountName(String bankAccountName) {
         this.bankAccountName = bankAccountName;
+    }
+
+    public Boolean getInvoiceRequested() {
+        return invoiceRequested;
+    }
+
+    public void setInvoiceRequested(Boolean invoiceRequested) {
+        this.invoiceRequested = invoiceRequested;
+    }
+
+    public String getInvoiceTaxCode() {
+        return invoiceTaxCode;
+    }
+
+    public void setInvoiceTaxCode(String invoiceTaxCode) {
+        this.invoiceTaxCode = invoiceTaxCode;
+    }
+
+    public String getInvoiceCompanyName() {
+        return invoiceCompanyName;
+    }
+
+    public void setInvoiceCompanyName(String invoiceCompanyName) {
+        this.invoiceCompanyName = invoiceCompanyName;
+    }
+
+    public String getInvoiceEmail() {
+        return invoiceEmail;
+    }
+
+    public void setInvoiceEmail(String invoiceEmail) {
+        this.invoiceEmail = invoiceEmail;
+    }
+
+    public String getInvoiceCompanyAddress() {
+        return invoiceCompanyAddress;
+    }
+
+    public void setInvoiceCompanyAddress(String invoiceCompanyAddress) {
+        this.invoiceCompanyAddress = invoiceCompanyAddress;
+    }
+
+    public String getInvoiceRefId() {
+        return invoiceRefId;
+    }
+
+    public void setInvoiceRefId(String invoiceRefId) {
+        this.invoiceRefId = invoiceRefId;
+    }
+
+    public String getInvoiceStatus() {
+        return invoiceStatus;
+    }
+
+    public void setInvoiceStatus(String invoiceStatus) {
+        this.invoiceStatus = invoiceStatus;
+    }
+
+    public String getInvoiceTransactionId() {
+        return invoiceTransactionId;
+    }
+
+    public void setInvoiceTransactionId(String invoiceTransactionId) {
+        this.invoiceTransactionId = invoiceTransactionId;
+    }
+
+    public String getInvoiceNo() {
+        return invoiceNo;
+    }
+
+    public void setInvoiceNo(String invoiceNo) {
+        this.invoiceNo = invoiceNo;
+    }
+
+    public String getInvoiceSeries() {
+        return invoiceSeries;
+    }
+
+    public void setInvoiceSeries(String invoiceSeries) {
+        this.invoiceSeries = invoiceSeries;
+    }
+
+    public String getInvoiceCode() {
+        return invoiceCode;
+    }
+
+    public void setInvoiceCode(String invoiceCode) {
+        this.invoiceCode = invoiceCode;
+    }
+
+    public BigDecimal getInvoiceGrossAmount() {
+        return invoiceGrossAmount;
+    }
+
+    public void setInvoiceGrossAmount(BigDecimal invoiceGrossAmount) {
+        this.invoiceGrossAmount = invoiceGrossAmount;
+    }
+
+    public BigDecimal getInvoiceNetAmount() {
+        return invoiceNetAmount;
+    }
+
+    public void setInvoiceNetAmount(BigDecimal invoiceNetAmount) {
+        this.invoiceNetAmount = invoiceNetAmount;
+    }
+
+    public BigDecimal getInvoiceVatAmount() {
+        return invoiceVatAmount;
+    }
+
+    public void setInvoiceVatAmount(BigDecimal invoiceVatAmount) {
+        this.invoiceVatAmount = invoiceVatAmount;
+    }
+
+    public Instant getInvoiceIssuedAt() {
+        return invoiceIssuedAt;
+    }
+
+    public void setInvoiceIssuedAt(Instant invoiceIssuedAt) {
+        this.invoiceIssuedAt = invoiceIssuedAt;
+    }
+
+    public String getInvoiceError() {
+        return invoiceError;
+    }
+
+    public void setInvoiceError(String invoiceError) {
+        this.invoiceError = invoiceError;
     }
 
     public String getRouteLabel() {

@@ -196,6 +196,73 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "bank_account_name", length = 120)
     private String bankAccountName;
 
+    @Column(name = "invoice_requested", nullable = false)
+    private Boolean invoiceRequested = false;
+
+    @Size(max = 20)
+    @Column(name = "invoice_tax_code", length = 20)
+    private String invoiceTaxCode;
+
+    @Size(max = 200)
+    @Column(name = "invoice_company_name", length = 200)
+    private String invoiceCompanyName;
+
+    @Size(max = 120)
+    @Column(name = "invoice_email", length = 120)
+    private String invoiceEmail;
+
+    @Size(max = 255)
+    @Column(name = "invoice_company_address", length = 255)
+    private String invoiceCompanyAddress;
+
+    /** RefID gửi MISA — idempotent key, vd. XE-{orderCode}. */
+    @Size(max = 80)
+    @Column(name = "invoice_ref_id", length = 80)
+    private String invoiceRefId;
+
+    /** PENDING | ISSUED | DUPLICATE | FAILED | SKIPPED */
+    @Size(max = 20)
+    @Column(name = "invoice_status", length = 20)
+    private String invoiceStatus;
+
+    @Size(max = 80)
+    @Column(name = "invoice_transaction_id", length = 80)
+    private String invoiceTransactionId;
+
+    @Size(max = 40)
+    @Column(name = "invoice_no", length = 40)
+    private String invoiceNo;
+
+    @Size(max = 40)
+    @Column(name = "invoice_series", length = 40)
+    private String invoiceSeries;
+
+    @Size(max = 80)
+    @Column(name = "invoice_code", length = 80)
+    private String invoiceCode;
+
+    @DecimalMin(value = "0")
+    @Column(name = "invoice_gross_amount", precision = 21, scale = 2)
+    private BigDecimal invoiceGrossAmount;
+
+    @DecimalMin(value = "0")
+    @Column(name = "invoice_net_amount", precision = 21, scale = 2)
+    private BigDecimal invoiceNetAmount;
+
+    @DecimalMin(value = "0")
+    @Column(name = "invoice_vat_amount", precision = 21, scale = 2)
+    private BigDecimal invoiceVatAmount;
+
+    @Column(name = "invoice_issued_at")
+    private Instant invoiceIssuedAt;
+
+    @Size(max = 500)
+    @Column(name = "invoice_error", length = 500)
+    private String invoiceError;
+
+    @Column(name = "invoice_retry_count")
+    private Integer invoiceRetryCount;
+
     @Size(max = 120)
     @Column(name = "route_label", length = 120)
     private String routeLabel;
@@ -786,6 +853,142 @@ public class ShipmentOrder implements Serializable {
 
     public void setBankAccountName(String bankAccountName) {
         this.bankAccountName = bankAccountName;
+    }
+
+    public Boolean getInvoiceRequested() {
+        return this.invoiceRequested;
+    }
+
+    public void setInvoiceRequested(Boolean invoiceRequested) {
+        this.invoiceRequested = invoiceRequested;
+    }
+
+    public String getInvoiceTaxCode() {
+        return this.invoiceTaxCode;
+    }
+
+    public void setInvoiceTaxCode(String invoiceTaxCode) {
+        this.invoiceTaxCode = invoiceTaxCode;
+    }
+
+    public String getInvoiceCompanyName() {
+        return this.invoiceCompanyName;
+    }
+
+    public void setInvoiceCompanyName(String invoiceCompanyName) {
+        this.invoiceCompanyName = invoiceCompanyName;
+    }
+
+    public String getInvoiceEmail() {
+        return this.invoiceEmail;
+    }
+
+    public void setInvoiceEmail(String invoiceEmail) {
+        this.invoiceEmail = invoiceEmail;
+    }
+
+    public String getInvoiceCompanyAddress() {
+        return this.invoiceCompanyAddress;
+    }
+
+    public void setInvoiceCompanyAddress(String invoiceCompanyAddress) {
+        this.invoiceCompanyAddress = invoiceCompanyAddress;
+    }
+
+    public String getInvoiceRefId() {
+        return this.invoiceRefId;
+    }
+
+    public void setInvoiceRefId(String invoiceRefId) {
+        this.invoiceRefId = invoiceRefId;
+    }
+
+    public String getInvoiceStatus() {
+        return this.invoiceStatus;
+    }
+
+    public void setInvoiceStatus(String invoiceStatus) {
+        this.invoiceStatus = invoiceStatus;
+    }
+
+    public String getInvoiceTransactionId() {
+        return this.invoiceTransactionId;
+    }
+
+    public void setInvoiceTransactionId(String invoiceTransactionId) {
+        this.invoiceTransactionId = invoiceTransactionId;
+    }
+
+    public String getInvoiceNo() {
+        return this.invoiceNo;
+    }
+
+    public void setInvoiceNo(String invoiceNo) {
+        this.invoiceNo = invoiceNo;
+    }
+
+    public String getInvoiceSeries() {
+        return this.invoiceSeries;
+    }
+
+    public void setInvoiceSeries(String invoiceSeries) {
+        this.invoiceSeries = invoiceSeries;
+    }
+
+    public String getInvoiceCode() {
+        return this.invoiceCode;
+    }
+
+    public void setInvoiceCode(String invoiceCode) {
+        this.invoiceCode = invoiceCode;
+    }
+
+    public BigDecimal getInvoiceGrossAmount() {
+        return this.invoiceGrossAmount;
+    }
+
+    public void setInvoiceGrossAmount(BigDecimal invoiceGrossAmount) {
+        this.invoiceGrossAmount = invoiceGrossAmount;
+    }
+
+    public BigDecimal getInvoiceNetAmount() {
+        return this.invoiceNetAmount;
+    }
+
+    public void setInvoiceNetAmount(BigDecimal invoiceNetAmount) {
+        this.invoiceNetAmount = invoiceNetAmount;
+    }
+
+    public BigDecimal getInvoiceVatAmount() {
+        return this.invoiceVatAmount;
+    }
+
+    public void setInvoiceVatAmount(BigDecimal invoiceVatAmount) {
+        this.invoiceVatAmount = invoiceVatAmount;
+    }
+
+    public Instant getInvoiceIssuedAt() {
+        return this.invoiceIssuedAt;
+    }
+
+    public void setInvoiceIssuedAt(Instant invoiceIssuedAt) {
+        this.invoiceIssuedAt = invoiceIssuedAt;
+    }
+
+    public String getInvoiceError() {
+        return this.invoiceError;
+    }
+
+    public void setInvoiceError(String invoiceError) {
+        this.invoiceError = invoiceError;
+    }
+
+    public Integer getInvoiceRetryCount() {
+        return this.invoiceRetryCount;
+    }
+
+    public void setInvoiceRetryCount(Integer invoiceRetryCount) {
+        this.invoiceRetryCount = invoiceRetryCount;
     }
 
     public String getRouteLabel() {

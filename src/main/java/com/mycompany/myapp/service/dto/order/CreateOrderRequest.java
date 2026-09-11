@@ -80,6 +80,11 @@ public class CreateOrderRequest {
     private String bankName;
     private String bankAccountNo;
     private String bankAccountName;
+    private Boolean invoiceRequested;
+    private String invoiceTaxCode;
+    private String invoiceCompanyName;
+    private String invoiceEmail;
+    private String invoiceCompanyAddress;
     private String routeLabel;
     private String itineraryLabel;
 
@@ -324,6 +329,46 @@ public class CreateOrderRequest {
 
     public void setBankAccountName(String bankAccountName) {
         this.bankAccountName = bankAccountName;
+    }
+
+    public Boolean getInvoiceRequested() {
+        return invoiceRequested;
+    }
+
+    public void setInvoiceRequested(Boolean invoiceRequested) {
+        this.invoiceRequested = invoiceRequested;
+    }
+
+    public String getInvoiceTaxCode() {
+        return invoiceTaxCode;
+    }
+
+    public void setInvoiceTaxCode(String invoiceTaxCode) {
+        this.invoiceTaxCode = invoiceTaxCode;
+    }
+
+    public String getInvoiceCompanyName() {
+        return invoiceCompanyName;
+    }
+
+    public void setInvoiceCompanyName(String invoiceCompanyName) {
+        this.invoiceCompanyName = invoiceCompanyName;
+    }
+
+    public String getInvoiceEmail() {
+        return invoiceEmail;
+    }
+
+    public void setInvoiceEmail(String invoiceEmail) {
+        this.invoiceEmail = invoiceEmail;
+    }
+
+    public String getInvoiceCompanyAddress() {
+        return invoiceCompanyAddress;
+    }
+
+    public void setInvoiceCompanyAddress(String invoiceCompanyAddress) {
+        this.invoiceCompanyAddress = invoiceCompanyAddress;
     }
 
     public String getRouteLabel() {

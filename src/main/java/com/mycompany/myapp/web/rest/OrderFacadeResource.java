@@ -25,6 +25,7 @@ import com.mycompany.myapp.service.dto.order.TrackOrderRequest;
 import com.mycompany.myapp.service.dto.order.TrackOrderResponse;
 import com.mycompany.myapp.service.dto.trip.AssignOrdersToTripRequest;
 import com.mycompany.myapp.service.dto.trip.TripSummaryDTO;
+import com.mycompany.myapp.service.invoice.MeInvoiceIssueService;
 import com.mycompany.myapp.service.order.DeliveryFacadeService;
 import com.mycompany.myapp.service.order.ExceptionFacadeService;
 import com.mycompany.myapp.service.order.OrderFacadeService;
@@ -65,17 +66,20 @@ public class OrderFacadeResource {
     private final TripFacadeService tripFacadeService;
     private final DeliveryFacadeService deliveryFacadeService;
     private final ExceptionFacadeService exceptionFacadeService;
+    private final MeInvoiceIssueService meInvoiceIssueService;
 
     public OrderFacadeResource(
         OrderFacadeService orderFacadeService,
         TripFacadeService tripFacadeService,
         DeliveryFacadeService deliveryFacadeService,
-        ExceptionFacadeService exceptionFacadeService
+        ExceptionFacadeService exceptionFacadeService,
+        MeInvoiceIssueService meInvoiceIssueService
     ) {
         this.orderFacadeService = orderFacadeService;
         this.tripFacadeService = tripFacadeService;
         this.deliveryFacadeService = deliveryFacadeService;
         this.exceptionFacadeService = exceptionFacadeService;
+        this.meInvoiceIssueService = meInvoiceIssueService;
     }
 
     @GetMapping("")
@@ -216,6 +220,29 @@ public class OrderFacadeResource {
     @PostMapping("/{orderCode}/pod")
     public PodResponse pod(@PathVariable String orderCode, @Valid @RequestBody PodRequest request) {
         return deliveryFacadeService.pod(orderCode, request);
+    }
+
+    /** Phát hành HĐĐT MISA thủ công — chỉ khi đơn DELIVERED. */
+    @PostMapping("/{orderCode}/invoice/issue")
+    public OrderSummaryDTO issueInvoice(@PathVariable String orderCode) {
+        meInvoiceIssueService.issueForOrderCode(orderCode);
+        return orderFacadeService.getByCode(orderCode);
+    }
+
+    /** Link xem HĐ (TTL ~5 phút theo MISA). */
+    @PostMapping("/{orderCode}/invoice/view")
+    public Map<String, String> invoiceView(@PathVariable String orderCode) {
+        return Map.of("url", meInvoiceIssueService.viewLink(orderCode));
+    }
+
+    /** Tải PDF HĐĐT. */
+    @PostMapping("/{orderCode}/invoice/download")
+    public ResponseEntity<byte[]> invoiceDownload(@PathVariable String orderCode) {
+        byte[] pdf = meInvoiceIssueService.downloadPdf(orderCode);
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"invoice-" + orderCode + ".pdf\"")
+            .header(HttpHeaders.CONTENT_TYPE, "application/pdf")
+            .body(pdf);
     }
 
     @PostMapping("/{orderCode}/fail-delivery")

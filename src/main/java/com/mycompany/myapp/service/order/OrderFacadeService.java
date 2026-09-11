@@ -29,6 +29,7 @@ import com.mycompany.myapp.service.dto.order.OrderTransitionResponse;
 import com.mycompany.myapp.service.dto.order.PatchOrderRequest;
 import com.mycompany.myapp.service.dto.order.TrackOrderRequest;
 import com.mycompany.myapp.service.dto.order.TrackOrderResponse;
+import com.mycompany.myapp.service.invoice.OrderDeliveredEvent;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -36,6 +37,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -62,6 +64,7 @@ public class OrderFacadeService {
     private final DayClosureGuard dayClosureGuard;
     private final OrderIssueRepository orderIssueRepository;
     private final DraftExpiryService draftExpiryService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public OrderFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -74,7 +77,8 @@ public class OrderFacadeService {
         OrderLegRepository orderLegRepository,
         DayClosureGuard dayClosureGuard,
         OrderIssueRepository orderIssueRepository,
-        DraftExpiryService draftExpiryService
+        DraftExpiryService draftExpiryService,
+        ApplicationEventPublisher eventPublisher
     ) {
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.orderEventRepository = orderEventRepository;
@@ -87,6 +91,7 @@ public class OrderFacadeService {
         this.dayClosureGuard = dayClosureGuard;
         this.orderIssueRepository = orderIssueRepository;
         this.draftExpiryService = draftExpiryService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -301,7 +306,7 @@ public class OrderFacadeService {
         order.setPublicTrackingAllowed(true);
 
         order = shipmentOrderRepository.save(order);
-        appendEvent(order, "DRAFT_CREATE", "Tạo nháp công khai", "customer");
+        appendEvent(order, "CREATE", "Tạo đơn hàng", "customer");
 
         Instant expiresAt = Instant.now().plus(DRAFT_TTL);
         return new CreateDraftOrderResponse(draftCode, order.getOrderCode(), OrderStatus.DRAFT, fare.total(), expiresAt);
@@ -342,6 +347,9 @@ public class OrderFacadeService {
         shipmentOrderRepository.save(order);
         String action = isBlank(req.getAction()) ? "TRANSITION_" + to.name() : req.getAction();
         appendEvent(order, action, req.getDetail(), currentActor());
+        if (to == OrderStatus.DELIVERED) {
+            eventPublisher.publishEvent(new OrderDeliveredEvent(order.getOrderCode()));
+        }
         return new OrderTransitionResponse(true, to, order.getOrderCode());
     }
 
@@ -617,6 +625,15 @@ public class OrderFacadeService {
         if (req.getBankAccountName() != null) {
             order.setBankAccountName(blankToNull(req.getBankAccountName()));
         }
+        applyInvoiceFields(
+            order,
+            req.getInvoiceRequested(),
+            req.getInvoiceTaxCode(),
+            req.getInvoiceCompanyName(),
+            req.getInvoiceEmail(),
+            req.getInvoiceCompanyAddress(),
+            true
+        );
         if (req.getRouteLabel() != null) {
             order.setRouteLabel(blankToNull(req.getRouteLabel()));
         }
@@ -771,6 +788,15 @@ public class OrderFacadeService {
         if (req.getBankAccountName() != null) {
             order.setBankAccountName(blankToNull(req.getBankAccountName()));
         }
+        applyInvoiceFields(
+            order,
+            req.getInvoiceRequested(),
+            req.getInvoiceTaxCode(),
+            req.getInvoiceCompanyName(),
+            req.getInvoiceEmail(),
+            req.getInvoiceCompanyAddress(),
+            false
+        );
         if (req.getRouteLabel() != null) {
             order.setRouteLabel(blankToNull(req.getRouteLabel()));
         }
@@ -794,7 +820,57 @@ public class OrderFacadeService {
         order.setFailCount(0);
         order.setLabelReprintCount(0);
         order.setPublicTrackingAllowed(true);
+        order.setInvoiceRequested(false);
         return order;
+    }
+
+    private void applyInvoiceFields(
+        ShipmentOrder order,
+        Boolean requested,
+        String taxCode,
+        String companyName,
+        String email,
+        String address,
+        boolean patch
+    ) {
+        if (!patch) {
+            boolean want = Boolean.TRUE.equals(requested);
+            order.setInvoiceRequested(want);
+            if (want) {
+                order.setInvoiceTaxCode(blankToNull(taxCode));
+                order.setInvoiceCompanyName(blankToNull(companyName));
+                order.setInvoiceEmail(blankToNull(email));
+                order.setInvoiceCompanyAddress(blankToNull(address));
+            } else {
+                order.setInvoiceTaxCode(null);
+                order.setInvoiceCompanyName(null);
+                order.setInvoiceEmail(null);
+                order.setInvoiceCompanyAddress(null);
+            }
+            return;
+        }
+        if (requested != null) {
+            order.setInvoiceRequested(requested);
+            if (!requested) {
+                order.setInvoiceTaxCode(null);
+                order.setInvoiceCompanyName(null);
+                order.setInvoiceEmail(null);
+                order.setInvoiceCompanyAddress(null);
+                return;
+            }
+        }
+        if (taxCode != null) {
+            order.setInvoiceTaxCode(blankToNull(taxCode));
+        }
+        if (companyName != null) {
+            order.setInvoiceCompanyName(blankToNull(companyName));
+        }
+        if (email != null) {
+            order.setInvoiceEmail(blankToNull(email));
+        }
+        if (address != null) {
+            order.setInvoiceCompanyAddress(blankToNull(address));
+        }
     }
 
     private void appendEvent(ShipmentOrder order, String action, String detail, String actor) {
@@ -891,6 +967,22 @@ public class OrderFacadeService {
         dto.setBankName(o.getBankName());
         dto.setBankAccountNo(o.getBankAccountNo());
         dto.setBankAccountName(o.getBankAccountName());
+        dto.setInvoiceRequested(Boolean.TRUE.equals(o.getInvoiceRequested()));
+        dto.setInvoiceTaxCode(o.getInvoiceTaxCode());
+        dto.setInvoiceCompanyName(o.getInvoiceCompanyName());
+        dto.setInvoiceEmail(o.getInvoiceEmail());
+        dto.setInvoiceCompanyAddress(o.getInvoiceCompanyAddress());
+        dto.setInvoiceRefId(o.getInvoiceRefId());
+        dto.setInvoiceStatus(o.getInvoiceStatus());
+        dto.setInvoiceTransactionId(o.getInvoiceTransactionId());
+        dto.setInvoiceNo(o.getInvoiceNo());
+        dto.setInvoiceSeries(o.getInvoiceSeries());
+        dto.setInvoiceCode(o.getInvoiceCode());
+        dto.setInvoiceGrossAmount(o.getInvoiceGrossAmount());
+        dto.setInvoiceNetAmount(o.getInvoiceNetAmount());
+        dto.setInvoiceVatAmount(o.getInvoiceVatAmount());
+        dto.setInvoiceIssuedAt(o.getInvoiceIssuedAt());
+        dto.setInvoiceError(o.getInvoiceError());
         dto.setRouteLabel(o.getRouteLabel());
         dto.setItineraryLabel(o.getItineraryLabel());
         dto.setCodExportedAt(o.getCodExportedAt());

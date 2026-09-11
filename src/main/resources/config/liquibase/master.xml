@@ -79,4 +79,6 @@
     <include file="config/liquibase/changelog/20260825160000_order_cod_fields.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260909110000_order_fare_components.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260909160000_mobile_app_version_policy.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260911140000_order_invoice_fields.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260911160000_order_misa_invoice.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
