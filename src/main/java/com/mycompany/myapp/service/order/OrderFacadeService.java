@@ -30,6 +30,7 @@ import com.mycompany.myapp.service.dto.order.PatchOrderRequest;
 import com.mycompany.myapp.service.dto.order.TrackOrderRequest;
 import com.mycompany.myapp.service.dto.order.TrackOrderResponse;
 import com.mycompany.myapp.service.invoice.OrderDeliveredEvent;
+import com.mycompany.myapp.service.invoice.VietnamTaxCode;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -385,6 +386,7 @@ public class OrderFacadeService {
         res.setOrderCode(order.getOrderCode());
         res.setDraftCode(order.getDraftCode());
         res.setStatus(order.getStatus());
+        res.setStatusLabel(CustomerTrackStatus.labelOf(order));
         res.setFromOfficeCode(officeCode(order.getFromOffice()));
         res.setToOfficeCode(officeCode(order.getToOffice()));
         res.setReceiverName(order.getReceiverName());
@@ -837,7 +839,7 @@ public class OrderFacadeService {
             boolean want = Boolean.TRUE.equals(requested);
             order.setInvoiceRequested(want);
             if (want) {
-                order.setInvoiceTaxCode(blankToNull(taxCode));
+                order.setInvoiceTaxCode(requireValidBuyerTaxCode(taxCode));
                 order.setInvoiceCompanyName(blankToNull(companyName));
                 order.setInvoiceEmail(blankToNull(email));
                 order.setInvoiceCompanyAddress(blankToNull(address));
@@ -860,7 +862,12 @@ public class OrderFacadeService {
             }
         }
         if (taxCode != null) {
-            order.setInvoiceTaxCode(blankToNull(taxCode));
+            String t = blankToNull(taxCode);
+            if (t != null || Boolean.TRUE.equals(order.getInvoiceRequested()) || Boolean.TRUE.equals(requested)) {
+                order.setInvoiceTaxCode(requireValidBuyerTaxCode(taxCode));
+            } else {
+                order.setInvoiceTaxCode(null);
+            }
         }
         if (companyName != null) {
             order.setInvoiceCompanyName(blankToNull(companyName));
@@ -871,6 +878,22 @@ public class OrderFacadeService {
         if (address != null) {
             order.setInvoiceCompanyAddress(blankToNull(address));
         }
+    }
+
+    /** MST người mua — bắt buộc đúng checksum VN khi xuất HĐ (điền bừa bị từ chối). */
+    private static String requireValidBuyerTaxCode(String taxCode) {
+        String compact = VietnamTaxCode.compact(taxCode);
+        if (compact.isEmpty()) {
+            throw new BadRequestAlertException("Mã số thuế người mua là bắt buộc", ENTITY, "invoiceTaxRequired");
+        }
+        if (!VietnamTaxCode.isValid(compact)) {
+            throw new BadRequestAlertException(
+                "Mã số thuế không hợp lệ (sai định dạng hoặc checksum). Không gửi được sang MISA.",
+                ENTITY,
+                "invoiceTaxInvalid"
+            );
+        }
+        return VietnamTaxCode.normalize(compact);
     }
 
     private void appendEvent(ShipmentOrder order, String action, String detail, String actor) {

@@ -11,6 +11,8 @@ public class TrackOrderResponse {
     private String orderCode;
     private String draftCode;
     private OrderStatus status;
+    /** Nhãn trạng thái = tên tab vận hành (Chờ lấy hàng / Nhập kho gửi / …). */
+    private String statusLabel;
     private String fromOfficeCode;
     private String toOfficeCode;
     private String receiverName;
@@ -56,6 +58,14 @@ public class TrackOrderResponse {
 
     public void setStatus(OrderStatus status) {
         this.status = status;
+    }
+
+    public String getStatusLabel() {
+        return statusLabel;
+    }
+
+    public void setStatusLabel(String statusLabel) {
+        this.statusLabel = statusLabel;
     }
 
     public String getFromOfficeCode() {

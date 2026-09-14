@@ -105,10 +105,19 @@ public class MeInvoiceIssueService {
 
         String buyerTax = blankToEmpty(order.getInvoiceTaxCode());
         if (!buyerTax.isBlank()) {
+            if (!VietnamTaxCode.isValid(buyerTax)) {
+                markFailed(order, amounts, "MST người mua không hợp lệ — không gửi MISA");
+                return;
+            }
             if (blankToEmpty(order.getInvoiceCompanyName()).isBlank() || blankToEmpty(order.getInvoiceCompanyAddress()).isBlank()) {
                 markFailed(order, amounts, "HĐ công ty cần Tên công ty + Địa chỉ");
                 return;
             }
+            buyerTax = VietnamTaxCode.normalize(buyerTax);
+            order.setInvoiceTaxCode(buyerTax);
+        } else if (Boolean.TRUE.equals(order.getInvoiceRequested())) {
+            markFailed(order, amounts, "Thiếu MST người mua — không gửi MISA");
+            return;
         }
 
         String refId = MeInvoiceAmounts.refIdFor(order.getOrderCode());
