@@ -30,6 +30,11 @@ public class OfficeDTO implements Serializable {
     @NotNull
     private Boolean active = true;
 
+    private Long sourceId;
+
+    @Size(max = 500)
+    private String address;
+
     public Long getId() {
         return id;
     }
@@ -78,6 +83,22 @@ public class OfficeDTO implements Serializable {
         this.active = active != null ? active : Boolean.TRUE;
     }
 
+    public Long getSourceId() {
+        return sourceId;
+    }
+
+    public void setSourceId(Long sourceId) {
+        this.sourceId = sourceId;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -109,6 +130,8 @@ public class OfficeDTO implements Serializable {
             ", officeType='" + getOfficeType() + "'" +
             ", isHub='" + getIsHub() + "'" +
             ", active='" + getActive() + "'" +
+            ", sourceId=" + getSourceId() +
+            ", address='" + getAddress() + "'" +
             "}";
     }
 }

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260914090000-1" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="office" columnName="address"/>
+            </not>
+        </preConditions>
+        <comment>Master VP: ID nguồn + địa chỉ (mã/tên VP giữ unique, không duplicate)</comment>
+        <addColumn tableName="office">
+            <column name="source_id" type="bigint"/>
+            <column name="address" type="varchar(500)"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20260914090000-2" author="cpn">
+        <comment>Upsert danh mục VP theo mã — trùng mã/tên thì cập nhật địa chỉ + ID, không thêm dòng</comment>
+        <sql>
+            INSERT INTO office (code, name, office_type, is_hub, active, source_id, address)
+            VALUES
+            ('VP_NB', 'Ninh Bình', 'BRANCH', 0, 1, 16655, '251 Lương Văn Thăng - NB'),
+            ('VP_ND', 'Nam Định', 'BRANCH', 0, 1, 63418, '104 Song Hào - NĐ | 77 Trần Anh Tông - NĐ'),
+            ('VP_TB', 'Thái Bình', 'BRANCH', 0, 1, 18094, '34 Trần Phú - TB'),
+            ('VP_VT', 'Việt Trì', 'BRANCH', 0, 1, 41156, '46 Vũ Tuân - Việt Trì'),
+            ('VP_PT', 'Phú Thọ', 'BRANCH', 0, 1, 40911, 'Vincom - TX.Phú Thọ | IC8 Phú Ninh - Phú Thọ'),
+            ('VP_YB', 'Yên Bái', 'BRANCH', 0, 1, 46063, '263 Nguyễn Thái Học - YB | Văn Phú - YB'),
+            ('VP_BC', 'Big C', 'BRANCH', 0, 1, 36202, '31A Nguyễn Quốc Trị - HN'),
+            ('VP_PV', 'Phố Vọng', 'BRANCH', 0, 1, 36201, '74 Phố Vọng - HN'),
+            ('VP_LD', 'Lê Duẩn', 'BRANCH', 0, 1, 45654, '72 Trần Nhân Tông - HN'),
+            ('VP_HD', 'Hà Đông', 'BRANCH', 0, 1, 57439, '18 Vũ Trọng Khánh - HN'),
+            ('VP_GP', 'Giải Phóng', 'BRANCH', 0, 1, 48341, '1147 Giải Phóng - HN'),
+            ('VP_TDN', 'Trần Đại Nghĩa', 'BRANCH', 0, 1, 46042, '55 Trần Đại Nghĩa - HN'),
+            ('VP_NH', 'Ngọc Hồi', 'BRANCH', 0, 1, 16632, '10 Ngõ 15 Ngọc Hồi - HN')
+            ON DUPLICATE KEY UPDATE
+                name = VALUES(name),
+                source_id = VALUES(source_id),
+                address = VALUES(address),
+                active = 1;
+        </sql>
+    </changeSet>
+</databaseChangeLog>

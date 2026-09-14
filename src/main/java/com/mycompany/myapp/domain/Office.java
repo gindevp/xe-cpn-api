@@ -43,6 +43,14 @@ public class Office implements Serializable {
     @Column(name = "active", nullable = false)
     private Boolean active;
 
+    /** ID danh mục nguồn (Excel / hệ thống VP). */
+    @Column(name = "source_id")
+    private Long sourceId;
+
+    @Size(max = 500)
+    @Column(name = "address", length = 500)
+    private String address;
+
     // jhipster-needle-entity-add-field - JHipster will add fields here
 
     public Long getId() {
@@ -123,6 +131,32 @@ public class Office implements Serializable {
         this.active = active;
     }
 
+    public Long getSourceId() {
+        return this.sourceId;
+    }
+
+    public Office sourceId(Long sourceId) {
+        this.setSourceId(sourceId);
+        return this;
+    }
+
+    public void setSourceId(Long sourceId) {
+        this.sourceId = sourceId;
+    }
+
+    public String getAddress() {
+        return this.address;
+    }
+
+    public Office address(String address) {
+        this.setAddress(address);
+        return this;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
+    }
+
     // jhipster-needle-entity-add-getters-setters - JHipster will add getters and setters here
 
     @Override
@@ -152,6 +186,8 @@ public class Office implements Serializable {
             ", officeType='" + getOfficeType() + "'" +
             ", isHub='" + getIsHub() + "'" +
             ", active='" + getActive() + "'" +
+            ", sourceId=" + getSourceId() +
+            ", address='" + getAddress() + "'" +
             "}";
     }
 }
