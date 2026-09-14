@@ -22,7 +22,7 @@ public class Office implements Serializable {
 
     @NotNull
     @Size(min = 2, max = 20)
-    @Column(name = "code", length = 20, nullable = false, unique = true)
+    @Column(name = "code", length = 20, nullable = false)
     private String code;
 
     @NotNull
@@ -44,7 +44,7 @@ public class Office implements Serializable {
     private Boolean active;
 
     /** ID danh mục nguồn (Excel / hệ thống VP). */
-    @Column(name = "source_id")
+    @Column(name = "source_id", unique = true)
     private Long sourceId;
 
     @Size(max = 500)

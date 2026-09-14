@@ -82,4 +82,5 @@
     <include file="config/liquibase/changelog/20260911140000_order_invoice_fields.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260911160000_order_misa_invoice.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260914090000_office_source_id_address.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260914100000_office_split_same_code.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>

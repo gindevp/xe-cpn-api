@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260914100000-1" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <indexExists tableName="office" indexName="ux_office__code"/>
+        </preConditions>
+        <comment>Một mã VP có thể gắn nhiều địa chỉ / ID nguồn (không gộp dòng)</comment>
+        <dropUniqueConstraint tableName="office" constraintName="ux_office__code"/>
+    </changeSet>
+
+    <changeSet id="20260914100000-2" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <indexExists tableName="office" indexName="ux_office__source_id"/>
+            </not>
+        </preConditions>
+        <addUniqueConstraint tableName="office" columnNames="source_id" constraintName="ux_office__source_id"/>
+    </changeSet>
+
+    <changeSet id="20260914100000-3" author="cpn">
+        <comment>Tách VP trùng mã thành từng địa chỉ như danh mục nguồn</comment>
+        <sql>
+            UPDATE office SET address = '104 Song Hào - NĐ' WHERE source_id = 63418;
+            UPDATE office SET address = 'Vincom - TX.Phú Thọ' WHERE source_id = 40911;
+            UPDATE office SET address = '263 Nguyễn Thái Học - YB' WHERE source_id = 46063;
+
+            INSERT INTO office (code, name, office_type, is_hub, active, source_id, address)
+            VALUES
+            ('VP_ND', 'Nam Định', 'BRANCH', 0, 1, 17323, '77 Trần Anh Tông - NĐ'),
+            ('VP_PT', 'Phú Thọ', 'BRANCH', 0, 1, 46159, 'IC8 Phú Ninh - Phú Thọ'),
+            ('VP_YB', 'Yên Bái', 'BRANCH', 0, 1, 59165, 'Văn Phú - YB')
+            ON DUPLICATE KEY UPDATE
+                code = VALUES(code),
+                name = VALUES(name),
+                address = VALUES(address),
+                active = 1;
+        </sql>
+    </changeSet>
+</databaseChangeLog>

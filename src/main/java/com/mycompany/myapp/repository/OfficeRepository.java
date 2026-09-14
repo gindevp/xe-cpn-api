@@ -11,5 +11,9 @@ import org.springframework.stereotype.Repository;
 @SuppressWarnings("unused")
 @Repository
 public interface OfficeRepository extends JpaRepository<Office, Long> {
-    Optional<Office> findOneByCode(String code);
+    Optional<Office> findFirstByCodeOrderByIdAsc(String code);
+
+    default Optional<Office> findOneByCode(String code) {
+        return findFirstByCodeOrderByIdAsc(code);
+    }
 }
