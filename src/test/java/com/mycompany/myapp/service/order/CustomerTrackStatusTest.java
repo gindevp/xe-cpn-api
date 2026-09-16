@@ -22,10 +22,12 @@ class CustomerTrackStatusTest {
 
     @Test
     void pendingReceiveTab() {
+        // Legacy DRAFT drop-off
         ShipmentOrder draft = base(OrderStatus.DRAFT);
         draft.setHomePickup(false);
         assertThat(CustomerTrackStatus.labelOf(draft)).isEqualTo("Chờ nhận hàng");
 
+        // Current: CONFIRMED + qrDropOff
         ShipmentOrder qr = base(OrderStatus.CONFIRMED);
         qr.setQrDropOff(true);
         assertThat(CustomerTrackStatus.labelOf(qr)).isEqualTo("Chờ nhận hàng");

@@ -130,7 +130,7 @@ public class OrderFacadeResource {
     @PostMapping("/drafts")
     @ResponseStatus(HttpStatus.CREATED)
     public CreateDraftOrderResponse createDraft(@Valid @RequestBody CreateDraftOrderRequest request) {
-        LOG.debug("REST request to create public draft order");
+        LOG.debug("REST request to create public guest order (CONFIRMED)");
         return orderFacadeService.createDraft(request);
     }
 

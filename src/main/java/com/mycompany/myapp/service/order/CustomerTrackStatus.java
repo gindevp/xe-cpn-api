@@ -73,11 +73,12 @@ public final class CustomerTrackStatus {
         }
         boolean homePickup = Boolean.TRUE.equals(o.getHomePickup());
         boolean qrDropOff = Boolean.TRUE.equals(o.getQrDropOff());
-        boolean customerDropOff = st == OrderStatus.DRAFT && !homePickup;
-        if (!homePickup && !qrDropOff && !customerDropOff) {
+        // Legacy: đơn nháp cũ chưa migrate — vẫn hiện Chờ nhận hàng.
+        boolean legacyDraftDropOff = st == OrderStatus.DRAFT && !homePickup;
+        if (!homePickup && !qrDropOff && !legacyDraftDropOff) {
             return null;
         }
-        if (qrDropOff || customerDropOff) {
+        if (qrDropOff || legacyDraftDropOff) {
             return "Chờ nhận hàng";
         }
         // homePickup

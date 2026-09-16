@@ -4,6 +4,7 @@ import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.OrderLeg;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.ForwardStage;
 import com.mycompany.myapp.domain.enumeration.LegStatus;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
@@ -33,7 +34,6 @@ import com.mycompany.myapp.service.invoice.OrderDeliveredEvent;
 import com.mycompany.myapp.service.invoice.VietnamTaxCode;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -52,7 +52,6 @@ import org.springframework.web.server.ResponseStatusException;
 public class OrderFacadeService {
 
     private static final String ENTITY = "order";
-    private static final Duration DRAFT_TTL = Duration.ofHours(24);
 
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final OrderEventRepository orderEventRepository;
@@ -244,6 +243,11 @@ public class OrderFacadeService {
         return toDetail(order);
     }
 
+    /**
+     * Public guest create (POST /api/orders/drafts — path kept for FE/security whitelist).
+     * Business no longer uses DRAFT: always CONFIRMED + real order code.
+     * Guest drop-off (!homePickup) → qrDropOff so đơn vào Chờ nhận hàng.
+     */
     public CreateDraftOrderResponse createDraft(CreateDraftOrderRequest req) {
         boolean homeDelivery = Boolean.TRUE.equals(req.getHomeDelivery());
         boolean homePickup = Boolean.TRUE.equals(req.getHomePickup());
@@ -277,12 +281,13 @@ public class OrderFacadeService {
             fareTo,
             req.getBranchCode()
         );
-        String draftCode = orderCodeGenerator.nextDraftCode(fromCode);
+
+        // Guest public create: auto-confirm soft daily overflow (no staff dialog).
+        String orderCode = orderCodeGenerator.nextOrderCode(fromCode, true);
 
         ShipmentOrder order = newBlankOrder();
-        order.setOrderCode(draftCode);
-        order.setDraftCode(draftCode);
-        order.setStatus(OrderStatus.DRAFT);
+        order.setOrderCode(orderCode);
+        order.setStatus(OrderStatus.CONFIRMED);
         order.setPaymentTerm(req.getPaymentTerm());
         order.setGoodsType(req.getGoodsType());
         order.setServiceType(resolveServiceType(homePickup, homeDelivery));
@@ -294,6 +299,8 @@ public class OrderFacadeService {
         order.setPickupAddress(req.getPickupAddress());
         order.setHomePickup(homePickup);
         order.setHomeDelivery(homeDelivery);
+        // Khách mang hàng đến bưu cục / quét QR — không lấy tận nơi.
+        order.setQrDropOff(!homePickup);
         order.setWeightKg(req.getEstimatedWeightKg());
         order.setQuantity(1);
         order.setFareAmount(fare.total());
@@ -307,10 +314,10 @@ public class OrderFacadeService {
         order.setPublicTrackingAllowed(true);
 
         order = shipmentOrderRepository.save(order);
+        ensureLegs(order);
         appendEvent(order, "CREATE", "Tạo đơn hàng", "customer");
 
-        Instant expiresAt = Instant.now().plus(DRAFT_TTL);
-        return new CreateDraftOrderResponse(draftCode, order.getOrderCode(), OrderStatus.DRAFT, fare.total(), expiresAt);
+        return new CreateDraftOrderResponse(null, order.getOrderCode(), OrderStatus.CONFIRMED, fare.total(), null);
     }
 
     public OrderSummaryDTO createConfirmed(CreateOrderRequest req) {
@@ -693,7 +700,26 @@ public class OrderFacadeService {
     public OrderDetailDTO warehouseReceive(String code) {
         ShipmentOrder order = requireByCode(code);
         dayClosureGuard.assertOrderMutable(order);
+        if (order.getStatus() == OrderStatus.DRAFT) {
+            if (order.getFromOffice() == null) {
+                throw new BadRequestAlertException("fromOffice is required", ENTITY, "fromofficerequired");
+            }
+            if (draftExpiryService.isDraftExpired(order)) {
+                draftExpiryService.cancelExpiredDraft(order);
+                throw new BadRequestAlertException("Draft expired (>24h)", ENTITY, "draftExpired");
+            }
+            String office = order.getFromOffice().getCode();
+            if (order.getOrderCode() != null && order.getOrderCode().startsWith("N-")) {
+                order.setOrderCode(orderCodeGenerator.nextOrderCode(office, false));
+            }
+            order.setStatus(OrderStatus.CONFIRMED);
+            ensureLegs(order);
+            appendEvent(order, "CONFIRM", "Xác nhận nhập kho tại bưu cục", currentActor());
+        }
         order.setPickedUpAt(Instant.now());
+        if (order.getForwardStage() == null) {
+            order.setForwardStage(ForwardStage.WH_IN);
+        }
         shipmentOrderRepository.save(order);
         appendEvent(order, "WAREHOUSE_RECEIVE", "Nhập kho gửi", currentActor());
         return getByCode(order.getOrderCode());
