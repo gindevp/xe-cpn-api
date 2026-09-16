@@ -214,6 +214,22 @@ public class FinanceFacadeService {
         return receiptRepository.findAll(spec, pageable).map(r -> toReceiptDto(r, receiptOrderLineRepository.findByReceipt_Id(r.getId())));
     }
 
+    public ReceiptDTO confirmReceipt(String receiptCode) {
+        if (receiptCode == null || receiptCode.isBlank()) {
+            throw new BadRequestAlertException("receiptCode is required", ENTITY, "receiptCodeRequired");
+        }
+        Receipt receipt = receiptRepository
+            .findOneByReceiptCode(receiptCode.trim())
+            .orElseThrow(() -> new BadRequestAlertException("Receipt not found", ENTITY, "receiptNotFound"));
+        if (receipt.getConfirmedAt() != null) {
+            throw new BadRequestAlertException("Receipt already confirmed", ENTITY, "receiptAlreadyConfirmed");
+        }
+        receipt.setConfirmedAt(Instant.now());
+        receipt.setConfirmedByUsername(actor());
+        receipt = receiptRepository.save(receipt);
+        return toReceiptDto(receipt, receiptOrderLineRepository.findByReceipt_Id(receipt.getId()));
+    }
+
     @Transactional(readOnly = true)
     public DayClosureDTO getDay(String officeCode, LocalDate businessDate) {
         Office office = requireOffice(officeCode);
@@ -350,7 +366,9 @@ public class FinanceFacadeService {
             r.getCreatedAt(),
             r.getCreatedByUsername(),
             r.getOffice() != null ? r.getOffice().getCode() : null,
-            lineViews
+            lineViews,
+            r.getConfirmedAt(),
+            r.getConfirmedByUsername()
         );
     }
 
@@ -460,7 +478,9 @@ public class FinanceFacadeService {
         Instant createdAt,
         String createdByUsername,
         String officeCode,
-        List<Map<String, Object>> lines
+        List<Map<String, Object>> lines,
+        Instant confirmedAt,
+        String confirmedByUsername
     ) {}
 
     public record DayClosureDTO(

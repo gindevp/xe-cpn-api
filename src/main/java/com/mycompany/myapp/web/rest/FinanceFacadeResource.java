@@ -54,6 +54,11 @@ public class FinanceFacadeResource {
         return financeFacadeService.createReceipt(request);
     }
 
+    @PostMapping("/api/receipts/{receiptCode}/confirm")
+    public ReceiptDTO confirm(@PathVariable String receiptCode) {
+        return financeFacadeService.confirmReceipt(receiptCode);
+    }
+
     @GetMapping("/api/day-closures")
     public DayClosureDTO getDay(
         @RequestParam String officeCode,

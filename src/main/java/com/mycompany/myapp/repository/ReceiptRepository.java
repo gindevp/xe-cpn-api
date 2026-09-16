@@ -39,4 +39,6 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long>, JpaSpec
     Optional<Receipt> findOneWithToOneRelationships(@Param("id") Long id);
 
     long countByReceiptCodeStartingWith(String prefix);
+
+    Optional<Receipt> findOneByReceiptCode(String receiptCode);
 }

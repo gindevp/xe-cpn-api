@@ -49,6 +49,13 @@ public class Receipt implements Serializable {
     @Column(name = "created_by_username", length = 50, nullable = false)
     private String createdByUsername;
 
+    @Column(name = "confirmed_at")
+    private Instant confirmedAt;
+
+    @Size(max = 50)
+    @Column(name = "confirmed_by_username", length = 50)
+    private String confirmedByUsername;
+
     @ManyToOne(fetch = FetchType.LAZY)
     private Office office;
 
@@ -145,6 +152,32 @@ public class Receipt implements Serializable {
         this.createdByUsername = createdByUsername;
     }
 
+    public Instant getConfirmedAt() {
+        return this.confirmedAt;
+    }
+
+    public Receipt confirmedAt(Instant confirmedAt) {
+        this.setConfirmedAt(confirmedAt);
+        return this;
+    }
+
+    public void setConfirmedAt(Instant confirmedAt) {
+        this.confirmedAt = confirmedAt;
+    }
+
+    public String getConfirmedByUsername() {
+        return this.confirmedByUsername;
+    }
+
+    public Receipt confirmedByUsername(String confirmedByUsername) {
+        this.setConfirmedByUsername(confirmedByUsername);
+        return this;
+    }
+
+    public void setConfirmedByUsername(String confirmedByUsername) {
+        this.confirmedByUsername = confirmedByUsername;
+    }
+
     public Office getOffice() {
         return this.office;
     }
@@ -188,6 +221,8 @@ public class Receipt implements Serializable {
             ", totalAmount=" + getTotalAmount() +
             ", createdAt='" + getCreatedAt() + "'" +
             ", createdByUsername='" + getCreatedByUsername() + "'" +
+            ", confirmedAt='" + getConfirmedAt() + "'" +
+            ", confirmedByUsername='" + getConfirmedByUsername() + "'" +
             "}";
     }
 }

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260916150000-1" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="receipt" columnName="confirmed_at"/>
+            </not>
+        </preConditions>
+        <comment>Receipt confirmation by AD/KT</comment>
+        <addColumn tableName="receipt">
+            <column name="confirmed_at" type="timestamp"/>
+            <column name="confirmed_by_username" type="varchar(50)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>
