@@ -21,6 +21,7 @@ import com.mycompany.myapp.service.dto.order.OrderTransitionResponse;
 import com.mycompany.myapp.service.dto.order.PatchOrderRequest;
 import com.mycompany.myapp.service.dto.order.PodRequest;
 import com.mycompany.myapp.service.dto.order.PodResponse;
+import com.mycompany.myapp.service.dto.order.ReturnCompleteRequest;
 import com.mycompany.myapp.service.dto.order.TrackOrderRequest;
 import com.mycompany.myapp.service.dto.order.TrackOrderResponse;
 import com.mycompany.myapp.service.dto.trip.AssignOrdersToTripRequest;
@@ -273,8 +274,8 @@ public class OrderFacadeResource {
     }
 
     @PostMapping("/{orderCode}/return-complete")
-    public OrderDetailDTO returnComplete(@PathVariable String orderCode) {
-        return exceptionFacadeService.completeReturn(orderCode);
+    public OrderDetailDTO returnComplete(@PathVariable String orderCode, @Valid @RequestBody ReturnCompleteRequest request) {
+        return exceptionFacadeService.completeReturn(orderCode, request);
     }
 
     @PostMapping("/{orderCode}/issues")

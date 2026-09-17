@@ -1,6 +1,7 @@
 package com.mycompany.myapp.service.order;
 
 import com.mycompany.myapp.domain.OrderIssue;
+import com.mycompany.myapp.domain.OrderPodPhoto;
 import com.mycompany.myapp.domain.OrderReturnRequest;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.ApprovalStatus;
@@ -10,14 +11,17 @@ import com.mycompany.myapp.domain.enumeration.IssueType;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.ReturnStage;
 import com.mycompany.myapp.repository.OrderIssueRepository;
+import com.mycompany.myapp.repository.OrderPodPhotoRepository;
 import com.mycompany.myapp.repository.OrderReturnRequestRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.OrderDetailDTO;
 import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
+import com.mycompany.myapp.service.dto.order.ReturnCompleteRequest;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.Instant;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +36,7 @@ public class ExceptionFacadeService {
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final OrderIssueRepository orderIssueRepository;
     private final OrderReturnRequestRepository orderReturnRequestRepository;
+    private final OrderPodPhotoRepository podPhotoRepository;
     private final OrderFacadeService orderFacadeService;
     private final DayClosureGuard dayClosureGuard;
 
@@ -39,12 +44,14 @@ public class ExceptionFacadeService {
         ShipmentOrderRepository shipmentOrderRepository,
         OrderIssueRepository orderIssueRepository,
         OrderReturnRequestRepository orderReturnRequestRepository,
+        OrderPodPhotoRepository podPhotoRepository,
         OrderFacadeService orderFacadeService,
         DayClosureGuard dayClosureGuard
     ) {
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.orderIssueRepository = orderIssueRepository;
         this.orderReturnRequestRepository = orderReturnRequestRepository;
+        this.podPhotoRepository = podPhotoRepository;
         this.orderFacadeService = orderFacadeService;
         this.dayClosureGuard = dayClosureGuard;
     }
@@ -106,7 +113,53 @@ public class ExceptionFacadeService {
     }
 
     public OrderDetailDTO completeReturn(String orderCode) {
+        return completeReturn(orderCode, null);
+    }
+
+    public OrderDetailDTO completeReturn(String orderCode, ReturnCompleteRequest req) {
+        ShipmentOrder order = requireOrder(orderCode);
+        dayClosureGuard.assertOrderMutable(order);
+
+        List<String> photos = req != null ? req.getPhotos() : null;
+        if (photos == null || photos.isEmpty()) {
+            throw new BadRequestAlertException("At least 1 return photo required", ENTITY, "returnPhotoRequired");
+        }
+        if (photos.size() > 3) {
+            throw new BadRequestAlertException("Max 3 return photos", ENTITY, "returnPhotoMax");
+        }
+
+        Instant now = Instant.now();
+        String actor = actor();
+        if (req.getActualRecipientName() != null && !req.getActualRecipientName().isBlank()) {
+            order.setReceiverActualName(req.getActualRecipientName().trim());
+        }
+        if (req.getActualRecipientPhone() != null && !req.getActualRecipientPhone().isBlank()) {
+            order.setReceiverActualPhone(req.getActualRecipientPhone().trim());
+        }
+
+        int seq = (int) podPhotoRepository.countByOrder_Id(order.getId()) + 1;
+        for (String photo : photos) {
+            OrderPodPhoto row = new OrderPodPhoto();
+            row.setPhotoUrl(truncateUrl(photo));
+            row.setCapturedAt(now);
+            row.setCapturedByUsername(actor);
+            row.setSequenceNo(Math.min(seq, 3));
+            row.setOrder(order);
+            podPhotoRepository.save(row);
+            seq++;
+        }
+        shipmentOrderRepository.save(order);
+
         return setReturnStage(orderCode, ReturnStage.RT_DONE);
+    }
+
+    private static String truncateUrl(String url) {
+        if (url == null) {
+            return "";
+        }
+        String trimmed = url.trim();
+        final int max = 1_500_000;
+        return trimmed.length() <= max ? trimmed : trimmed.substring(0, max);
     }
 
     public OrderDetailDTO openIssue(String orderCode, IssueType type, String reason) {
