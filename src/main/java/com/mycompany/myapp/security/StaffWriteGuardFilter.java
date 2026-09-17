@@ -98,10 +98,7 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             staffAccessService.requireScreenWrite(ScreenKey.QUAN_LY_DON_COD);
             return;
         }
-        // Kiểm kho (mobile save + web)
-        if (path.startsWith("/api/inventory-checks")) {
-            staffAccessService.requireScreenWrite(ScreenKey.KIEM_KE);
-        }
+        // inventory-checks: mọi NV thao tác được (app Kiểm kho) — không chặn theo screen Y/R
     }
 
     private static boolean isPublicWrite(String method, String path) {

@@ -33,9 +33,14 @@ public class OrderIssue implements Serializable {
     @Column(name = "issue_status", nullable = false)
     private IssueStatus issueStatus;
 
-    @Size(max = 255)
-    @Column(name = "reason", length = 255)
+    @Size(max = 1000)
+    @Column(name = "reason", length = 1000)
     private String reason;
+
+    /** JSON array of evidence photo data-URLs / URLs (optional). */
+    @Lob
+    @Column(name = "evidence_photos", columnDefinition = "longtext")
+    private String evidencePhotos;
 
     @NotNull
     @Column(name = "opened_at", nullable = false)
@@ -130,6 +135,14 @@ public class OrderIssue implements Serializable {
 
     public void setReason(String reason) {
         this.reason = reason;
+    }
+
+    public String getEvidencePhotos() {
+        return this.evidencePhotos;
+    }
+
+    public void setEvidencePhotos(String evidencePhotos) {
+        this.evidencePhotos = evidencePhotos;
     }
 
     public Instant getOpenedAt() {

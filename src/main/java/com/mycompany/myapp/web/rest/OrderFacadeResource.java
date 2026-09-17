@@ -14,6 +14,7 @@ import com.mycompany.myapp.service.dto.order.FailDeliveryRequest;
 import com.mycompany.myapp.service.dto.order.FailDeliveryResponse;
 import com.mycompany.myapp.service.dto.order.LogOrderEventRequest;
 import com.mycompany.myapp.service.dto.order.MarkCodExportedRequest;
+import com.mycompany.myapp.service.dto.order.OpenIssueRequest;
 import com.mycompany.myapp.service.dto.order.OrderDetailDTO;
 import com.mycompany.myapp.service.dto.order.OrderSummaryDTO;
 import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
@@ -290,11 +291,12 @@ public class OrderFacadeResource {
     }
 
     @PostMapping("/{orderCode}/issues")
-    public OrderDetailDTO openIssue(@PathVariable String orderCode, @RequestBody(required = false) Map<String, String> body) {
-        String rawType = body != null ? body.get("issueType") : null;
+    public OrderDetailDTO openIssue(@PathVariable String orderCode, @RequestBody(required = false) OpenIssueRequest body) {
+        String rawType = body != null ? body.getIssueType() : null;
         IssueType type = rawType == null || rawType.isBlank() ? IssueType.EXCEPTION : parseEnum(IssueType.class, rawType, "issueType");
-        String reason = body != null ? body.get("reason") : null;
-        return exceptionFacadeService.openIssue(orderCode, type, reason);
+        String reason = body != null ? body.getReason() : null;
+        List<String> photos = body != null && body.getPhotos() != null ? body.getPhotos() : List.of();
+        return exceptionFacadeService.openIssue(orderCode, type, reason, photos);
     }
 
     @PostMapping("/{orderCode}/issues/resolve")

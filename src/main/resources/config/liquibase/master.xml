@@ -85,5 +85,6 @@
     <include file="config/liquibase/changelog/20260914100000_office_split_same_code.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260916150000_receipt_confirm.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260917143000_inventory_check.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260917160000_order_issue_reason_photos.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 

@@ -91,6 +91,11 @@ public class OrderSummaryDTO {
     private String driverName;
     /** Giờ xuất phát chuyến hiện tại (trip.departAt) — FE tab Hàng trên xe. */
     private Instant departAt;
+    /** Vụ việc OPEN hiện tại (list) — FE /ngoai-le. */
+    private String issueType;
+    private String issueReason;
+    private Instant issueOpenedAt;
+    private String issueOpenedBy;
 
     public Long getId() {
         return id;
@@ -674,6 +679,38 @@ public class OrderSummaryDTO {
 
     public void setDepartAt(Instant departAt) {
         this.departAt = departAt;
+    }
+
+    public String getIssueType() {
+        return issueType;
+    }
+
+    public void setIssueType(String issueType) {
+        this.issueType = issueType;
+    }
+
+    public String getIssueReason() {
+        return issueReason;
+    }
+
+    public void setIssueReason(String issueReason) {
+        this.issueReason = issueReason;
+    }
+
+    public Instant getIssueOpenedAt() {
+        return issueOpenedAt;
+    }
+
+    public void setIssueOpenedAt(Instant issueOpenedAt) {
+        this.issueOpenedAt = issueOpenedAt;
+    }
+
+    public String getIssueOpenedBy() {
+        return issueOpenedBy;
+    }
+
+    public void setIssueOpenedBy(String issueOpenedBy) {
+        this.issueOpenedBy = issueOpenedBy;
     }
 
     public static class OrderLegViewDTO {

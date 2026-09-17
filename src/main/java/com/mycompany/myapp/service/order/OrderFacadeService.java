@@ -5,6 +5,7 @@ import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.OrderLeg;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.ForwardStage;
+import com.mycompany.myapp.domain.enumeration.IssueStatus;
 import com.mycompany.myapp.domain.enumeration.LegStatus;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
@@ -1098,6 +1099,13 @@ public class OrderFacadeService {
             );
             dto.setReceiverActualName(o.getReceiverActualName());
             dto.setReceiverActualPhone(o.getReceiverActualPhone());
+        }
+        if (o.getIssue() != null && o.getIssue().getIssueStatus() == IssueStatus.OPEN) {
+            var issue = o.getIssue();
+            dto.setIssueType(issue.getIssueType() != null ? issue.getIssueType().name() : null);
+            dto.setIssueReason(issue.getReason());
+            dto.setIssueOpenedAt(issue.getOpenedAt());
+            dto.setIssueOpenedBy(issue.getOpenedByUsername());
         }
     }
 

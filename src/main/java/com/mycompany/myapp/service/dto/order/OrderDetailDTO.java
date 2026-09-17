@@ -171,6 +171,16 @@ public class OrderDetailDTO extends OrderSummaryDTO {
         public void setResolutionNote(String resolutionNote) {
             this.resolutionNote = resolutionNote;
         }
+
+        private java.util.List<String> photos = new java.util.ArrayList<>();
+
+        public java.util.List<String> getPhotos() {
+            return photos;
+        }
+
+        public void setPhotos(java.util.List<String> photos) {
+            this.photos = photos != null ? photos : new java.util.ArrayList<>();
+        }
     }
 
     public static class OrderReturnViewDTO {

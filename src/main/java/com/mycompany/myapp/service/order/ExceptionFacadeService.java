@@ -1,5 +1,7 @@
 package com.mycompany.myapp.service.order;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mycompany.myapp.domain.OrderIssue;
 import com.mycompany.myapp.domain.OrderPodPhoto;
 import com.mycompany.myapp.domain.OrderReturnRequest;
@@ -10,10 +12,12 @@ import com.mycompany.myapp.domain.enumeration.IssueStatus;
 import com.mycompany.myapp.domain.enumeration.IssueType;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.ReturnStage;
+import com.mycompany.myapp.domain.enumeration.RoleCode;
 import com.mycompany.myapp.repository.OrderIssueRepository;
 import com.mycompany.myapp.repository.OrderPodPhotoRepository;
 import com.mycompany.myapp.repository.OrderReturnRequestRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
+import com.mycompany.myapp.security.PermissionService;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.day.DayClosureGuard;
@@ -22,7 +26,9 @@ import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
 import com.mycompany.myapp.service.dto.order.ReturnCompleteRequest;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +39,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class ExceptionFacadeService {
 
     private static final String ENTITY = "order";
+    private static final Pattern FROM_STAGE_SUFFIX = Pattern.compile("\\s*\\|\\s*FROM=(WH_IN|DEST_WH_IN)\\s*$");
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final OrderIssueRepository orderIssueRepository;
@@ -41,6 +49,7 @@ public class ExceptionFacadeService {
     private final OrderFacadeService orderFacadeService;
     private final DayClosureGuard dayClosureGuard;
     private final StaffAccessService staffAccessService;
+    private final PermissionService permissionService;
 
     public ExceptionFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -49,7 +58,8 @@ public class ExceptionFacadeService {
         OrderPodPhotoRepository podPhotoRepository,
         OrderFacadeService orderFacadeService,
         DayClosureGuard dayClosureGuard,
-        StaffAccessService staffAccessService
+        StaffAccessService staffAccessService,
+        PermissionService permissionService
     ) {
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.orderIssueRepository = orderIssueRepository;
@@ -58,6 +68,7 @@ public class ExceptionFacadeService {
         this.orderFacadeService = orderFacadeService;
         this.dayClosureGuard = dayClosureGuard;
         this.staffAccessService = staffAccessService;
+        this.permissionService = permissionService;
     }
 
     public OrderDetailDTO startReturn(String orderCode, String reason) {
@@ -171,15 +182,57 @@ public class ExceptionFacadeService {
     }
 
     public OrderDetailDTO openIssue(String orderCode, IssueType type, String reason) {
+        return openIssue(orderCode, type, reason, List.of());
+    }
+
+    public OrderDetailDTO openIssue(String orderCode, IssueType type, String reason, List<String> photos) {
         ShipmentOrder order = requireOrder(orderCode);
         dayClosureGuard.assertOrderMutable(order);
-        if (orderIssueRepository.existsByOrder_IdAndIssueStatus(order.getId(), IssueStatus.OPEN)) {
-            throw new BadRequestAlertException("Order already has an open issue", ENTITY, "issueOpenExists");
+        IssueType issueType = type != null ? type : IssueType.EXCEPTION;
+
+        if (issueType == IssueType.LOST || issueType == IssueType.EXCEPTION || issueType == IssueType.DAMAGED) {
+            if (order.getStatus() == OrderStatus.DELIVERED || order.getStatus() == OrderStatus.RETURNED) {
+                throw new BadRequestAlertException("Cannot open issue on delivered/returned order", ENTITY, "issueOnSuccess");
+            }
         }
+
+        if (issueType == IssueType.EXCEPTION || issueType == IssueType.DAMAGED) {
+            String note = reason == null ? "" : FROM_STAGE_SUFFIX.matcher(reason).replaceFirst("").trim();
+            if (note.isEmpty()) {
+                throw new BadRequestAlertException("Issue reason required", ENTITY, "issueReasonRequired");
+            }
+        }
+
+        if (orderIssueRepository.existsByOrder_IdAndIssueStatus(order.getId(), IssueStatus.OPEN)) {
+            // AD ghi nhận ngoại lệ/thất lạc/hư hỏng: đóng vụ việc mở rồi tạo mới.
+            boolean adminIssue =
+                (issueType == IssueType.LOST || issueType == IssueType.EXCEPTION || issueType == IssueType.DAMAGED) &&
+                (staffAccessService.current().map(p -> p.getRoleCode() == RoleCode.AD).orElse(false) || permissionService.isSystemAdmin());
+            if (!adminIssue) {
+                throw new BadRequestAlertException("Order already has an open issue", ENTITY, "issueOpenExists");
+            }
+            for (OrderIssue open : orderIssueRepository.findByOrder_IdOrderByOpenedAtAscIdAsc(order.getId())) {
+                if (open.getIssueStatus() == IssueStatus.OPEN) {
+                    open.setIssueStatus(IssueStatus.RESOLVED);
+                    open.setResolvedAt(Instant.now());
+                    open.setResolvedByUsername(actor());
+                    open.setResolutionNote("Đóng để ghi nhận " + issueType.name() + " (AD)");
+                    orderIssueRepository.save(open);
+                }
+            }
+            order.setIssue(null);
+        }
+
+        String clippedReason = reason;
+        if (clippedReason != null && clippedReason.length() > 1000) {
+            clippedReason = clippedReason.substring(0, 1000);
+        }
+
         OrderIssue issue = new OrderIssue();
-        issue.setIssueType(type != null ? type : IssueType.EXCEPTION);
+        issue.setIssueType(issueType);
         issue.setIssueStatus(IssueStatus.OPEN);
-        issue.setReason(reason);
+        issue.setReason(clippedReason);
+        issue.setEvidencePhotos(encodePhotos(photos));
         issue.setOpenedAt(Instant.now());
         issue.setOpenedByUsername(actor());
         issue.setOrder(order);
@@ -242,7 +295,48 @@ public class ExceptionFacadeService {
         v.setResolvedAt(issue.getResolvedAt());
         v.setResolvedByUsername(issue.getResolvedByUsername());
         v.setResolutionNote(issue.getResolutionNote());
+        v.setPhotos(decodePhotos(issue.getEvidencePhotos()));
         return v;
+    }
+
+    private String encodePhotos(List<String> photos) {
+        List<String> cleaned = normalizePhotos(photos);
+        if (cleaned.isEmpty()) {
+            return null;
+        }
+        try {
+            return JSON.writeValueAsString(cleaned);
+        } catch (Exception e) {
+            throw new BadRequestAlertException("Invalid issue photos", ENTITY, "issuePhotosInvalid");
+        }
+    }
+
+    private static List<String> decodePhotos(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> list = JSON.readValue(raw, new TypeReference<List<String>>() {});
+            return list != null ? list : List.of();
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private List<String> normalizePhotos(List<String> photos) {
+        if (photos == null || photos.isEmpty()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (String p : photos) {
+            if (p == null) continue;
+            String clipped = clipUrl(p);
+            if (!clipped.isBlank()) {
+                out.add(clipped);
+            }
+            if (out.size() >= 3) break;
+        }
+        return out;
     }
 
     static OrderDetailDTO.OrderReturnViewDTO toReturnView(OrderReturnRequest req) {

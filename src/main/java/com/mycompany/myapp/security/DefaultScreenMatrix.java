@@ -90,7 +90,7 @@ public final class DefaultScreenMatrix {
         put(m, ScreenKey.NHOM_QUYEN, "AD=Y");
         put(m, ScreenKey.PHU_PHI, "AD=Y,DH=R");
         put(m, ScreenKey.TON_KHO, "Q=Y,TCN=Y,DH=Y,BX=R,KT=R,BL=R,AD=Y");
-        put(m, ScreenKey.KIEM_KE, "Q=Y,TCN=Y,DH=Y,BX=R,KT=R,BL=R,AD=Y");
+        put(m, ScreenKey.KIEM_KE, "Q=Y,TCN=Y,DH=Y,BX=Y,KT=R,BL=R,AD=Y");
         put(m, ScreenKey.BAO_CAO_GIO, "Q=R,TCN=Y,DH=Y,BX=R,KT=R,BL=R,AD=Y");
         return Collections.unmodifiableMap(m);
     }

@@ -13,7 +13,16 @@ import org.springframework.stereotype.Repository;
 public interface OfficeRepository extends JpaRepository<Office, Long> {
     Optional<Office> findFirstByCodeOrderByIdAsc(String code);
 
+    Optional<Office> findFirstByCodeIgnoreCaseOrderByIdAsc(String code);
+
     default Optional<Office> findOneByCode(String code) {
         return findFirstByCodeOrderByIdAsc(code);
+    }
+
+    default Optional<Office> findOneByCodeIgnoreCase(String code) {
+        if (code == null || code.isBlank()) {
+            return Optional.empty();
+        }
+        return findFirstByCodeIgnoreCaseOrderByIdAsc(code.trim());
     }
 }

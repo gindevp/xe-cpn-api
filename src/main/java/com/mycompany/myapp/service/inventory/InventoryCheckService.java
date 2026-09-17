@@ -70,14 +70,20 @@ public class InventoryCheckService {
 
     public InventoryCheckDTO create(CreateInventoryCheckRequest req) {
         staffAccessService.requireWritable();
-        if (req == null || req.getOfficeCode() == null || req.getOfficeCode().isBlank()) {
+        String scoped = staffAccessService.scopedOfficeCode().orElse(null);
+        String requested = req != null && req.getOfficeCode() != null ? req.getOfficeCode().trim() : "";
+        // NV bó VP → luôn ghi theo VP tài khoản; AD/ALL dùng office gửi lên.
+        String office = scoped != null && !scoped.isBlank() ? scoped.trim().toUpperCase(Locale.ROOT) : requested.toUpperCase(Locale.ROOT);
+        if (office.isBlank()) {
             throw new BadRequestAlertException("officeCode required", ENTITY, "officeRequired");
         }
-        String office = req.getOfficeCode().trim().toUpperCase(Locale.ROOT);
-        assertCanWriteOffice(office);
-        if (officeRepository.findOneByCode(office).isEmpty()) {
-            throw new BadRequestAlertException("Unknown office", ENTITY, "officeUnknown");
+        if (officeRepository.findOneByCodeIgnoreCase(office).isEmpty()) {
+            // Vẫn lưu nếu mã trùng VP staff (tránh lệch chữ hoa/thường / VP mới chưa sync master).
+            if (scoped == null || !scoped.equalsIgnoreCase(office)) {
+                throw new BadRequestAlertException("Unknown office: " + office, ENTITY, "officeUnknown");
+            }
         }
+        office = office.toUpperCase(Locale.ROOT);
 
         List<String> system = nzList(req.getSystemCodes());
         List<String> scanned = nzList(req.getScannedCodes());
@@ -108,13 +114,6 @@ public class InventoryCheckService {
     }
 
     private void assertCanView(String officeCode) {
-        String scoped = staffAccessService.scopedOfficeCode().orElse(null);
-        if (scoped != null && !scoped.equalsIgnoreCase(officeCode)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Office scope denied");
-        }
-    }
-
-    private void assertCanWriteOffice(String officeCode) {
         String scoped = staffAccessService.scopedOfficeCode().orElse(null);
         if (scoped != null && !scoped.equalsIgnoreCase(officeCode)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Office scope denied");

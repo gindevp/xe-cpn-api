@@ -12,9 +12,9 @@ public class CreateInventoryCheckRequest {
     @Size(max = 20)
     private String officeCode;
 
-    private List<@NotBlank @Size(max = 40) String> systemCodes = new ArrayList<>();
-    private List<@NotBlank @Size(max = 40) String> scannedCodes = new ArrayList<>();
-    private List<@NotBlank @Size(max = 40) String> missingCodes = new ArrayList<>();
+    private List<@Size(max = 80) String> systemCodes = new ArrayList<>();
+    private List<@Size(max = 80) String> scannedCodes = new ArrayList<>();
+    private List<@Size(max = 80) String> missingCodes = new ArrayList<>();
 
     private Integer systemPkgCount;
     private Integer checkedPkgCount;
