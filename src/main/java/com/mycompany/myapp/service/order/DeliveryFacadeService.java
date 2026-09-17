@@ -260,7 +260,24 @@ public class DeliveryFacadeService {
 
     private void ensureStatusThenDeliver(ShipmentOrder order, String action, String detail) {
         OrderStatus status = order.getStatus();
-        if (status == OrderStatus.DELIVERED) {
+        if (status == OrderStatus.DELIVERED || status == OrderStatus.RETURNED) {
+            return;
+        }
+        // Đơn đang hoàn (RETURNING): POD = trả người gửi → RETURNED (không DELIVERED / không KPI giao đi).
+        if (status == OrderStatus.RETURNING) {
+            OrderTransitionRequest tr = new OrderTransitionRequest();
+            tr.setToStatus(OrderStatus.RETURNED);
+            tr.setAction(action != null && !action.isBlank() ? action : "RT_DONE");
+            tr.setDetail(detail != null && !detail.isBlank() ? detail : "Hoàn thành công");
+            orderFacadeService.transition(order.getOrderCode(), tr);
+            OrderDeliveryAttempt attempt = new OrderDeliveryAttempt();
+            attempt.setAttemptNo((int) deliveryAttemptRepository.countByOrder_Id(order.getId()) + 1);
+            attempt.setAttemptAt(Instant.now());
+            attempt.setResult(DeliveryAttemptResult.SUCCESS);
+            attempt.setHandledByUsername(currentActor());
+            attempt.setReason("RETURN_POD");
+            attempt.setOrder(requireOrder(order.getOrderCode()));
+            deliveryAttemptRepository.save(attempt);
             return;
         }
         // FE / app: AT_DEST, OUT_FOR_DELIVERY, CONFIRMED, WAITING → DELIVERED

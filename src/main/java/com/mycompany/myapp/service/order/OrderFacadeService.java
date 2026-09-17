@@ -372,8 +372,8 @@ public class OrderFacadeService {
             }
         }
         order.setStatus(to);
-        // Leave warehouse pipeline: stale DEST_WH_IN/DELIVERING must not keep listing the order in Nhập kho giao.
-        if (to == OrderStatus.DELIVERED || to == OrderStatus.CANCELLED || to == OrderStatus.RETURNED || to == OrderStatus.RETURNING) {
+        // Leave warehouse pipeline — but RETURNING keeps forwardStage (pipeline hoàn dùng chung tab kho).
+        if (to == OrderStatus.DELIVERED || to == OrderStatus.CANCELLED || to == OrderStatus.RETURNED) {
             order.setForwardStage(null);
         }
         shipmentOrderRepository.save(order);

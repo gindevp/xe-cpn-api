@@ -74,20 +74,35 @@ public class ExceptionFacadeService {
     public OrderDetailDTO startReturn(String orderCode, String reason) {
         ShipmentOrder order = requireOrder(orderCode);
         dayClosureGuard.assertOrderMutable(order);
-        // FE sheet C5: hoàn từ Nhập kho gửi (CONFIRMED/WH_IN), Nhập kho giao (AT_DEST),
-        // Chờ giao lại (FAILED_DELIVERY); cũng cho phép khi đang trên đường / đã giao.
+
+        if (!canStartReturnRole()) {
+            throw new BadRequestAlertException("Only AD/DH can start return", ENTITY, "returnForbidden");
+        }
+        if (order.getStatus() == OrderStatus.RETURNING) {
+            throw new BadRequestAlertException("Order already in return flow", ENTITY, "returnAlreadyActive");
+        }
+        // Chỉ sau khi đã vào kho gửi trở đi (không DRAFT). Cho phép hoàn sau giao (DELIVERED).
         if (
             order.getStatus() != OrderStatus.CONFIRMED &&
             order.getStatus() != OrderStatus.WAITING &&
             order.getStatus() != OrderStatus.IN_TRANSIT &&
             order.getStatus() != OrderStatus.AT_DEST &&
             order.getStatus() != OrderStatus.OUT_FOR_DELIVERY &&
-            order.getStatus() != OrderStatus.DELIVERED &&
             order.getStatus() != OrderStatus.FAILED_DELIVERY &&
+            order.getStatus() != OrderStatus.DELIVERED &&
             order.getStatus() != OrderStatus.RETURNED
         ) {
             throw new BadRequestAlertException("Return not allowed from status " + order.getStatus(), ENTITY, "returnInvalidStatus");
         }
+
+        ForwardStage current = order.getForwardStage();
+        // Case A: đang nhập kho gửi → nhảy nhập kho giao cùng VP (hoàn tại chỗ).
+        // Case B: kho đích / fail / đang giao → về nhập kho gửi chiều hoàn (vận chuyển về VP gốc).
+        boolean caseAtOriginWh =
+            current == ForwardStage.WH_IN ||
+            (current == null && order.getStatus() == OrderStatus.CONFIRMED && order.getPickedUpAt() != null);
+        ForwardStage nextForward = caseAtOriginWh ? ForwardStage.DEST_WH_IN : ForwardStage.WH_IN;
+
         OrderReturnRequest req = new OrderReturnRequest();
         req.setReason(reason == null || reason.isBlank() ? "RETURN" : reason.trim());
         req.setRequestedByUsername(actor());
@@ -95,11 +110,18 @@ public class ExceptionFacadeService {
         req.setStatus(ApprovalStatus.APPROVED);
         req.setDecidedByUsername(actor());
         req.setDecidedAt(Instant.now());
-        req.setOrder(order); // history link (TASK-008)
+        req.setOrder(order);
         req = orderReturnRequestRepository.save(req);
-        order.setReturnRequest(req); // current pointer
+        order.setReturnRequest(req);
         order.setReturnStage(ReturnStage.RETURN_PENDING);
-        order.setForwardStage(null);
+        // COD + phí thu hộ COD = 0; cước giữ nguyên.
+        order.setCodAmount(java.math.BigDecimal.ZERO);
+        order.setCodFeeAmount(java.math.BigDecimal.ZERO);
+        order.setForwardStage(nextForward);
+        if (caseAtOriginWh) {
+            // Hoàn tại chỗ: không còn trên chuyến.
+            order.setCurrentTrip(null);
+        }
         shipmentOrderRepository.save(order);
 
         if (order.getStatus() != OrderStatus.RETURNING) {
@@ -108,8 +130,21 @@ public class ExceptionFacadeService {
             tr.setAction("RETURN_START");
             tr.setDetail(req.getReason());
             orderFacadeService.transition(order.getOrderCode(), tr);
+            // transition không còn xóa forwardStage khi → RETURNING; re-apply nếu cần.
+            ShipmentOrder reloaded = requireOrder(orderCode);
+            if (reloaded.getForwardStage() != nextForward) {
+                reloaded.setForwardStage(nextForward);
+                shipmentOrderRepository.save(reloaded);
+            }
         }
         return orderFacadeService.getByCode(order.getOrderCode());
+    }
+
+    private boolean canStartReturnRole() {
+        if (permissionService.isSystemAdmin()) {
+            return true;
+        }
+        return staffAccessService.current().map(p -> p.getRoleCode() == RoleCode.AD || p.getRoleCode() == RoleCode.DH).orElse(false);
     }
 
     public OrderDetailDTO setReturnStage(String orderCode, ReturnStage stage) {
@@ -330,7 +365,7 @@ public class ExceptionFacadeService {
         List<String> out = new ArrayList<>();
         for (String p : photos) {
             if (p == null) continue;
-            String clipped = clipUrl(p);
+            String clipped = truncateUrl(p);
             if (!clipped.isBlank()) {
                 out.add(clipped);
             }

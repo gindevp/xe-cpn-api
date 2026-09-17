@@ -294,7 +294,12 @@ public class TripFacadeService {
             String dest = order.getToOffice() != null ? order.getToOffice().getCode() : null;
             String hub = order.getHubOffice() != null ? order.getHubOffice().getCode() : null;
             String finalDest = order.getFinalToOffice() != null ? order.getFinalToOffice().getCode() : null;
-            boolean okOffice = officeCode.equals(dest) || officeCode.equals(hub) || officeCode.equals(finalDest);
+            String from = order.getFromOffice() != null ? order.getFromOffice().getCode() : null;
+            boolean returning = order.getStatus() == OrderStatus.RETURNING;
+            // Chiều hoàn: đích nhập kho là VP gửi gốc (fromOffice).
+            boolean okOffice = returning
+                ? officeCode.equals(from) || officeCode.equals(hub)
+                : officeCode.equals(dest) || officeCode.equals(hub) || officeCode.equals(finalDest);
             if (!okOffice && !req.isOverrideWrongOffice()) {
                 throw new BadRequestAlertException("Wrong office for order (E-VP-001)", ENTITY, "wrongOffice");
             }
