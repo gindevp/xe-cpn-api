@@ -48,6 +48,7 @@ public class SecurityConfiguration {
                     .requestMatchers(mvc.pattern("/api/activate")).permitAll()
                     .requestMatchers(mvc.pattern("/api/account/reset-password/init")).permitAll()
                     .requestMatchers(mvc.pattern("/api/account/reset-password/finish")).permitAll()
+                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/guest")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/drafts")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/track")).permitAll()
                     // Public create-order / track: đọc master tuyến · lộ trình · VP (chỉ GET)

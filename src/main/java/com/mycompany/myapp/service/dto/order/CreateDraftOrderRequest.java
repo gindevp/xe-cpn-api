@@ -59,6 +59,18 @@ public class CreateDraftOrderRequest {
     /** Tuyến (Branch) code or name — preferred fare table. */
     private String branchCode;
 
+    /** FE gửi tổng cước theo kiện — nếu có thì dùng thay vì ước lượng 1 cân. */
+    private BigDecimal fareAmount;
+    private BigDecimal goodsFareAmount;
+    private BigDecimal pickupFeeAmount;
+    private BigDecimal deliveryFeeAmount;
+    private BigDecimal declaredFeeAmount;
+    private BigDecimal discountAmount;
+    private BigDecimal codAmount;
+    private BigDecimal codFeeAmount;
+    private BigDecimal paidAmount;
+    private Integer quantity;
+
     public String getSenderPhone() {
         return senderPhone;
     }
@@ -185,5 +197,85 @@ public class CreateDraftOrderRequest {
 
     public void setBranchCode(String branchCode) {
         this.branchCode = branchCode;
+    }
+
+    public BigDecimal getFareAmount() {
+        return fareAmount;
+    }
+
+    public void setFareAmount(BigDecimal fareAmount) {
+        this.fareAmount = fareAmount;
+    }
+
+    public BigDecimal getGoodsFareAmount() {
+        return goodsFareAmount;
+    }
+
+    public void setGoodsFareAmount(BigDecimal goodsFareAmount) {
+        this.goodsFareAmount = goodsFareAmount;
+    }
+
+    public BigDecimal getPickupFeeAmount() {
+        return pickupFeeAmount;
+    }
+
+    public void setPickupFeeAmount(BigDecimal pickupFeeAmount) {
+        this.pickupFeeAmount = pickupFeeAmount;
+    }
+
+    public BigDecimal getDeliveryFeeAmount() {
+        return deliveryFeeAmount;
+    }
+
+    public void setDeliveryFeeAmount(BigDecimal deliveryFeeAmount) {
+        this.deliveryFeeAmount = deliveryFeeAmount;
+    }
+
+    public BigDecimal getDeclaredFeeAmount() {
+        return declaredFeeAmount;
+    }
+
+    public void setDeclaredFeeAmount(BigDecimal declaredFeeAmount) {
+        this.declaredFeeAmount = declaredFeeAmount;
+    }
+
+    public BigDecimal getDiscountAmount() {
+        return discountAmount;
+    }
+
+    public void setDiscountAmount(BigDecimal discountAmount) {
+        this.discountAmount = discountAmount;
+    }
+
+    public BigDecimal getCodAmount() {
+        return codAmount;
+    }
+
+    public void setCodAmount(BigDecimal codAmount) {
+        this.codAmount = codAmount;
+    }
+
+    public BigDecimal getCodFeeAmount() {
+        return codFeeAmount;
+    }
+
+    public void setCodFeeAmount(BigDecimal codFeeAmount) {
+        this.codFeeAmount = codFeeAmount;
+    }
+
+    public BigDecimal getPaidAmount() {
+        return paidAmount;
+    }
+
+    public void setPaidAmount(BigDecimal paidAmount) {
+        this.paidAmount = paidAmount;
+    }
+
+    public Integer getQuantity() {
+        return quantity;
+    }
+
+    public void setQuantity(Integer quantity) {
+        this.quantity = quantity;
     }
 }

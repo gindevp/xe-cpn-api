@@ -128,11 +128,22 @@ public class OrderFacadeResource {
         return ResponseEntity.ok(orderFacadeService.getByCode(orderCode));
     }
 
+    /**
+     * Public guest create — always CONFIRMED + real order code (no DRAFT).
+     * Preferred path for /tao-don.
+     */
+    @PostMapping("/guest")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CreateDraftOrderResponse createGuestOrder(@Valid @RequestBody CreateDraftOrderRequest request) {
+        LOG.debug("REST request to create public guest order (CONFIRMED)");
+        return orderFacadeService.createDraft(request);
+    }
+
+    /** @deprecated Prefer POST /api/orders/guest — same behavior (CONFIRMED). Kept for old FE. */
     @PostMapping("/drafts")
     @ResponseStatus(HttpStatus.CREATED)
     public CreateDraftOrderResponse createDraft(@Valid @RequestBody CreateDraftOrderRequest request) {
-        LOG.debug("REST request to create public guest order (CONFIRMED)");
-        return orderFacadeService.createDraft(request);
+        return createGuestOrder(request);
     }
 
     @PostMapping("")

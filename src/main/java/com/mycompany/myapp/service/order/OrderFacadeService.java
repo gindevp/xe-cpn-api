@@ -244,7 +244,7 @@ public class OrderFacadeService {
     }
 
     /**
-     * Public guest create (POST /api/orders/drafts — path kept for FE/security whitelist).
+     * Public guest create (POST /api/orders/guest, alias /drafts).
      * Business no longer uses DRAFT: always CONFIRMED + real order code.
      * Guest drop-off (!homePickup) → qrDropOff so đơn vào Chờ nhận hàng.
      */
@@ -302,10 +302,33 @@ public class OrderFacadeService {
         // Khách mang hàng đến bưu cục / quét QR — không lấy tận nơi.
         order.setQrDropOff(!homePickup);
         order.setWeightKg(req.getEstimatedWeightKg());
-        order.setQuantity(1);
-        order.setFareAmount(fare.total());
-        order.setPickupFeeAmount(fare.pickupFee());
-        order.setDeliveryFeeAmount(fare.deliveryFee());
+        int qty = req.getQuantity() != null && req.getQuantity() > 0 ? req.getQuantity() : 1;
+        order.setQuantity(qty);
+
+        // FE gửi tổng theo kiện → ưu tiên; không thì ước lượng BE theo cân.
+        BigDecimal fareTotal = req.getFareAmount() != null ? req.getFareAmount() : fare.total();
+        order.setFareAmount(fareTotal);
+        if (req.getGoodsFareAmount() != null) {
+            order.setGoodsFareAmount(req.getGoodsFareAmount());
+        }
+        order.setPickupFeeAmount(req.getPickupFeeAmount() != null ? req.getPickupFeeAmount() : fare.pickupFee());
+        order.setDeliveryFeeAmount(req.getDeliveryFeeAmount() != null ? req.getDeliveryFeeAmount() : fare.deliveryFee());
+        if (req.getDeclaredFeeAmount() != null) {
+            order.setDeclaredFeeAmount(req.getDeclaredFeeAmount());
+        }
+        if (req.getDiscountAmount() != null) {
+            order.setDiscountAmount(req.getDiscountAmount());
+        }
+        if (req.getCodAmount() != null) {
+            order.setCodAmount(req.getCodAmount());
+        }
+        if (req.getCodFeeAmount() != null) {
+            order.setCodFeeAmount(req.getCodFeeAmount());
+        }
+        if (req.getPaidAmount() != null && req.getPaidAmount().compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal paid = req.getPaidAmount().min(fareTotal);
+            order.setPaidAmount(paid);
+        }
         order.setNote(req.getNote());
         order.setFromOffice(from);
         order.setToOffice(to);
@@ -317,7 +340,7 @@ public class OrderFacadeService {
         ensureLegs(order);
         appendEvent(order, "CREATE", "Tạo đơn hàng", "customer");
 
-        return new CreateDraftOrderResponse(null, order.getOrderCode(), OrderStatus.CONFIRMED, fare.total(), null);
+        return new CreateDraftOrderResponse(null, order.getOrderCode(), OrderStatus.CONFIRMED, fareTotal, null);
     }
 
     public OrderSummaryDTO createConfirmed(CreateOrderRequest req) {

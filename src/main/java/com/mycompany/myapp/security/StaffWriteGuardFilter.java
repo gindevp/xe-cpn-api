@@ -103,7 +103,7 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         if ("POST".equals(method) && "/api/authenticate".equals(path)) {
             return true;
         }
-        if ("POST".equals(method) && "/api/orders/drafts".equals(path)) {
+        if ("POST".equals(method) && ("/api/orders/guest".equals(path) || "/api/orders/drafts".equals(path))) {
             return true;
         }
         if ("POST".equals(method) && "/api/orders/track".equals(path)) {

@@ -15,6 +15,7 @@ import com.mycompany.myapp.repository.OrderPodPhotoRepository;
 import com.mycompany.myapp.repository.OrderReturnRequestRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.security.SecurityUtils;
+import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.OrderDetailDTO;
 import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
@@ -39,6 +40,7 @@ public class ExceptionFacadeService {
     private final OrderPodPhotoRepository podPhotoRepository;
     private final OrderFacadeService orderFacadeService;
     private final DayClosureGuard dayClosureGuard;
+    private final StaffAccessService staffAccessService;
 
     public ExceptionFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -46,7 +48,8 @@ public class ExceptionFacadeService {
         OrderReturnRequestRepository orderReturnRequestRepository,
         OrderPodPhotoRepository podPhotoRepository,
         OrderFacadeService orderFacadeService,
-        DayClosureGuard dayClosureGuard
+        DayClosureGuard dayClosureGuard,
+        StaffAccessService staffAccessService
     ) {
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.orderIssueRepository = orderIssueRepository;
@@ -54,6 +57,7 @@ public class ExceptionFacadeService {
         this.podPhotoRepository = podPhotoRepository;
         this.orderFacadeService = orderFacadeService;
         this.dayClosureGuard = dayClosureGuard;
+        this.staffAccessService = staffAccessService;
     }
 
     public OrderDetailDTO startReturn(String orderCode, String reason) {
@@ -106,7 +110,8 @@ public class ExceptionFacadeService {
             OrderTransitionRequest tr = new OrderTransitionRequest();
             tr.setToStatus(OrderStatus.RETURNED);
             tr.setAction("RT_DONE");
-            tr.setDetail("Return completed");
+            String office = staffAccessService.scopedOfficeCode().orElse("");
+            tr.setDetail(office.isBlank() ? "Hoàn thành công" : "Hoàn thành công · VP=" + office);
             orderFacadeService.transition(order.getOrderCode(), tr);
         }
         return orderFacadeService.getByCode(order.getOrderCode());
