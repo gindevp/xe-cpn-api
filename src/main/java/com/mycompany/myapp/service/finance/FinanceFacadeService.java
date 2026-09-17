@@ -23,7 +23,6 @@ import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -231,7 +230,10 @@ public class FinanceFacadeService {
         return toReceiptDto(receipt, receiptOrderLineRepository.findByReceipt_Id(receipt.getId()));
     }
 
-    /** Hoàn tác xác nhận thu — chỉ trong 24h kể từ lúc xác nhận. */
+    /**
+     * Hoàn tác xác nhận thu — chỉ trong cùng ngày lịch (Asia/Ho_Chi_Minh) với lúc xác nhận.
+     * Sau 0h đêm không hoàn tác phiếu đã tích ngày hôm trước. Idempotent nếu chưa confirm.
+     */
     public ReceiptDTO unconfirmReceipt(String receiptCode) {
         if (receiptCode == null || receiptCode.isBlank()) {
             throw new BadRequestAlertException("receiptCode is required", ENTITY, "receiptCodeRequired");
@@ -241,10 +243,13 @@ public class FinanceFacadeService {
             .orElseThrow(() -> new BadRequestAlertException("Receipt not found", ENTITY, "receiptNotFound"));
         Instant confirmedAt = receipt.getConfirmedAt();
         if (confirmedAt == null) {
-            throw new BadRequestAlertException("Receipt is not confirmed", ENTITY, "receiptNotConfirmed");
+            // Đã ở trạng thái chưa xác nhận (double-click / FE lệch BE) — coi như thành công.
+            return toReceiptDto(receipt, receiptOrderLineRepository.findByReceipt_Id(receipt.getId()));
         }
-        if (Duration.between(confirmedAt, Instant.now()).toHours() >= 24) {
-            throw new BadRequestAlertException("Cannot unconfirm after 24 hours", ENTITY, "receiptUnconfirmExpired");
+        LocalDate confirmDay = confirmedAt.atZone(VN).toLocalDate();
+        LocalDate today = LocalDate.now(VN);
+        if (!confirmDay.equals(today)) {
+            throw new BadRequestAlertException("Cannot unconfirm after midnight of confirmation day", ENTITY, "receiptUnconfirmExpired");
         }
         receipt.setConfirmedAt(null);
         receipt.setConfirmedByUsername(null);
