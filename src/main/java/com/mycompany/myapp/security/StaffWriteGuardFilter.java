@@ -96,6 +96,11 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         // COD export mark
         if (path.startsWith("/api/orders/cod/mark-exported")) {
             staffAccessService.requireScreenWrite(ScreenKey.QUAN_LY_DON_COD);
+            return;
+        }
+        // Kiểm kho (mobile save + web)
+        if (path.startsWith("/api/inventory-checks")) {
+            staffAccessService.requireScreenWrite(ScreenKey.KIEM_KE);
         }
     }
 

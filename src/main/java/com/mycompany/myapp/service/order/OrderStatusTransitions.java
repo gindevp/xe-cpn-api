@@ -15,11 +15,14 @@ public final class OrderStatusTransitions {
 
     static {
         ALLOWED.put(OrderStatus.DRAFT, Set.of(OrderStatus.CONFIRMED, OrderStatus.CANCELLED));
-        ALLOWED.put(OrderStatus.CONFIRMED, Set.of(OrderStatus.IN_TRANSIT, OrderStatus.DELIVERED, OrderStatus.CANCELLED));
-        ALLOWED.put(OrderStatus.WAITING, Set.of(OrderStatus.IN_TRANSIT, OrderStatus.CANCELLED));
-        ALLOWED.put(OrderStatus.IN_TRANSIT, Set.of(OrderStatus.WAITING, OrderStatus.AT_DEST));
+        ALLOWED.put(
+            OrderStatus.CONFIRMED,
+            Set.of(OrderStatus.IN_TRANSIT, OrderStatus.DELIVERED, OrderStatus.CANCELLED, OrderStatus.RETURNING)
+        );
+        ALLOWED.put(OrderStatus.WAITING, Set.of(OrderStatus.IN_TRANSIT, OrderStatus.CANCELLED, OrderStatus.RETURNING));
+        ALLOWED.put(OrderStatus.IN_TRANSIT, Set.of(OrderStatus.WAITING, OrderStatus.AT_DEST, OrderStatus.RETURNING));
         ALLOWED.put(OrderStatus.AT_DEST, Set.of(OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED, OrderStatus.RETURNING));
-        ALLOWED.put(OrderStatus.OUT_FOR_DELIVERY, Set.of(OrderStatus.DELIVERED, OrderStatus.FAILED_DELIVERY));
+        ALLOWED.put(OrderStatus.OUT_FOR_DELIVERY, Set.of(OrderStatus.DELIVERED, OrderStatus.FAILED_DELIVERY, OrderStatus.RETURNING));
         ALLOWED.put(OrderStatus.FAILED_DELIVERY, Set.of(OrderStatus.OUT_FOR_DELIVERY, OrderStatus.AT_DEST, OrderStatus.RETURNING));
         ALLOWED.put(OrderStatus.DELIVERED, Set.of(OrderStatus.RETURNING));
         ALLOWED.put(OrderStatus.CANCELLED, Set.of());

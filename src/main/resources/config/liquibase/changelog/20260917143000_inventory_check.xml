@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260917143000-1" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="inventory_check"/>
+            </not>
+        </preConditions>
+        <comment>Lịch sử kiểm kho theo văn phòng (mobile + web Thông tin kiểm kê)</comment>
+        <createTable tableName="inventory_check">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="office_code" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checked_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checked_by_username" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checked_by_name" type="varchar(100)"/>
+            <column name="system_count" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checked_count" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="missing_count" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="system_pkg_count" type="integer"/>
+            <column name="checked_pkg_count" type="integer"/>
+            <column name="missing_pkg_count" type="integer"/>
+            <column name="extra_pkg_count" type="integer"/>
+            <column name="system_codes_json" type="longtext"/>
+            <column name="scanned_codes_json" type="longtext"/>
+            <column name="missing_codes_json" type="longtext"/>
+        </createTable>
+        <createIndex tableName="inventory_check" indexName="idx_inventory_check_office_at">
+            <column name="office_code"/>
+            <column name="checked_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

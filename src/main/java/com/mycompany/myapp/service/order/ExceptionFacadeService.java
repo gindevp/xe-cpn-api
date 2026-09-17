@@ -63,17 +63,19 @@ public class ExceptionFacadeService {
     public OrderDetailDTO startReturn(String orderCode, String reason) {
         ShipmentOrder order = requireOrder(orderCode);
         dayClosureGuard.assertOrderMutable(order);
+        // FE sheet C5: hoàn từ Nhập kho gửi (CONFIRMED/WH_IN), Nhập kho giao (AT_DEST),
+        // Chờ giao lại (FAILED_DELIVERY); cũng cho phép khi đang trên đường / đã giao.
         if (
+            order.getStatus() != OrderStatus.CONFIRMED &&
+            order.getStatus() != OrderStatus.WAITING &&
+            order.getStatus() != OrderStatus.IN_TRANSIT &&
             order.getStatus() != OrderStatus.AT_DEST &&
+            order.getStatus() != OrderStatus.OUT_FOR_DELIVERY &&
             order.getStatus() != OrderStatus.DELIVERED &&
             order.getStatus() != OrderStatus.FAILED_DELIVERY &&
             order.getStatus() != OrderStatus.RETURNED
         ) {
-            throw new BadRequestAlertException(
-                "Return only from AT_DEST/DELIVERED/FAILED_DELIVERY/RETURNED",
-                ENTITY,
-                "returnInvalidStatus"
-            );
+            throw new BadRequestAlertException("Return not allowed from status " + order.getStatus(), ENTITY, "returnInvalidStatus");
         }
         OrderReturnRequest req = new OrderReturnRequest();
         req.setReason(reason == null || reason.isBlank() ? "RETURN" : reason.trim());
@@ -86,6 +88,7 @@ public class ExceptionFacadeService {
         req = orderReturnRequestRepository.save(req);
         order.setReturnRequest(req); // current pointer
         order.setReturnStage(ReturnStage.RETURN_PENDING);
+        order.setForwardStage(null);
         shipmentOrderRepository.save(order);
 
         if (order.getStatus() != OrderStatus.RETURNING) {
