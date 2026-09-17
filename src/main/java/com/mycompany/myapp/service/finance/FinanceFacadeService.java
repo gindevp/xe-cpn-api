@@ -23,6 +23,7 @@ import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -226,6 +227,27 @@ public class FinanceFacadeService {
         }
         receipt.setConfirmedAt(Instant.now());
         receipt.setConfirmedByUsername(actor());
+        receipt = receiptRepository.save(receipt);
+        return toReceiptDto(receipt, receiptOrderLineRepository.findByReceipt_Id(receipt.getId()));
+    }
+
+    /** Hoàn tác xác nhận thu — chỉ trong 24h kể từ lúc xác nhận. */
+    public ReceiptDTO unconfirmReceipt(String receiptCode) {
+        if (receiptCode == null || receiptCode.isBlank()) {
+            throw new BadRequestAlertException("receiptCode is required", ENTITY, "receiptCodeRequired");
+        }
+        Receipt receipt = receiptRepository
+            .findOneByReceiptCode(receiptCode.trim())
+            .orElseThrow(() -> new BadRequestAlertException("Receipt not found", ENTITY, "receiptNotFound"));
+        Instant confirmedAt = receipt.getConfirmedAt();
+        if (confirmedAt == null) {
+            throw new BadRequestAlertException("Receipt is not confirmed", ENTITY, "receiptNotConfirmed");
+        }
+        if (Duration.between(confirmedAt, Instant.now()).toHours() >= 24) {
+            throw new BadRequestAlertException("Cannot unconfirm after 24 hours", ENTITY, "receiptUnconfirmExpired");
+        }
+        receipt.setConfirmedAt(null);
+        receipt.setConfirmedByUsername(null);
         receipt = receiptRepository.save(receipt);
         return toReceiptDto(receipt, receiptOrderLineRepository.findByReceipt_Id(receipt.getId()));
     }
