@@ -4,6 +4,7 @@ import com.mycompany.myapp.domain.ProductPriceRule;
 import com.mycompany.myapp.repository.ProductPriceRuleRepository;
 import com.mycompany.myapp.service.dto.ProductPriceRuleDTO;
 import com.mycompany.myapp.service.mapper.ProductPriceRuleMapper;
+import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +40,7 @@ public class ProductPriceRuleService {
      */
     public ProductPriceRuleDTO save(ProductPriceRuleDTO productPriceRuleDTO) {
         LOG.debug("Request to save ProductPriceRule : {}", productPriceRuleDTO);
+        assertGroupNameAllowed(productPriceRuleDTO.getGroupName());
         ProductPriceRule productPriceRule = productPriceRuleMapper.toEntity(productPriceRuleDTO);
         productPriceRule = productPriceRuleRepository.save(productPriceRule);
         return productPriceRuleMapper.toDto(productPriceRule);
@@ -52,6 +54,7 @@ public class ProductPriceRuleService {
      */
     public ProductPriceRuleDTO update(ProductPriceRuleDTO productPriceRuleDTO) {
         LOG.debug("Request to update ProductPriceRule : {}", productPriceRuleDTO);
+        assertGroupNameAllowed(productPriceRuleDTO.getGroupName());
         ProductPriceRule productPriceRule = productPriceRuleMapper.toEntity(productPriceRuleDTO);
         productPriceRule = productPriceRuleRepository.save(productPriceRule);
         return productPriceRuleMapper.toDto(productPriceRule);
@@ -70,7 +73,7 @@ public class ProductPriceRuleService {
             .findById(productPriceRuleDTO.getId())
             .map(existingProductPriceRule -> {
                 productPriceRuleMapper.partialUpdate(existingProductPriceRule, productPriceRuleDTO);
-
+                assertGroupNameAllowed(existingProductPriceRule.getGroupName());
                 return existingProductPriceRule;
             })
             .map(productPriceRuleRepository::save)
@@ -112,5 +115,14 @@ public class ProductPriceRuleService {
     public void delete(Long id) {
         LOG.debug("Request to delete ProductPriceRule : {}", id);
         productPriceRuleRepository.deleteById(id);
+    }
+
+    /**
+     * "Khác" is the built-in create-order type for custom product names — not a configurable group.
+     */
+    static void assertGroupNameAllowed(String groupName) {
+        if (groupName != null && groupName.trim().equalsIgnoreCase("Khác")) {
+            throw new BadRequestAlertException("Nhóm hàng Khác trùng loại nhập theo tên khi tạo đơn", "productPriceRule", "reservedGroup");
+        }
     }
 }
