@@ -175,6 +175,7 @@ public class TripFacadeService {
             throw new BadRequestAlertException("Cannot assign to closed/cancelled trip", ENTITY, "tripclosed");
         }
         applyItineraryLabel(trip, req.getItineraryLabel());
+        applyDriverNameIfPresent(trip, req.getDriverName());
         for (String code : distinct(req.getOrderCodes())) {
             ShipmentOrder order = requireOrder(code);
             if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.DELIVERED) {
@@ -605,26 +606,46 @@ public class TripFacadeService {
                 .findOneByDriverCode(req.getDriverCode().trim())
                 .orElseThrow(() -> new BadRequestAlertException("Driver code not found", ENTITY, "driverNotFound"));
         }
-        if (req.getDriverName() != null && !req.getDriverName().isBlank()) {
-            String name = req.getDriverName().trim();
-            if (name.equalsIgnoreCase("Chưa gán tài")) {
-                return null;
-            }
-            return driverRepository
-                .findFirstByFullNameIgnoreCase(name)
-                .orElseGet(() -> {
-                    Driver d = new Driver();
-                    String code = "VTHK-" + Integer.toHexString(name.toLowerCase().hashCode()).toUpperCase();
-                    if (code.length() > 30) {
-                        code = code.substring(0, 30);
-                    }
-                    d.setDriverCode(code);
-                    d.setFullName(name.length() <= 100 ? name : name.substring(0, 100));
-                    d.setActive(true);
-                    return driverRepository.save(d);
-                });
+        return resolveDriverByName(req.getDriverName());
+    }
+
+    /**
+     * Gán xe tái dùng chuyến theo BKS: cập nhật tài xế theo lựa chọn mới (CRM/VTHH),
+     * tránh giữ tên cũ / "Chưa gán tài" trên chuyến đang mở.
+     */
+    private void applyDriverNameIfPresent(Trip trip, String driverName) {
+        Driver next = resolveDriverByName(driverName);
+        if (next == null) {
+            return;
         }
-        return null;
+        Driver cur = trip.getDriver();
+        if (cur != null && cur.getFullName() != null && cur.getFullName().equalsIgnoreCase(next.getFullName())) {
+            return;
+        }
+        trip.setDriver(next);
+    }
+
+    private Driver resolveDriverByName(String driverName) {
+        if (driverName == null || driverName.isBlank()) {
+            return null;
+        }
+        String name = driverName.trim();
+        if (name.equalsIgnoreCase("Chưa gán tài")) {
+            return null;
+        }
+        return driverRepository
+            .findFirstByFullNameIgnoreCase(name)
+            .orElseGet(() -> {
+                Driver d = new Driver();
+                String code = "VTHK-" + Integer.toHexString(name.toLowerCase().hashCode()).toUpperCase();
+                if (code.length() > 30) {
+                    code = code.substring(0, 30);
+                }
+                d.setDriverCode(code);
+                d.setFullName(name.length() <= 100 ? name : name.substring(0, 100));
+                d.setActive(true);
+                return driverRepository.save(d);
+            });
     }
 
     private void appendOrderEvent(ShipmentOrder order, String action, String detail, String actor) {

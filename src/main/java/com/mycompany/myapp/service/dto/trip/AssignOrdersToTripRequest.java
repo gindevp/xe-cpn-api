@@ -16,6 +16,9 @@ public class AssignOrdersToTripRequest {
     /** When assigning, refresh the trip's displayed VTHK tuyến/lộ trình. */
     private String itineraryLabel;
 
+    /** Tên tài xế từ picker (VTHK/VTHH) — cập nhật lên chuyến đang mở nếu khác/null. */
+    private String driverName;
+
     public String getTripCode() {
         return tripCode;
     }
@@ -38,5 +41,13 @@ public class AssignOrdersToTripRequest {
 
     public void setItineraryLabel(String itineraryLabel) {
         this.itineraryLabel = itineraryLabel;
+    }
+
+    public String getDriverName() {
+        return driverName;
+    }
+
+    public void setDriverName(String driverName) {
+        this.driverName = driverName;
     }
 }
