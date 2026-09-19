@@ -494,16 +494,14 @@ public class OrderFacadeService {
             to,
             req.getBranchCode()
         );
-        // Bảng giá master chỉ quyết cước hàng + phí tận nơi; phí thu hộ COD / khai giá / giảm giá là khoản riêng
-        // của đơn nên phải cộng thêm, không thì đơn COD bị thu thiếu đúng phần phí thu hộ.
+        // FE gửi tổng theo kiện (goodsFare từng dòng + phí COD/tận nơi/khai giá/giảm giá) → SoT.
+        // Không ghi đè bằng ước lượng BE theo tổng cân 1 lần — với ≥2 kiện sẽ lệch (surcharge/band).
+        // Khi không có fareAmount: bảng giá master + phí dịch vụ từ request (COD/khai giá/giảm giá).
         BigDecimal serviceFees = OrderMoney.nz(req.getCodFeeAmount())
             .add(OrderMoney.nz(req.getDeclaredFeeAmount()))
             .subtract(OrderMoney.nz(req.getDiscountAmount()));
         BigDecimal total;
-        if (fare.pricingRuleId() != null) {
-            total = fare.total().add(serviceFees);
-        } else if (req.getFareAmount() != null) {
-            // FE tự tính khi không có bảng giá — số này đã gộp đủ phí.
+        if (req.getFareAmount() != null) {
             total = req.getFareAmount();
         } else {
             total = fare.total().add(serviceFees);
@@ -521,8 +519,9 @@ public class OrderFacadeService {
         order.setFinalToOffice(dest);
         order.setServiceType(resolveServiceType(homePickup, homeDelivery));
         order.setFareAmount(total);
-        if (fare.pricingRuleId() != null) {
-            // Tổng lấy theo bảng giá master nên cước hàng cũng phải theo master, không thì kiện cộng lại lệch tổng.
+        if (req.getGoodsFareAmount() != null) {
+            order.setGoodsFareAmount(req.getGoodsFareAmount());
+        } else if (fare.pricingRuleId() != null) {
             order.setGoodsFareAmount(fare.base().add(OrderMoney.nz(fare.surcharge())));
         }
         order.setPickupFeeAmount(fare.pickupFee());
