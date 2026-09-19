@@ -27,4 +27,21 @@ class OrderMoneyTest {
         o.setPaidAmount(new BigDecimal("40000"));
         assertThat(OrderMoney.hasUnpaidResidue(o)).isFalse();
     }
+
+    @Test
+    void receiptCollectable_addsCodWithoutChangingFareDue() {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setFareAmount(new BigDecimal("40000"));
+        o.setPaidAmount(new BigDecimal("10000"));
+        o.setCodAmount(new BigDecimal("50000"));
+        assertThat(OrderMoney.due(o)).isEqualByComparingTo("30000");
+        assertThat(OrderMoney.receiptCollectable(o)).isEqualByComparingTo("80000");
+
+        o.setPaidAmount(new BigDecimal("40000"));
+        assertThat(OrderMoney.due(o)).isEqualByComparingTo("0");
+        assertThat(OrderMoney.receiptCollectable(o)).isEqualByComparingTo("50000");
+
+        o.setCodAmount(null);
+        assertThat(OrderMoney.receiptCollectable(o)).isEqualByComparingTo("0");
+    }
 }

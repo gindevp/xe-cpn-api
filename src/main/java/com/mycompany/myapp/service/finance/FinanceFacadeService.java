@@ -106,14 +106,15 @@ public class FinanceFacadeService {
             .filter(o -> o.getId() == null || !receiptOrderLineRepository.existsByOrder_Id(o.getId()))
             .limit(300)
             .map(o -> {
-                BigDecimal due = OrderMoney.due(o);
+                // dueAmount trên candidate = số NV phải nộp (cước còn + COD), không phải OrderMoney.due thuần.
+                BigDecimal collectable = OrderMoney.receiptCollectable(o);
                 return new CandidateDTO(
                     o.getOrderCode(),
                     o.getReceiverName(),
                     o.getReceiverPhone(),
                     o.getFareAmount(),
                     o.getPaidAmount(),
-                    due,
+                    collectable,
                     o.getStatus().name(),
                     o.getFromOffice() != null ? o.getFromOffice().getCode() : null,
                     resolveDeliveryActor(o)
@@ -155,20 +156,32 @@ public class FinanceFacadeService {
                 throw new BadRequestAlertException("amountCollected must be >= 0", ENTITY, "amountInvalid");
             }
             BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
-            BigDecimal due = OrderMoney.due(order);
-            if (amount.compareTo(due) > 0) {
+            BigDecimal fareDue = OrderMoney.due(order);
+            BigDecimal collectable = OrderMoney.receiptCollectable(order);
+            if (amount.compareTo(collectable) > 0) {
                 throw new BadRequestAlertException(
-                    "amountCollected exceeds due for " + order.getOrderCode() + " (due=" + due + ")",
+                    "amountCollected exceeds collectable for " +
+                    order.getOrderCode() +
+                    " (collectable=" +
+                    collectable +
+                    ", fareDue=" +
+                    fareDue +
+                    ", cod=" +
+                    OrderMoney.nz(order.getCodAmount()) +
+                    ")",
                     ENTITY,
                     "amountExceedsDue"
                 );
             }
             total = total.add(amount);
 
-            if (amount.compareTo(BigDecimal.ZERO) > 0) {
+            // Tách: phần ≤ fareDue → paidAmount (SAU); phần còn lại = COD thu hộ (không tăng paid).
+            BigDecimal toFare = amount.min(fareDue);
+            BigDecimal toCod = amount.subtract(toFare);
+            if (toFare.compareTo(BigDecimal.ZERO) > 0) {
                 OrderPayment payment = new OrderPayment();
                 payment.setPaymentAt(now);
-                payment.setAmount(amount);
+                payment.setAmount(toFare);
                 payment.setMethod(PaymentMethod.TM);
                 payment.setPaymentKind(PaymentKind.SAU);
                 payment.setNote("RECEIPT");
@@ -176,8 +189,19 @@ public class FinanceFacadeService {
                 payment.setOrder(order);
                 orderPaymentRepository.save(payment);
 
-                order.setPaidAmount(paid.add(amount));
+                order.setPaidAmount(paid.add(toFare));
                 shipmentOrderRepository.save(order);
+            }
+            if (toCod.compareTo(BigDecimal.ZERO) > 0) {
+                OrderPayment codPay = new OrderPayment();
+                codPay.setPaymentAt(now);
+                codPay.setAmount(toCod);
+                codPay.setMethod(PaymentMethod.TM);
+                codPay.setPaymentKind(PaymentKind.COD);
+                codPay.setNote("RECEIPT_COD");
+                codPay.setCollectorUsername(actor);
+                codPay.setOrder(order);
+                orderPaymentRepository.save(codPay);
             }
 
             ReceiptOrderLine rol = new ReceiptOrderLine();

@@ -15,7 +15,7 @@ public final class OrderMoney {
         return v == null ? BigDecimal.ZERO : v;
     }
 
-    /** due = max(0, fare - paid). */
+    /** due = max(0, fare - paid). Cước đơn — không gồm tiền thu hộ COD. */
     public static BigDecimal due(BigDecimal fareAmount, BigDecimal paidAmount) {
         BigDecimal due = nz(fareAmount).subtract(nz(paidAmount));
         return due.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : due;
@@ -26,6 +26,17 @@ public final class OrderMoney {
             return BigDecimal.ZERO;
         }
         return due(order.getFareAmount(), order.getPaidAmount());
+    }
+
+    /**
+     * Số tiền NV nộp trên phiếu thu: cước còn thiếu + tiền COD thu hộ.
+     * COD không làm tăng {@code paidAmount} (H1 / overpay vẫn theo fare due).
+     */
+    public static BigDecimal receiptCollectable(ShipmentOrder order) {
+        if (order == null) {
+            return BigDecimal.ZERO;
+        }
+        return due(order).add(nz(order.getCodAmount()));
     }
 
     public static boolean hasUnpaidResidue(ShipmentOrder order) {
