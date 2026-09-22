@@ -39,6 +39,7 @@ public enum ScreenKey {
     TAI_KHOAN("tai-khoan", "Tài khoản", "Quản trị"),
     NHOM_QUYEN("nhom-quyen", "Nhóm quyền", "Quản trị"),
     TICH_HOP("tich-hop", "Tích hợp", "Quản trị"),
+    BAO_TRI("bao-tri", "Bảo trì", "Quản trị"),
 
     // 4 tác vụ trên app; dùng chung khoá quyền với màn web tương ứng.
     HANG_CHO_LEN_XE("hang-cho-len-xe", "Lên hàng — web: Hàng chờ lên xe", "Tác vụ app"),

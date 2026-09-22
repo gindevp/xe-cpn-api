@@ -2,6 +2,7 @@ package com.mycompany.myapp.service.invoice;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
@@ -52,5 +53,37 @@ class MeInvoiceAmountsTest {
     @Test
     void refId_prefixed() {
         assertThat(MeInvoiceAmounts.refIdFor("GP260911001")).isEqualTo("XE-GP260911001");
+    }
+
+    @Test
+    void itemName_fromSenderReceiverAddresses() {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setOrderCode("GP260922001");
+        o.setPickupAddress("12 Giải Phóng, Giáp Bát, Hoàng Mai, Hà Nội");
+        o.setDeliveryAddress("45 Trần Hưng Đạo, Phố Hiến, Hưng Yên");
+
+        assertThat(MeInvoiceAmounts.itemNameFor(o)).isEqualTo(
+            "Dịch vụ bưu chính chuyển phát hàng hóa từ Hà Nội đến Hưng Yên Bill: GP260922001"
+        );
+    }
+
+    @Test
+    void itemName_fallsBackToOfficeWhenAddressMissing() {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setOrderCode("GP260922002");
+        Office from = new Office().name("VP Giải Phóng").address("1 Giải Phóng, Hà Nội");
+        Office to = new Office().name("VP Hưng Yên").address("2 Phố Hiến, Tỉnh Hưng Yên");
+        o.setFromOffice(from);
+        o.setToOffice(to);
+
+        assertThat(MeInvoiceAmounts.itemNameFor(o)).isEqualTo(
+            "Dịch vụ bưu chính chuyển phát hàng hóa từ Hà Nội đến Hưng Yên Bill: GP260922002"
+        );
+    }
+
+    @Test
+    void provinceFromAddress_stripsPrefix() {
+        assertThat(MeInvoiceAmounts.provinceFromAddress("1 ABC, Phường X, Thành phố Hà Nội")).isEqualTo("Hà Nội");
+        assertThat(MeInvoiceAmounts.provinceFromAddress("1 ABC, TP. Hưng Yên")).isEqualTo("Hưng Yên");
     }
 }

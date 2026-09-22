@@ -237,7 +237,7 @@ public class MeInvoiceIssueService {
         line.put("LineNumber", 1);
         line.put("SortOrder", 1);
         line.put("ItemCode", MeInvoiceAmounts.ITEM_CODE);
-        line.put("ItemName", MeInvoiceAmounts.ITEM_NAME);
+        line.put("ItemName", MeInvoiceAmounts.itemNameFor(order));
         line.put("UnitName", MeInvoiceAmounts.UNIT_NAME);
         line.put("Quantity", 1);
         line.put("UnitPrice", amounts.net());

@@ -1093,9 +1093,7 @@ public class OrderFacadeService {
             }
         }
         if (o.getStatus() == OrderStatus.DELIVERED && o.getId() != null) {
-            dto.setPodPhotos(
-                orderPodPhotoRepository.findByOrder_IdOrderBySequenceNoAsc(o.getId()).stream().map(p -> p.getPhotoUrl()).toList()
-            );
+            // Không nhét URL/base64 ảnh vào list — FE bấm "Xem POD" mới gọi getByCode.
             dto.setReceiverActualName(o.getReceiverActualName());
             dto.setReceiverActualPhone(o.getReceiverActualPhone());
         }

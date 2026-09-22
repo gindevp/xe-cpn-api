@@ -1,5 +1,6 @@
 package com.mycompany.myapp.service.invoice;
 
+import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.service.order.OrderMoney;
 import java.math.BigDecimal;
@@ -17,9 +18,73 @@ public final class MeInvoiceAmounts {
     public static final String VAT_RATE_NAME = "10%";
     public static final String ITEM_CODE = "DV-VANCHUYEN";
     public static final String UNIT_NAME = "Chuyen";
-    public static final String ITEM_NAME = "Dich vu giao hang - cuoc + phi COD + phi khai bao GT";
 
     private MeInvoiceAmounts() {}
+
+    /**
+     * Tên hàng hóa/dịch vụ trên HĐĐT:
+     * {@code Dịch vụ bưu chính chuyển phát hàng hóa từ {tỉnh gửi} đến {tỉnh nhận} Bill: {mã đơn}}.
+     * Tỉnh/TP lấy từ địa chỉ người gửi/nhận (đoạn cuối sau dấu phẩy); thiếu thì fallback VP.
+     */
+    public static String itemNameFor(ShipmentOrder order) {
+        String from = placeFromAddressOrOffice(order.getPickupAddress(), order.getFromOffice());
+        Office toOffice = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
+        String to = placeFromAddressOrOffice(order.getDeliveryAddress(), toOffice);
+        String code = order.getOrderCode() == null ? "" : order.getOrderCode().trim();
+        if (from.isBlank()) {
+            from = "không xác định";
+        }
+        if (to.isBlank()) {
+            to = "không xác định";
+        }
+        String name = "Dịch vụ bưu chính chuyển phát hàng hóa từ " + from + " đến " + to + " Bill: " + code;
+        return name.length() > 500 ? name.substring(0, 500) : name;
+    }
+
+    /** Ưu tiên tỉnh/TP từ địa chỉ đầy đủ; thiếu thì lấy từ địa chỉ/tên VP. */
+    static String placeFromAddressOrOffice(String address, Office office) {
+        String fromAddress = provinceFromAddress(address);
+        if (!fromAddress.isBlank()) {
+            return fromAddress;
+        }
+        if (office == null) {
+            return "";
+        }
+        String fromOfficeAddress = provinceFromAddress(office.getAddress());
+        if (!fromOfficeAddress.isBlank()) {
+            return fromOfficeAddress;
+        }
+        return cleanPlaceName(office.getName());
+    }
+
+    /**
+     * Địa chỉ dạng {@code số nhà, phường, [quận,] tỉnh/TP} → lấy đoạn cuối.
+     */
+    static String provinceFromAddress(String address) {
+        if (address == null || address.isBlank()) {
+            return "";
+        }
+        String[] parts = address.split(",");
+        for (int i = parts.length - 1; i >= 0; i--) {
+            String cleaned = cleanPlaceName(parts[i]);
+            if (!cleaned.isBlank()) {
+                return cleaned;
+            }
+        }
+        return "";
+    }
+
+    static String cleanPlaceName(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String s = raw.trim();
+        if (s.isBlank()) {
+            return "";
+        }
+        s = s.replaceFirst("(?iu)^(Tỉnh|Thành\\s*phố|TP\\.?)\\s+", "").trim();
+        return s;
+    }
 
     public record Split(BigDecimal gross, BigDecimal net, BigDecimal vat) {}
 

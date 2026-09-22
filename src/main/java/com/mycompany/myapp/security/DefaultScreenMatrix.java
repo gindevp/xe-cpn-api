@@ -87,6 +87,7 @@ public final class DefaultScreenMatrix {
         put(m, ScreenKey.MASTER, "DH=Y,AD=Y");
         put(m, ScreenKey.TAI_KHOAN, "AD=Y");
         put(m, ScreenKey.TICH_HOP, "AD=Y");
+        put(m, ScreenKey.BAO_TRI, "AD=Y");
         put(m, ScreenKey.NHOM_QUYEN, "AD=Y");
         put(m, ScreenKey.PHU_PHI, "AD=Y,DH=R");
         put(m, ScreenKey.TON_KHO, "Q=Y,TCN=Y,DH=Y,BX=R,KT=R,BL=R,AD=Y");
