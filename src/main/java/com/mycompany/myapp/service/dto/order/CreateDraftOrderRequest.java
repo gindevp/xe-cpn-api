@@ -64,6 +64,8 @@ public class CreateDraftOrderRequest {
     private BigDecimal goodsFareAmount;
     private BigDecimal pickupFeeAmount;
     private BigDecimal deliveryFeeAmount;
+    private BigDecimal pickupKm;
+    private BigDecimal deliveryKm;
     private BigDecimal declaredFeeAmount;
     private BigDecimal discountAmount;
     private BigDecimal codAmount;
@@ -229,6 +231,22 @@ public class CreateDraftOrderRequest {
 
     public void setDeliveryFeeAmount(BigDecimal deliveryFeeAmount) {
         this.deliveryFeeAmount = deliveryFeeAmount;
+    }
+
+    public BigDecimal getPickupKm() {
+        return pickupKm;
+    }
+
+    public void setPickupKm(BigDecimal pickupKm) {
+        this.pickupKm = pickupKm;
+    }
+
+    public BigDecimal getDeliveryKm() {
+        return deliveryKm;
+    }
+
+    public void setDeliveryKm(BigDecimal deliveryKm) {
+        this.deliveryKm = deliveryKm;
     }
 
     public BigDecimal getDeclaredFeeAmount() {

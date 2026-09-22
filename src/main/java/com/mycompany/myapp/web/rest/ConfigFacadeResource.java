@@ -39,4 +39,9 @@ public class ConfigFacadeResource {
     public Map<String, Object> testIntegration() {
         return configFacadeService.testIntegration();
     }
+
+    @PostMapping("/api/integration-config/test-ahamove")
+    public Map<String, Object> testAhamove(@RequestBody(required = false) IntegrationConfig body) {
+        return configFacadeService.testAhamove(body);
+    }
 }

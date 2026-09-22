@@ -5,26 +5,38 @@ import com.mycompany.myapp.domain.SurchargePolicy;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import com.mycompany.myapp.repository.SurchargePolicyRepository;
 import com.mycompany.myapp.security.SecurityUtils;
+import com.mycompany.myapp.service.partner.AhamoveAuthClient;
+import com.mycompany.myapp.service.partner.AhamoveAuthClient.AhamoveAuthException;
+import com.mycompany.myapp.service.partner.AhamoveTokenService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Transactional
 public class ConfigFacadeService {
 
+    private static final Logger LOG = LoggerFactory.getLogger(ConfigFacadeService.class);
+
     private final SurchargePolicyRepository surchargePolicyRepository;
     private final IntegrationConfigRepository integrationConfigRepository;
+    private final AhamoveTokenService ahamoveTokenService;
 
     public ConfigFacadeService(
         SurchargePolicyRepository surchargePolicyRepository,
-        IntegrationConfigRepository integrationConfigRepository
+        IntegrationConfigRepository integrationConfigRepository,
+        AhamoveTokenService ahamoveTokenService
     ) {
         this.surchargePolicyRepository = surchargePolicyRepository;
         this.integrationConfigRepository = integrationConfigRepository;
+        this.ahamoveTokenService = ahamoveTokenService;
     }
 
     @Transactional(readOnly = true)
@@ -52,11 +64,28 @@ public class ConfigFacadeService {
 
     public IntegrationConfig putIntegrationConfig(IntegrationConfig incoming) {
         IntegrationConfig current = integrationConfigRepository.findAll().stream().findFirst().orElse(null);
-        if (current == null) {
-            incoming.setId(null);
-            return integrationConfigRepository.save(incoming);
+        boolean created = current == null;
+        if (created) {
+            current = new IntegrationConfig();
         }
-        if (incoming.getAhamoveToken() != null) current.setAhamoveToken(incoming.getAhamoveToken());
+
+        boolean ahamoveCredsChanged = false;
+        if (incoming.getAhamoveApiKey() != null) {
+            String sanitized = AhamoveAuthClient.sanitizeApiKey(incoming.getAhamoveApiKey());
+            // Chuỗi rỗng / chỉ khoảng trắng → bỏ qua, không xóa key đã lưu.
+            if (sanitized != null) {
+                ahamoveCredsChanged |= !Objects.equals(blankToNull(current.getAhamoveApiKey()), sanitized);
+                current.setAhamoveApiKey(sanitized);
+            }
+        }
+        if (incoming.getAhamoveMobile() != null) {
+            String normalized = AhamoveAuthClient.normalizeMobile(incoming.getAhamoveMobile());
+            if (normalized != null) {
+                ahamoveCredsChanged |= !Objects.equals(blankToNull(current.getAhamoveMobile()), normalized);
+                current.setAhamoveMobile(normalized);
+            }
+        }
+        // Không nhận ahamoveToken từ client — token do BE tự quản lý.
         if (incoming.getGrabToken() != null) current.setGrabToken(incoming.getGrabToken());
         if (incoming.getXanhsmToken() != null) current.setXanhsmToken(incoming.getXanhsmToken());
         if (incoming.getDistanceApiToken() != null) current.setDistanceApiToken(incoming.getDistanceApiToken());
@@ -64,21 +93,130 @@ public class ConfigFacadeService {
         if (incoming.getTelegramChatId() != null) current.setTelegramChatId(incoming.getTelegramChatId());
         if (incoming.getWebhookUrl() != null) current.setWebhookUrl(incoming.getWebhookUrl());
         if (incoming.getWebhookSecret() != null) current.setWebhookSecret(incoming.getWebhookSecret());
-        return integrationConfigRepository.save(current);
+
+        if (ahamoveCredsChanged) {
+            current.setAhamoveToken(null);
+            current.setAhamoveTokenFetchedAt(null);
+        }
+        current.setUpdatedAt(Instant.now());
+        IntegrationConfig saved = integrationConfigRepository.save(current);
+
+        if (notBlank(saved.getAhamoveApiKey()) && notBlank(saved.getAhamoveMobile()) && (ahamoveCredsChanged || created)) {
+            try {
+                ahamoveTokenService.refreshNow();
+            } catch (AhamoveAuthException e) {
+                LOG.warn("Ahamove token refresh after save failed: {}", e.getMessage());
+            } catch (Exception e) {
+                // Không để UnexpectedRollback / lỗi mạng làm fail cả lần Lưu api_key+mobile.
+                LOG.warn("Ahamove token refresh after save failed: {}", e.getMessage());
+            }
+        }
+        return integrationConfigRepository.findById(saved.getId()).orElse(saved);
     }
 
     public Map<String, Object> testIntegration() {
         IntegrationConfig cfg = getIntegrationConfig();
         Map<String, Object> out = new HashMap<>();
-        out.put("ok", true);
-        out.put("ahamoveConfigured", notBlank(cfg.getAhamoveToken()));
         out.put("grabConfigured", notBlank(cfg.getGrabToken()));
         out.put("xanhsmConfigured", notBlank(cfg.getXanhsmToken()));
         out.put("telegramConfigured", notBlank(cfg.getTelegramToken()));
         out.put("webhookConfigured", notBlank(cfg.getWebhookUrl()));
+        out.put("ahamoveConfigured", notBlank(cfg.getAhamoveApiKey()) && notBlank(cfg.getAhamoveMobile()));
+        out.put("ahamoveTokenPresent", notBlank(cfg.getAhamoveToken()));
+        out.put("ahamoveTokenFetchedAt", cfg.getAhamoveTokenFetchedAt() != null ? cfg.getAhamoveTokenFetchedAt().toString() : null);
+
+        boolean ok = true;
+        if (notBlank(cfg.getAhamoveApiKey()) && notBlank(cfg.getAhamoveMobile())) {
+            try {
+                ahamoveTokenService.refreshNow();
+                out.put("ahamoveTokenOk", true);
+                out.put("ahamoveTokenPresent", true);
+            } catch (Exception e) {
+                ok = false;
+                out.put("ahamoveTokenOk", false);
+                out.put("ahamoveError", e.getMessage());
+            }
+        }
+        out.put("ok", ok);
         out.put("testedBy", SecurityUtils.getCurrentUserLogin().orElse("system"));
         out.put("testedAt", Instant.now().toString());
         return out;
+    }
+
+    /**
+     * Thử lấy Bearer token Ahamove từ API key + SĐT (body hoặc đã lưu).
+     * Không dùng chung TX với refresh — tránh UnexpectedRollbackException khi auth fail.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public Map<String, Object> testAhamove(IntegrationConfig incoming) {
+        Map<String, Object> out = new HashMap<>();
+        IntegrationConfig current = integrationConfigRepository.findAll().stream().findFirst().orElse(null);
+        if (current == null) {
+            current = new IntegrationConfig();
+        }
+        boolean changed = false;
+        if (incoming != null) {
+            if (notBlank(incoming.getAhamoveApiKey())) {
+                current.setAhamoveApiKey(AhamoveAuthClient.sanitizeApiKey(incoming.getAhamoveApiKey()));
+                changed = true;
+            }
+            if (notBlank(incoming.getAhamoveMobile())) {
+                current.setAhamoveMobile(AhamoveAuthClient.normalizeMobile(incoming.getAhamoveMobile()));
+                changed = true;
+            }
+        }
+        if (!notBlank(current.getAhamoveApiKey()) || !notBlank(current.getAhamoveMobile())) {
+            out.put("ok", false);
+            out.put("ahamoveTokenOk", false);
+            out.put("ahamoveError", "Cần API Key + SĐT Ahamove (đủ để gọi /accounts/token)");
+            out.put("testedAt", Instant.now().toString());
+            return out;
+        }
+        if (current.getId() == null || changed) {
+            if (changed) {
+                current.setAhamoveToken(null);
+                current.setAhamoveTokenFetchedAt(null);
+            }
+            current.setUpdatedAt(Instant.now());
+            // Repo @Transactional — lưu api_key + mobile trước khi gọi Ahamove.
+            current = integrationConfigRepository.save(current);
+        }
+        try {
+            ahamoveTokenService.refreshNow();
+            IntegrationConfig fresh = integrationConfigRepository.findById(current.getId()).orElse(current);
+            out.put("ok", true);
+            out.put("ahamoveTokenOk", true);
+            out.put("ahamoveTokenPresent", notBlank(fresh.getAhamoveToken()));
+            out.put("ahamoveTokenFetchedAt", fresh.getAhamoveTokenFetchedAt() != null ? fresh.getAhamoveTokenFetchedAt().toString() : null);
+            out.put("message", "Lấy token Ahamove thành công");
+            out.put("ahamoveBaseUrl", ahamoveTokenService.getBaseUrl());
+        } catch (Exception e) {
+            String msg = rootMessage(e);
+            LOG.warn("testAhamove failed: {}", msg);
+            out.put("ok", false);
+            out.put("ahamoveTokenOk", false);
+            out.put("ahamoveError", msg);
+            out.put("message", "Lấy token Ahamove thất bại");
+            out.put("ahamoveBaseUrl", ahamoveTokenService.getBaseUrl());
+        }
+        out.put("testedBy", SecurityUtils.getCurrentUserLogin().orElse("system"));
+        out.put("testedAt", Instant.now().toString());
+        return out;
+    }
+
+    private static String rootMessage(Throwable e) {
+        Throwable cur = e;
+        String last = e.getMessage();
+        while (cur != null) {
+            if (cur.getMessage() != null && !cur.getMessage().isBlank()) {
+                last = cur.getMessage();
+            }
+            if (cur.getCause() == null || cur.getCause() == cur) {
+                break;
+            }
+            cur = cur.getCause();
+        }
+        return last != null ? last : e.getClass().getSimpleName();
     }
 
     private SurchargePolicy merge(SurchargePolicy base, SurchargePolicy incoming) {
@@ -132,5 +270,9 @@ public class ConfigFacadeService {
 
     private static boolean notBlank(String s) {
         return s != null && !s.isBlank();
+    }
+
+    private static String blankToNull(String s) {
+        return notBlank(s) ? s.trim() : null;
     }
 }

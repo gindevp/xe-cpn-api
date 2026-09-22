@@ -280,6 +280,8 @@ public class OrderFacadeService {
             homeDelivery,
             from,
             fareTo,
+            req.getPickupKm(),
+            req.getDeliveryKm(),
             req.getBranchCode()
         );
 
@@ -492,6 +494,8 @@ public class OrderFacadeService {
             homeDelivery,
             from,
             to,
+            req.getPickupKm(),
+            req.getDeliveryKm(),
             req.getBranchCode()
         );
         // FE gửi tổng theo kiện (goodsFare từng dòng + phí COD/tận nơi/khai giá/giảm giá) → SoT.
@@ -524,8 +528,9 @@ public class OrderFacadeService {
         } else if (fare.pricingRuleId() != null) {
             order.setGoodsFareAmount(fare.base().add(OrderMoney.nz(fare.surcharge())));
         }
-        order.setPickupFeeAmount(fare.pickupFee());
-        order.setDeliveryFeeAmount(fare.deliveryFee());
+        // Ưu tiên phí tận nơi FE đã tính theo bảng /phu-phi × KM; không thì BE (có KM nếu gửi).
+        order.setPickupFeeAmount(req.getPickupFeeAmount() != null ? req.getPickupFeeAmount() : fare.pickupFee());
+        order.setDeliveryFeeAmount(req.getDeliveryFeeAmount() != null ? req.getDeliveryFeeAmount() : fare.deliveryFee());
         order.setPublicTrackingAllowed(true);
 
         order = shipmentOrderRepository.save(order);

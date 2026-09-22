@@ -4,6 +4,7 @@ import com.mycompany.myapp.domain.enumeration.OfficeType;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import java.io.Serializable;
+import java.math.BigDecimal;
 
 /**
  * A Office.
@@ -50,6 +51,12 @@ public class Office implements Serializable {
     @Size(max = 500)
     @Column(name = "address", length = 500)
     private String address;
+
+    @Column(name = "latitude", precision = 10, scale = 7)
+    private BigDecimal latitude;
+
+    @Column(name = "longitude", precision = 10, scale = 7)
+    private BigDecimal longitude;
 
     // jhipster-needle-entity-add-field - JHipster will add fields here
 
@@ -157,6 +164,32 @@ public class Office implements Serializable {
         this.address = address;
     }
 
+    public BigDecimal getLatitude() {
+        return this.latitude;
+    }
+
+    public Office latitude(BigDecimal latitude) {
+        this.setLatitude(latitude);
+        return this;
+    }
+
+    public void setLatitude(BigDecimal latitude) {
+        this.latitude = latitude;
+    }
+
+    public BigDecimal getLongitude() {
+        return this.longitude;
+    }
+
+    public Office longitude(BigDecimal longitude) {
+        this.setLongitude(longitude);
+        return this;
+    }
+
+    public void setLongitude(BigDecimal longitude) {
+        this.longitude = longitude;
+    }
+
     // jhipster-needle-entity-add-getters-setters - JHipster will add getters and setters here
 
     @Override
@@ -188,6 +221,8 @@ public class Office implements Serializable {
             ", active='" + getActive() + "'" +
             ", sourceId=" + getSourceId() +
             ", address='" + getAddress() + "'" +
+            ", latitude=" + getLatitude() +
+            ", longitude=" + getLongitude() +
             "}";
     }
 }

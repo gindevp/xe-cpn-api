@@ -53,7 +53,9 @@ public class OfficeAsserts {
             .satisfies(e -> assertThat(e.getIsHub()).as("check isHub").isEqualTo(actual.getIsHub()))
             .satisfies(e -> assertThat(e.getActive()).as("check active").isEqualTo(actual.getActive()))
             .satisfies(e -> assertThat(e.getSourceId()).as("check sourceId").isEqualTo(actual.getSourceId()))
-            .satisfies(e -> assertThat(e.getAddress()).as("check address").isEqualTo(actual.getAddress()));
+            .satisfies(e -> assertThat(e.getAddress()).as("check address").isEqualTo(actual.getAddress()))
+            .satisfies(e -> assertThat(e.getLatitude()).as("check latitude").isEqualTo(actual.getLatitude()))
+            .satisfies(e -> assertThat(e.getLongitude()).as("check longitude").isEqualTo(actual.getLongitude()));
     }
 
     /**

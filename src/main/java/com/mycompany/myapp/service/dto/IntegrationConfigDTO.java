@@ -14,7 +14,15 @@ public class IntegrationConfigDTO implements Serializable {
     private Long id;
 
     @Size(max = 255)
+    private String ahamoveApiKey;
+
+    @Size(max = 32)
+    private String ahamoveMobile;
+
+    @Size(max = 2000)
     private String ahamoveToken;
+
+    private Instant ahamoveTokenFetchedAt;
 
     @Size(max = 255)
     private String grabToken;
@@ -47,12 +55,36 @@ public class IntegrationConfigDTO implements Serializable {
         this.id = id;
     }
 
+    public String getAhamoveApiKey() {
+        return ahamoveApiKey;
+    }
+
+    public void setAhamoveApiKey(String ahamoveApiKey) {
+        this.ahamoveApiKey = ahamoveApiKey;
+    }
+
+    public String getAhamoveMobile() {
+        return ahamoveMobile;
+    }
+
+    public void setAhamoveMobile(String ahamoveMobile) {
+        this.ahamoveMobile = ahamoveMobile;
+    }
+
     public String getAhamoveToken() {
         return ahamoveToken;
     }
 
     public void setAhamoveToken(String ahamoveToken) {
         this.ahamoveToken = ahamoveToken;
+    }
+
+    public Instant getAhamoveTokenFetchedAt() {
+        return ahamoveTokenFetchedAt;
+    }
+
+    public void setAhamoveTokenFetchedAt(Instant ahamoveTokenFetchedAt) {
+        this.ahamoveTokenFetchedAt = ahamoveTokenFetchedAt;
     }
 
     public String getGrabToken() {
@@ -145,7 +177,10 @@ public class IntegrationConfigDTO implements Serializable {
     public String toString() {
         return "IntegrationConfigDTO{" +
             "id=" + getId() +
+            ", ahamoveApiKey='" + getAhamoveApiKey() + "'" +
+            ", ahamoveMobile='" + getAhamoveMobile() + "'" +
             ", ahamoveToken='" + getAhamoveToken() + "'" +
+            ", ahamoveTokenFetchedAt='" + getAhamoveTokenFetchedAt() + "'" +
             ", grabToken='" + getGrabToken() + "'" +
             ", xanhsmToken='" + getXanhsmToken() + "'" +
             ", distanceApiToken='" + getDistanceApiToken() + "'" +

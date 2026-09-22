@@ -68,6 +68,13 @@ public class CreateOrderRequest {
     /** Optional override; otherwise calculated. */
     private BigDecimal fareAmount;
 
+    /** Phí lấy/giao tận nơi từ FE (bảng /phu-phi × KM Ahamove). */
+    private BigDecimal pickupFeeAmount;
+    private BigDecimal deliveryFeeAmount;
+    /** KM ước lượng Ahamove — dùng khi BE tự tính lại phí tận nơi. */
+    private BigDecimal pickupKm;
+    private BigDecimal deliveryKm;
+
     /** Tuyến (Branch) code or name — preferred fare table. */
     private String branchCode;
 
@@ -257,6 +264,38 @@ public class CreateOrderRequest {
 
     public void setFareAmount(BigDecimal fareAmount) {
         this.fareAmount = fareAmount;
+    }
+
+    public BigDecimal getPickupFeeAmount() {
+        return pickupFeeAmount;
+    }
+
+    public void setPickupFeeAmount(BigDecimal pickupFeeAmount) {
+        this.pickupFeeAmount = pickupFeeAmount;
+    }
+
+    public BigDecimal getDeliveryFeeAmount() {
+        return deliveryFeeAmount;
+    }
+
+    public void setDeliveryFeeAmount(BigDecimal deliveryFeeAmount) {
+        this.deliveryFeeAmount = deliveryFeeAmount;
+    }
+
+    public BigDecimal getPickupKm() {
+        return pickupKm;
+    }
+
+    public void setPickupKm(BigDecimal pickupKm) {
+        this.pickupKm = pickupKm;
+    }
+
+    public BigDecimal getDeliveryKm() {
+        return deliveryKm;
+    }
+
+    public void setDeliveryKm(BigDecimal deliveryKm) {
+        this.deliveryKm = deliveryKm;
     }
 
     public String getBranchCode() {

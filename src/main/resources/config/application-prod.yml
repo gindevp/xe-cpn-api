@@ -152,3 +152,12 @@ cpn:
     inv-series: ${CPN_MISA_INV_SERIES:1C26MYY}
     sign-type: ${CPN_MISA_SIGN_TYPE:5}
     issue-only-when-requested: ${CPN_MISA_ISSUE_ONLY_WHEN_REQUESTED:true}
+  ahamove:
+    base-url: ${CPN_AHAMOVE_BASE_URL:https://partner-api.ahamove.com/v3}
+    insecure-ssl: ${CPN_AHAMOVE_INSECURE_SSL:false}
+  goong:
+    base-url: ${CPN_GOONG_BASE_URL:https://rsapi.goong.io}
+  osm:
+    nominatim-base-url: ${CPN_OSM_NOMINATIM_BASE_URL:https://nominatim.openstreetmap.org}
+    photon-base-url: ${CPN_OSM_PHOTON_BASE_URL:https://photon.komoot.io}
+    user-agent: ${CPN_OSM_USER_AGENT:CPN-XE/1.0 (office-geo; contact=ops@xevietnam.local)}

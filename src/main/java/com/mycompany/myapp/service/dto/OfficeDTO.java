@@ -3,6 +3,7 @@ package com.mycompany.myapp.service.dto;
 import com.mycompany.myapp.domain.enumeration.OfficeType;
 import jakarta.validation.constraints.*;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Objects;
 
 /**
@@ -34,6 +35,10 @@ public class OfficeDTO implements Serializable {
 
     @Size(max = 500)
     private String address;
+
+    private BigDecimal latitude;
+
+    private BigDecimal longitude;
 
     public Long getId() {
         return id;
@@ -99,6 +104,22 @@ public class OfficeDTO implements Serializable {
         this.address = address;
     }
 
+    public BigDecimal getLatitude() {
+        return latitude;
+    }
+
+    public void setLatitude(BigDecimal latitude) {
+        this.latitude = latitude;
+    }
+
+    public BigDecimal getLongitude() {
+        return longitude;
+    }
+
+    public void setLongitude(BigDecimal longitude) {
+        this.longitude = longitude;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -132,6 +153,8 @@ public class OfficeDTO implements Serializable {
             ", active='" + getActive() + "'" +
             ", sourceId=" + getSourceId() +
             ", address='" + getAddress() + "'" +
+            ", latitude=" + getLatitude() +
+            ", longitude=" + getLongitude() +
             "}";
     }
 }

@@ -87,5 +87,7 @@
     <include file="config/liquibase/changelog/20260917143000_inventory_check.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260917160000_order_issue_reason_photos.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260921120000_maintenance_policy.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260922100000_ahamove_api_key.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260922110000_office_lat_lng.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 

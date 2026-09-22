@@ -1,5 +1,6 @@
 package com.mycompany.myapp.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import java.io.Serializable;
@@ -20,9 +21,23 @@ public class IntegrationConfig implements Serializable {
     @Column(name = "id")
     private Long id;
 
+    /** Partner API key — cấu hình trên màn Tích hợp. */
     @Size(max = 255)
-    @Column(name = "ahamove_token", length = 255)
+    @Column(name = "ahamove_api_key", length = 255)
+    private String ahamoveApiKey;
+
+    /** SĐT account Ahamove gắn partner (dùng đổi token). */
+    @Size(max = 32)
+    @Column(name = "ahamove_mobile", length = 32)
+    private String ahamoveMobile;
+
+    /** Bearer JWT cache — BE tự lấy, không nhập từ UI. */
+    @Size(max = 2000)
+    @Column(name = "ahamove_token", length = 2000)
     private String ahamoveToken;
+
+    @Column(name = "ahamove_token_fetched_at")
+    private Instant ahamoveTokenFetchedAt;
 
     @Size(max = 255)
     @Column(name = "grab_token", length = 255)
@@ -70,6 +85,33 @@ public class IntegrationConfig implements Serializable {
         this.id = id;
     }
 
+    public String getAhamoveApiKey() {
+        return this.ahamoveApiKey;
+    }
+
+    public IntegrationConfig ahamoveApiKey(String ahamoveApiKey) {
+        this.setAhamoveApiKey(ahamoveApiKey);
+        return this;
+    }
+
+    public void setAhamoveApiKey(String ahamoveApiKey) {
+        this.ahamoveApiKey = ahamoveApiKey;
+    }
+
+    public String getAhamoveMobile() {
+        return this.ahamoveMobile;
+    }
+
+    public IntegrationConfig ahamoveMobile(String ahamoveMobile) {
+        this.setAhamoveMobile(ahamoveMobile);
+        return this;
+    }
+
+    public void setAhamoveMobile(String ahamoveMobile) {
+        this.ahamoveMobile = ahamoveMobile;
+    }
+
+    @JsonIgnore
     public String getAhamoveToken() {
         return this.ahamoveToken;
     }
@@ -81,6 +123,19 @@ public class IntegrationConfig implements Serializable {
 
     public void setAhamoveToken(String ahamoveToken) {
         this.ahamoveToken = ahamoveToken;
+    }
+
+    public Instant getAhamoveTokenFetchedAt() {
+        return this.ahamoveTokenFetchedAt;
+    }
+
+    public IntegrationConfig ahamoveTokenFetchedAt(Instant ahamoveTokenFetchedAt) {
+        this.setAhamoveTokenFetchedAt(ahamoveTokenFetchedAt);
+        return this;
+    }
+
+    public void setAhamoveTokenFetchedAt(Instant ahamoveTokenFetchedAt) {
+        this.ahamoveTokenFetchedAt = ahamoveTokenFetchedAt;
     }
 
     public String getGrabToken() {
@@ -211,7 +266,9 @@ public class IntegrationConfig implements Serializable {
     public String toString() {
         return "IntegrationConfig{" +
             "id=" + getId() +
-            ", ahamoveToken='" + getAhamoveToken() + "'" +
+            ", ahamoveApiKey='" + (getAhamoveApiKey() != null ? "***" : null) + "'" +
+            ", ahamoveMobile='" + getAhamoveMobile() + "'" +
+            ", ahamoveTokenFetchedAt='" + getAhamoveTokenFetchedAt() + "'" +
             ", grabToken='" + getGrabToken() + "'" +
             ", xanhsmToken='" + getXanhsmToken() + "'" +
             ", distanceApiToken='" + getDistanceApiToken() + "'" +

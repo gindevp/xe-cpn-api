@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260922100000-1" author="cpn">
+        <comment>
+            Ahamove: cấu hình API key + mobile trên Tích hợp;
+            ahamove_token chuyển thành cache Bearer (BE tự lấy / refresh mỗi tuần).
+        </comment>
+        <addColumn tableName="integration_config">
+            <column name="ahamove_api_key" type="varchar(255)"/>
+            <column name="ahamove_mobile" type="varchar(32)"/>
+            <column name="ahamove_token_fetched_at" type="${datetimeType}"/>
+        </addColumn>
+        <modifyDataType tableName="integration_config" columnName="ahamove_token" newDataType="varchar(2000)"/>
+    </changeSet>
+</databaseChangeLog>
