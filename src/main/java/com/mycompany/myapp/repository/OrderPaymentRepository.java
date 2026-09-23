@@ -1,9 +1,8 @@
 package com.mycompany.myapp.repository;
 
 import com.mycompany.myapp.domain.OrderPayment;
-import com.mycompany.myapp.domain.enumeration.PaymentKind;
-import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -45,10 +44,11 @@ public interface OrderPaymentRepository extends JpaRepository<OrderPayment, Long
 
     Optional<OrderPayment> findFirstByOrder_IdOrderByPaymentAtDesc(Long orderId);
 
-    @Query(
-        "select coalesce(sum(orderPayment.amount), 0) from OrderPayment orderPayment where orderPayment.order.id = :orderId and orderPayment.paymentKind = com.mycompany.myapp.domain.enumeration.PaymentKind.TRUOC"
-    )
-    BigDecimal sumTruocByOrderId(@Param("orderId") Long orderId);
+    List<OrderPayment> findByOrder_IdOrderByPaymentAtDesc(Long orderId);
 
-    List<OrderPayment> findByOrder_IdAndPaymentKindOrderByPaymentAtDesc(Long orderId, PaymentKind paymentKind);
+    /** Hàng: [orderId, paymentKind, note, sum(amount)]. */
+    @Query(
+        "select orderPayment.order.id, orderPayment.paymentKind, orderPayment.note, coalesce(sum(orderPayment.amount), 0) from OrderPayment orderPayment where orderPayment.order.id in :orderIds group by orderPayment.order.id, orderPayment.paymentKind, orderPayment.note"
+    )
+    List<Object[]> sumGroupedByOrderIds(@Param("orderIds") Collection<Long> orderIds);
 }

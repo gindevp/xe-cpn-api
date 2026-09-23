@@ -23,6 +23,7 @@ import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
+import jakarta.persistence.criteria.JoinType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -30,8 +31,11 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -76,37 +80,35 @@ public class FinanceFacadeService {
 
     @Transactional(readOnly = true)
     public List<CandidateDTO> candidates(String officeCode, String keyword) {
-        // Phiếu thu:
-        // - GUI_TRA còn nợ cước: sau nhập kho gửi.
-        // - Đã thu TRUOC (đầu gửi) nhưng chưa lập phiếu: phải nộp tiền mặt (dù paid=fare).
-        // - NHAN_TRA / COD: sau DELIVERED.
+        // Mỗi đơn tối đa 2 dòng: phần VP gửi (SENDER) và phần giao (DELIVERY) — xem ReceiptSettlement.
         Specification<ShipmentOrder> spec = (root, q, cb) -> {
-            var delivered = cb.equal(root.get("status"), OrderStatus.DELIVERED);
-            var guiTra = cb.equal(root.get("paymentTerm"), PaymentTerm.GUI_TRA);
-            var notTerminal = root
-                .get("status")
-                .in(OrderStatus.DRAFT, OrderStatus.CANCELLED, OrderStatus.RETURNING, OrderStatus.RETURNED, OrderStatus.FAILED_DELIVERY)
-                .not();
-            var pastSenderWh = cb.or(
-                cb.isNotNull(root.get("forwardStage")),
-                root.get("status").in(OrderStatus.IN_TRANSIT, OrderStatus.WAITING, OrderStatus.AT_DEST, OrderStatus.OUT_FOR_DELIVERY)
+            var status = root.get("status");
+            var guiTraPastWh = cb.and(
+                cb.equal(root.get("paymentTerm"), PaymentTerm.GUI_TRA),
+                cb.or(
+                    cb.isNotNull(root.get("forwardStage")),
+                    status.in(
+                        OrderStatus.IN_TRANSIT,
+                        OrderStatus.WAITING,
+                        OrderStatus.AT_DEST,
+                        OrderStatus.OUT_FOR_DELIVERY,
+                        OrderStatus.FAILED_DELIVERY
+                    )
+                )
             );
-            // GUI_TRA mọi trạng thái còn chạy (kể cả mới tạo đã TRUOC) — lọc settle > 0 ở Java.
-            return cb.or(delivered, cb.and(guiTra, notTerminal));
+            return cb.and(
+                status.in(OrderStatus.DRAFT, OrderStatus.CANCELLED).not(),
+                cb.or(cb.equal(status, OrderStatus.DELIVERED), cb.greaterThan(root.get("paidAmount"), BigDecimal.ZERO), guiTraPastWh)
+            );
         };
-        if (officeCode != null && !officeCode.isBlank()) {
-            String scoped = officeCode.trim().toUpperCase();
+        String scoped = officeCode == null || officeCode.isBlank() ? null : officeCode.trim().toUpperCase();
+        if (scoped != null) {
             spec = spec.and((root, q, cb) -> {
-                var toCode = root.get("toOffice").get("code");
-                var finalCode = root.get("finalToOffice").get("code");
-                var fromCode = root.get("fromOffice").get("code");
-                var atFrom = cb.equal(fromCode, scoped);
-                var atTo = cb.or(cb.equal(toCode, scoped), cb.and(cb.isNotNull(root.get("finalToOffice")), cb.equal(finalCode, scoped)));
-                // DELIVERED: VP gửi hoặc VP nhận; GUI_TRA / TRUOC sớm: chỉ VP gửi.
-                return cb.or(
-                    cb.and(cb.equal(root.get("status"), OrderStatus.DELIVERED), cb.or(atFrom, atTo)),
-                    cb.and(atFrom, cb.notEqual(root.get("status"), OrderStatus.DELIVERED))
-                );
+                var to = root.join("toOffice", JoinType.LEFT);
+                var fin = root.join("finalToOffice", JoinType.LEFT);
+                var atFrom = cb.equal(root.get("fromOffice").get("code"), scoped);
+                var atTo = cb.or(cb.equal(to.get("code"), scoped), cb.equal(fin.get("code"), scoped));
+                return cb.or(atFrom, cb.and(cb.equal(root.get("status"), OrderStatus.DELIVERED), atTo));
             });
         }
         if (keyword != null && !keyword.isBlank()) {
@@ -119,99 +121,82 @@ public class FinanceFacadeService {
                 )
             );
         }
-        return shipmentOrderRepository
-            .findAll(spec)
-            .stream()
-            .filter(o -> o.getId() == null || !receiptOrderLineRepository.existsByOrder_Id(o.getId()))
-            .map(o -> {
-                BigDecimal truoc = truocHeld(o);
-                BigDecimal settle = receiptSettleAmount(o, truoc);
-                return new Object[] { o, truoc, settle };
-            })
-            .filter(row -> ((BigDecimal) row[2]).signum() > 0)
-            .filter(row -> isReceiptCandidate((ShipmentOrder) row[0], (BigDecimal) row[1]))
-            .limit(300)
-            .map(row -> {
-                ShipmentOrder o = (ShipmentOrder) row[0];
-                BigDecimal truoc = (BigDecimal) row[1];
-                BigDecimal settle = (BigDecimal) row[2];
-                return new CandidateDTO(
-                    o.getOrderCode(),
-                    o.getReceiverName(),
-                    o.getReceiverPhone(),
-                    o.getFareAmount(),
-                    o.getPaidAmount(),
-                    settle,
-                    o.getStatus().name(),
-                    o.getFromOffice() != null ? o.getFromOffice().getCode() : null,
-                    resolveReceiptOwner(o, truoc)
-                );
-            })
-            .toList();
+        List<ShipmentOrder> orders = shipmentOrderRepository.findAll(spec);
+        Map<Long, ReceiptSettlement.Totals> totals = loadSettlementTotals(
+            orders.stream().map(ShipmentOrder::getId).filter(Objects::nonNull).toList()
+        );
+        List<CandidateDTO> out = new ArrayList<>();
+        for (ShipmentOrder o : orders) {
+            if (out.size() >= 300) {
+                break;
+            }
+            ReceiptSettlement.Split s = ReceiptSettlement.split(o, totals.getOrDefault(o.getId(), ReceiptSettlement.Totals.ZERO));
+            String fromCode = o.getFromOffice() != null ? o.getFromOffice().getCode() : null;
+            if (s.senderOut().signum() > 0 && (scoped == null || scoped.equals(fromCode))) {
+                out.add(toCandidate(o, s.senderOut(), ReceiptSettlement.SENDER, resolveSenderOwner(o)));
+            }
+            if (s.deliveryOut().signum() > 0 && (scoped == null || scoped.equals(fromCode) || atReceiverOffice(o, scoped))) {
+                out.add(toCandidate(o, s.deliveryOut(), ReceiptSettlement.DELIVERY, resolveDeliveryActor(o)));
+            }
+        }
+        return out;
     }
 
-    /**
-     * Số NV phải nộp trên phiếu thu = cước/COD còn thiếu + tiền mặt đã thu TRUOC chưa lập phiếu.
-     * (Thu đầu gửi đã ghi paidAmount nên due=0 — vẫn phải lên phiếu để nộp quỹ.)
-     */
-    static BigDecimal receiptSettleAmount(ShipmentOrder order, BigDecimal truocHeld) {
-        return OrderMoney.receiptCollectable(order).add(OrderMoney.nz(truocHeld));
-    }
-
-    /** Public for unit tests — điều kiện lên danh sách phiếu thu. */
-    static boolean isReceiptCandidate(ShipmentOrder order) {
-        return isReceiptCandidate(order, BigDecimal.ZERO);
-    }
-
-    static boolean isReceiptCandidate(ShipmentOrder order, BigDecimal truocHeld) {
-        if (order == null || order.getStatus() == null) {
-            return false;
-        }
-        if (receiptSettleAmount(order, truocHeld).signum() <= 0) {
-            return false;
-        }
-        if (order.getStatus() == OrderStatus.DELIVERED) {
-            return true;
-        }
-        // Đã cầm tiền TRUOC (đầu gửi) → lên phiếu ngay, kể cả chưa nhập kho.
-        if (OrderMoney.nz(truocHeld).signum() > 0) {
-            return isActiveForReceipt(order);
-        }
-        return isSenderPayEarlyCandidate(order);
-    }
-
-    static boolean isActiveForReceipt(ShipmentOrder order) {
-        OrderStatus st = order.getStatus();
-        return (
-            st != OrderStatus.DRAFT &&
-            st != OrderStatus.CANCELLED &&
-            st != OrderStatus.RETURNING &&
-            st != OrderStatus.RETURNED &&
-            st != OrderStatus.FAILED_DELIVERY
+    private static CandidateDTO toCandidate(ShipmentOrder o, BigDecimal amount, String portion, String owner) {
+        return new CandidateDTO(
+            o.getOrderCode(),
+            o.getReceiverName(),
+            o.getReceiverPhone(),
+            o.getFareAmount(),
+            o.getPaidAmount(),
+            amount,
+            o.getStatus().name(),
+            o.getFromOffice() != null ? o.getFromOffice().getCode() : null,
+            owner,
+            portion
         );
     }
 
-    static boolean isSenderPayEarlyCandidate(ShipmentOrder order) {
-        if (order.getPaymentTerm() != PaymentTerm.GUI_TRA) {
-            return false;
-        }
-        if (!isActiveForReceipt(order)) {
-            return false;
-        }
-        if (order.getForwardStage() != null) {
-            return true;
-        }
-        OrderStatus st = order.getStatus();
+    private static boolean atReceiverOffice(ShipmentOrder o, String code) {
         return (
-            st == OrderStatus.IN_TRANSIT || st == OrderStatus.WAITING || st == OrderStatus.AT_DEST || st == OrderStatus.OUT_FOR_DELIVERY
+            (o.getToOffice() != null && code.equals(o.getToOffice().getCode())) ||
+            (o.getFinalToOffice() != null && code.equals(o.getFinalToOffice().getCode()))
         );
     }
 
-    private BigDecimal truocHeld(ShipmentOrder order) {
-        if (order.getId() == null) {
+    private Map<Long, ReceiptSettlement.Totals> loadSettlementTotals(List<Long> orderIds) {
+        Map<Long, BigDecimal[]> acc = new HashMap<>();
+        for (int i = 0; i < orderIds.size(); i += 500) {
+            List<Long> chunk = orderIds.subList(i, Math.min(orderIds.size(), i + 500));
+            for (Object[] row : orderPaymentRepository.sumGroupedByOrderIds(chunk)) {
+                BigDecimal[] a = acc.computeIfAbsent((Long) row[0], k -> zeros3());
+                PaymentKind kind = (PaymentKind) row[1];
+                BigDecimal amount = toBigDecimal(row[3]);
+                if (ReceiptSettlement.isDeliverySidePayment(kind, (String) row[2])) {
+                    a[0] = a[0].add(amount);
+                } else if (kind == PaymentKind.COD) {
+                    a[1] = a[1].add(amount);
+                }
+            }
+            for (Object[] row : receiptOrderLineRepository.sumAmountByOrderIds(chunk)) {
+                BigDecimal[] a = acc.computeIfAbsent((Long) row[0], k -> zeros3());
+                a[2] = a[2].add(toBigDecimal(row[1]));
+            }
+        }
+        Map<Long, ReceiptSettlement.Totals> out = new HashMap<>();
+        acc.forEach((id, a) -> out.put(id, new ReceiptSettlement.Totals(a[0], a[1], a[2])));
+        return out;
+    }
+
+    private static BigDecimal[] zeros3() {
+        return new BigDecimal[] { BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO };
+    }
+
+    private static BigDecimal toBigDecimal(Object v) {
+        if (v == null) {
             return BigDecimal.ZERO;
         }
-        return OrderMoney.nz(orderPaymentRepository.sumTruocByOrderId(order.getId()));
+        return v instanceof BigDecimal b ? b : new BigDecimal(v.toString());
     }
 
     public ReceiptDTO createReceipt(CreateReceiptRequest req) {
@@ -231,6 +216,7 @@ public class FinanceFacadeService {
         }
         BigDecimal total = BigDecimal.ZERO;
         List<ReceiptOrderLine> lines = new ArrayList<>();
+        Set<Long> seenOrderIds = new HashSet<>();
         for (ReceiptLineRequest line : req.lines()) {
             if (line == null || line.orderCode() == null || line.orderCode().isBlank()) {
                 throw new BadRequestAlertException("orderCode required on receipt line", ENTITY, "orderCodeRequired");
@@ -246,22 +232,34 @@ public class FinanceFacadeService {
             if (amount.compareTo(BigDecimal.ZERO) < 0) {
                 throw new BadRequestAlertException("amountCollected must be >= 0", ENTITY, "amountInvalid");
             }
-            BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
-            BigDecimal fareDue = OrderMoney.due(order);
-            BigDecimal truoc = truocHeld(order);
-            BigDecimal collectable = receiptSettleAmount(order, truoc);
+            if (order.getId() != null && !seenOrderIds.add(order.getId())) {
+                throw new BadRequestAlertException("Duplicate order on receipt: " + order.getOrderCode(), ENTITY, "duplicateOrderLine");
+            }
+            ReceiptSettlement.Split s = ReceiptSettlement.split(
+                order,
+                order.getId() == null
+                    ? ReceiptSettlement.Totals.ZERO
+                    : loadSettlementTotals(List.of(order.getId())).getOrDefault(order.getId(), ReceiptSettlement.Totals.ZERO)
+            );
+            String portion = line.portion() == null || line.portion().isBlank() ? null : line.portion().trim().toUpperCase();
+            if (portion != null && !ReceiptSettlement.SENDER.equals(portion) && !ReceiptSettlement.DELIVERY.equals(portion)) {
+                throw new BadRequestAlertException("Invalid receipt portion: " + line.portion(), ENTITY, "portionInvalid");
+            }
+            BigDecimal collectable = ReceiptSettlement.SENDER.equals(portion)
+                ? s.senderOut()
+                : ReceiptSettlement.DELIVERY.equals(portion) ? s.deliveryOut() : s.totalOut();
             if (amount.compareTo(collectable) > 0) {
                 throw new BadRequestAlertException(
                     "amountCollected exceeds collectable for " +
                     order.getOrderCode() +
-                    " (collectable=" +
+                    " (portion=" +
+                    (portion == null ? "ALL" : portion) +
+                    ", collectable=" +
                     collectable +
-                    ", fareDue=" +
-                    fareDue +
-                    ", truoc=" +
-                    truoc +
-                    ", cod=" +
-                    OrderMoney.nz(order.getCodAmount()) +
+                    ", sender=" +
+                    s.senderOut() +
+                    ", delivery=" +
+                    s.deliveryOut() +
                     ")",
                     ENTITY,
                     "amountExceedsDue"
@@ -269,34 +267,24 @@ public class FinanceFacadeService {
             }
             total = total.add(amount);
 
-            // Chỉ ghi thêm payment khi còn fareDue/COD — phần TRUOC đã paid chỉ lập dòng phiếu (nộp quỹ).
-            BigDecimal toFare = amount.min(fareDue);
-            BigDecimal afterFare = amount.subtract(toFare);
-            BigDecimal toCod = afterFare.min(OrderMoney.nz(order.getCodAmount()));
-            if (toFare.compareTo(BigDecimal.ZERO) > 0) {
-                OrderPayment payment = new OrderPayment();
-                payment.setPaymentAt(now);
-                payment.setAmount(toFare);
-                payment.setMethod(PaymentMethod.TM);
-                payment.setPaymentKind(PaymentKind.SAU);
-                payment.setNote("RECEIPT");
-                payment.setCollectorUsername(actor);
-                payment.setOrder(order);
-                orderPaymentRepository.save(payment);
+            // Không chỉ định phần: ưu tiên phần giao, dư mới vào phần VP gửi.
+            BigDecimal toDelivery = ReceiptSettlement.SENDER.equals(portion)
+                ? BigDecimal.ZERO
+                : ReceiptSettlement.DELIVERY.equals(portion) ? amount : amount.min(s.deliveryOut());
+            BigDecimal toSender = amount.subtract(toDelivery);
+            // Tiền đã thu (đã vào paidAmount) chỉ lập dòng phiếu; phần còn nợ mới ghi payment mới.
+            BigDecimal senderFare = toSender.subtract(toSender.min(s.senderHeldOut())).min(s.senderFareDue());
+            BigDecimal deliveryRest = toDelivery.subtract(toDelivery.min(s.deliveryHeldOut()));
+            BigDecimal deliveryFare = deliveryRest.min(s.deliveryFareDue());
+            BigDecimal toCod = deliveryRest.subtract(deliveryFare).min(s.codDue());
 
-                order.setPaidAmount(paid.add(toFare));
+            savePayment(order, senderFare, PaymentKind.SAU, ReceiptSettlement.NOTE_RECEIPT_SENDER, actor, now);
+            savePayment(order, deliveryFare, PaymentKind.SAU, ReceiptSettlement.NOTE_RECEIPT_DELIVERY, actor, now);
+            savePayment(order, toCod, PaymentKind.COD, ReceiptSettlement.NOTE_RECEIPT_COD, actor, now);
+            BigDecimal fareAdded = senderFare.add(deliveryFare);
+            if (fareAdded.signum() > 0) {
+                order.setPaidAmount(OrderMoney.nz(order.getPaidAmount()).add(fareAdded));
                 shipmentOrderRepository.save(order);
-            }
-            if (toCod.compareTo(BigDecimal.ZERO) > 0) {
-                OrderPayment codPay = new OrderPayment();
-                codPay.setPaymentAt(now);
-                codPay.setAmount(toCod);
-                codPay.setMethod(PaymentMethod.TM);
-                codPay.setPaymentKind(PaymentKind.COD);
-                codPay.setNote("RECEIPT_COD");
-                codPay.setCollectorUsername(actor);
-                codPay.setOrder(order);
-                orderPaymentRepository.save(codPay);
             }
 
             ReceiptOrderLine rol = new ReceiptOrderLine();
@@ -319,6 +307,21 @@ public class FinanceFacadeService {
             receiptOrderLineRepository.save(rol);
         }
         return toReceiptDto(receipt, lines);
+    }
+
+    private void savePayment(ShipmentOrder order, BigDecimal amount, PaymentKind kind, String note, String actor, Instant at) {
+        if (amount.signum() <= 0) {
+            return;
+        }
+        OrderPayment payment = new OrderPayment();
+        payment.setPaymentAt(at);
+        payment.setAmount(amount);
+        payment.setMethod(PaymentMethod.TM);
+        payment.setPaymentKind(kind);
+        payment.setNote(note);
+        payment.setCollectorUsername(actor);
+        payment.setOrder(order);
+        orderPaymentRepository.save(payment);
     }
 
     @Transactional(readOnly = true)
@@ -540,31 +543,21 @@ public class FinanceFacadeService {
             .orElseThrow(() -> new BadRequestAlertException("Office not found", ENTITY, "officeNotFound"));
     }
 
-    /**
-     * Chủ nợ phiếu thu: ưu tiên người cầm tiền TRUOC; GUI_TRA → NV nhập kho/tạo đơn; còn lại → POD.
-     */
-    private String resolveReceiptOwner(ShipmentOrder order, BigDecimal truocHeld) {
-        if (OrderMoney.nz(truocHeld).signum() > 0 && order.getId() != null) {
-            var truocPays = orderPaymentRepository.findByOrder_IdAndPaymentKindOrderByPaymentAtDesc(order.getId(), PaymentKind.TRUOC);
-            for (OrderPayment p : truocPays) {
+    /** Chủ phần SENDER: người thu tiền phía gửi gần nhất; chưa thu → NV nhập kho gửi / tạo đơn. */
+    private String resolveSenderOwner(ShipmentOrder order) {
+        if (order.getId() != null) {
+            for (OrderPayment p : orderPaymentRepository.findByOrder_IdOrderByPaymentAtDesc(order.getId())) {
+                boolean senderSide =
+                    (p.getPaymentKind() == PaymentKind.TRUOC || p.getPaymentKind() == PaymentKind.SAU) &&
+                    !ReceiptSettlement.isDeliverySidePayment(p.getPaymentKind(), p.getNote()) &&
+                    !ReceiptSettlement.NOTE_RECEIPT_SENDER.equals(p.getNote());
                 String collector = p.getCollectorUsername();
-                if (collector != null && !collector.isBlank()) {
+                if (senderSide && collector != null && !collector.isBlank()) {
                     return collector.trim();
                 }
             }
         }
-        if (order.getPaymentTerm() == PaymentTerm.GUI_TRA) {
-            String senderSide = resolveSenderWhActor(order);
-            if (senderSide != null) {
-                return senderSide;
-            }
-        }
-        return resolveDeliveryActor(order);
-    }
-
-    /** @deprecated kept for any leftover call sites */
-    private String resolveReceiptOwner(ShipmentOrder order) {
-        return resolveReceiptOwner(order, truocHeld(order));
+        return resolveSenderWhActor(order);
     }
 
     /** Người nhập kho gửi (WAREHOUSE_RECEIVE) hoặc fallback tạo đơn / lấy hàng. */
@@ -653,10 +646,13 @@ public class FinanceFacadeService {
         BigDecimal dueAmount,
         String status,
         String fromOfficeCode,
-        String debtOwnerUsername
+        String debtOwnerUsername,
+        /** SENDER | DELIVERY */
+        String portion
     ) {}
 
-    public record ReceiptLineRequest(String orderCode, BigDecimal amountCollected) {}
+    /** portion null = tự phân bổ (phần giao trước). */
+    public record ReceiptLineRequest(String orderCode, BigDecimal amountCollected, String portion) {}
 
     public record CreateReceiptRequest(String payerName, String payerCode, String officeCode, List<ReceiptLineRequest> lines) {}
 

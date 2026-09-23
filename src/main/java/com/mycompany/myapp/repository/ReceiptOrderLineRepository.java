@@ -1,6 +1,7 @@
 package com.mycompany.myapp.repository;
 
 import com.mycompany.myapp.domain.ReceiptOrderLine;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -45,4 +46,10 @@ public interface ReceiptOrderLineRepository extends JpaRepository<ReceiptOrderLi
     List<ReceiptOrderLine> findByReceipt_Id(Long receiptId);
 
     boolean existsByOrder_Id(Long orderId);
+
+    /** Hàng: [orderId, sum(amountCollected)]. */
+    @Query(
+        "select receiptOrderLine.order.id, coalesce(sum(receiptOrderLine.amountCollected), 0) from ReceiptOrderLine receiptOrderLine where receiptOrderLine.order.id in :orderIds group by receiptOrderLine.order.id"
+    )
+    List<Object[]> sumAmountByOrderIds(@Param("orderIds") Collection<Long> orderIds);
 }

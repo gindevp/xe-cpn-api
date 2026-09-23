@@ -13,7 +13,9 @@ import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.Receipt;
 import com.mycompany.myapp.domain.ReceiptOrderLine;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentKind;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.DayClosureRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
@@ -89,10 +91,11 @@ class FinanceFacadeServiceReceiptCodTest {
         order.setFareAmount(new BigDecimal("40000"));
         order.setPaidAmount(new BigDecimal("10000"));
         order.setCodAmount(new BigDecimal("50000"));
+        order.setStatus(OrderStatus.DELIVERED);
+        order.setPaymentTerm(PaymentTerm.NHAN_TRA);
 
         when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("GP-COD-001")).thenReturn(Optional.of(order));
         lenient().when(orderPaymentRepository.save(any(OrderPayment.class))).thenAnswer(inv -> inv.getArgument(0));
-        lenient().when(orderPaymentRepository.sumTruocByOrderId(any())).thenReturn(BigDecimal.ZERO);
         lenient().when(shipmentOrderRepository.save(any(ShipmentOrder.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(receiptOrderLineRepository.save(any(ReceiptOrderLine.class))).thenAnswer(inv -> inv.getArgument(0));
         AtomicLong id = new AtomicLong(10);
@@ -115,7 +118,7 @@ class FinanceFacadeServiceReceiptCodTest {
             "NV A",
             "NVA",
             null,
-            List.of(new ReceiptLineRequest("GP-COD-001", new BigDecimal("80000")))
+            List.of(new ReceiptLineRequest("GP-COD-001", new BigDecimal("80000"), ReceiptSettlement.DELIVERY))
         );
 
         ReceiptDTO dto = service.createReceipt(req);
@@ -144,7 +147,7 @@ class FinanceFacadeServiceReceiptCodTest {
             "NV A",
             null,
             null,
-            List.of(new ReceiptLineRequest("GP-COD-001", new BigDecimal("80001")))
+            List.of(new ReceiptLineRequest("GP-COD-001", new BigDecimal("80001"), ReceiptSettlement.DELIVERY))
         );
 
         assertThatThrownBy(() -> service.createReceipt(req))
@@ -163,7 +166,7 @@ class FinanceFacadeServiceReceiptCodTest {
             "NV A",
             null,
             null,
-            List.of(new ReceiptLineRequest("GP-COD-001", new BigDecimal("50000")))
+            List.of(new ReceiptLineRequest("GP-COD-001", new BigDecimal("50000"), null))
         );
 
         ReceiptDTO dto = service.createReceipt(req);
