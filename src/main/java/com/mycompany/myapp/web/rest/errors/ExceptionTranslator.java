@@ -2,6 +2,7 @@ package com.mycompany.myapp.web.rest.errors;
 
 import static org.springframework.core.annotation.AnnotatedElementUtils.findMergedAnnotation;
 
+import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.UserNotActivatedException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
@@ -11,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.dao.ConcurrencyFailureException;
@@ -32,6 +35,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import tech.jhipster.config.JHipsterConstants;
 import tech.jhipster.web.rest.errors.ProblemDetailWithCause;
 import tech.jhipster.web.rest.errors.ProblemDetailWithCause.ProblemDetailWithCauseBuilder;
@@ -48,6 +52,7 @@ public class ExceptionTranslator extends ResponseEntityExceptionHandler {
     private static final String MESSAGE_KEY = "message";
     private static final String PATH_KEY = "path";
     private static final boolean CASUAL_CHAIN_ENABLED = false;
+    private static final Logger LOG = LoggerFactory.getLogger(ExceptionTranslator.class);
 
     @Value("${jhipster.clientApp.name}")
     private String applicationName;
@@ -74,7 +79,23 @@ public class ExceptionTranslator extends ResponseEntityExceptionHandler {
         WebRequest request
     ) {
         body = body == null ? wrapAndCustomizeProblem((Throwable) ex, (NativeWebRequest) request) : body;
+        logApiError(ex, statusCode, request);
         return super.handleExceptionInternal(ex, body, headers, statusCode, request);
+    }
+
+    private void logApiError(Exception ex, HttpStatusCode statusCode, WebRequest request) {
+        int status = statusCode.value();
+        if (status < 400 || status == 401 || ex instanceof NoResourceFoundException) return;
+        HttpServletRequest http = request instanceof NativeWebRequest nwr ? nwr.getNativeRequest(HttpServletRequest.class) : null;
+        String method = http != null ? http.getMethod() : "?";
+        String uri = http != null ? http.getRequestURI() : "?";
+        String user = SecurityUtils.getCurrentUserLogin().orElse("anonymous");
+        if (status >= 500) {
+            LOG.error("API {} {} {} user={} error={}", status, method, uri, user, ex.toString(), ex);
+        } else {
+            String key = ex instanceof BadRequestAlertException bra ? bra.getErrorKey() : ex.getClass().getSimpleName();
+            LOG.warn("API {} {} {} user={} key={} msg={}", status, method, uri, user, key, ex.getMessage());
+        }
     }
 
     protected ProblemDetailWithCause wrapAndCustomizeProblem(Throwable ex, NativeWebRequest request) {

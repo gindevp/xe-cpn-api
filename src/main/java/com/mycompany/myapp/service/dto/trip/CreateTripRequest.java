@@ -26,6 +26,28 @@ public class CreateTripRequest {
     /** User-facing VTHK branch/itinerary (not office Route.name). */
     private String itineraryLabel;
 
+    /** Chỉ để audit: VTHK (thẻ CRM) | MANUAL_LIMO | TRUCK | TRIP_SCREEN. */
+    private String vehicleSource;
+
+    /** Chỉ để audit: mã chuyến CRM khi chọn thẻ VTHK. */
+    private String externalTripId;
+
+    public String getVehicleSource() {
+        return vehicleSource;
+    }
+
+    public void setVehicleSource(String vehicleSource) {
+        this.vehicleSource = vehicleSource;
+    }
+
+    public String getExternalTripId() {
+        return externalTripId;
+    }
+
+    public void setExternalTripId(String externalTripId) {
+        this.externalTripId = externalTripId;
+    }
+
     public String getOfficeCode() {
         return officeCode;
     }

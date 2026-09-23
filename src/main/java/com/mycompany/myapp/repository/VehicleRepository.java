@@ -14,6 +14,12 @@ import org.springframework.stereotype.Repository;
 public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     Optional<Vehicle> findOneByPlateNumber(String plateNumber);
 
+    @Query(
+        value = "select * from vehicle where upper(replace(replace(replace(plate_number, '-', ''), '.', ''), ' ', '')) = :normalized order by id",
+        nativeQuery = true
+    )
+    List<Vehicle> findByNormalizedPlate(@Param("normalized") String normalized);
+
     @Query("select v from Vehicle v left join fetch v.office left join fetch v.defaultDriver")
     List<Vehicle> findAllWithRefs();
 

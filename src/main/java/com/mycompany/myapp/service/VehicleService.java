@@ -5,6 +5,7 @@ import com.mycompany.myapp.domain.Vehicle;
 import com.mycompany.myapp.repository.DriverRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.VehicleRepository;
+import com.mycompany.myapp.service.audit.AuditRecorder;
 import com.mycompany.myapp.service.dto.VehicleDTO;
 import com.mycompany.myapp.service.mapper.VehicleMapper;
 import java.util.LinkedList;
@@ -33,16 +34,20 @@ public class VehicleService {
 
     private final DriverRepository driverRepository;
 
+    private final AuditRecorder auditRecorder;
+
     public VehicleService(
         VehicleRepository vehicleRepository,
         VehicleMapper vehicleMapper,
         OfficeRepository officeRepository,
-        DriverRepository driverRepository
+        DriverRepository driverRepository,
+        AuditRecorder auditRecorder
     ) {
         this.vehicleRepository = vehicleRepository;
         this.vehicleMapper = vehicleMapper;
         this.officeRepository = officeRepository;
         this.driverRepository = driverRepository;
+        this.auditRecorder = auditRecorder;
     }
 
     /**
@@ -56,6 +61,7 @@ public class VehicleService {
         Vehicle vehicle = vehicleMapper.toEntity(vehicleDTO);
         attachRefs(vehicleDTO, vehicle);
         vehicle = vehicleRepository.save(vehicle);
+        auditRecorder.record("VEHICLE_CREATE", "Vehicle", vehicle.getId(), describe(vehicle));
         return vehicleMapper.toDto(vehicle);
     }
 
@@ -67,9 +73,13 @@ public class VehicleService {
      */
     public VehicleDTO update(VehicleDTO vehicleDTO) {
         LOG.debug("Request to update Vehicle : {}", vehicleDTO);
+        String before = vehicleDTO.getId() == null
+            ? "-"
+            : vehicleRepository.findOneWithRefs(vehicleDTO.getId()).map(VehicleService::describe).orElse("-");
         Vehicle vehicle = vehicleMapper.toEntity(vehicleDTO);
         attachRefs(vehicleDTO, vehicle);
         vehicle = vehicleRepository.save(vehicle);
+        auditRecorder.record("VEHICLE_UPDATE", "Vehicle", vehicle.getId(), "trước: " + before + " → sau: " + describe(vehicle));
         return vehicleMapper.toDto(vehicle);
     }
 
@@ -85,12 +95,13 @@ public class VehicleService {
         return vehicleRepository
             .findById(vehicleDTO.getId())
             .map(existingVehicle -> {
+                String before = describe(existingVehicle);
                 vehicleMapper.partialUpdate(existingVehicle, vehicleDTO);
                 attachRefs(vehicleDTO, existingVehicle);
-
-                return existingVehicle;
+                Vehicle saved = vehicleRepository.save(existingVehicle);
+                auditRecorder.record("VEHICLE_UPDATE", "Vehicle", saved.getId(), "trước: " + before + " → sau: " + describe(saved));
+                return saved;
             })
-            .map(vehicleRepository::save)
             .map(vehicleMapper::toDto);
     }
 
@@ -160,6 +171,23 @@ public class VehicleService {
      */
     public void delete(Long id) {
         LOG.debug("Request to delete Vehicle : {}", id);
+        String before = vehicleRepository.findOneWithRefs(id).map(VehicleService::describe).orElse("-");
         vehicleRepository.deleteById(id);
+        auditRecorder.record("VEHICLE_DELETE", "Vehicle", id, before);
+    }
+
+    private static String describe(Vehicle v) {
+        return (
+            "biển=" +
+            v.getPlateNumber() +
+            ", loại=" +
+            (v.getVehicleType() == null ? "-" : v.getVehicleType()) +
+            ", tải=" +
+            v.getCapacityKg() +
+            ", active=" +
+            v.getActive() +
+            ", tài=" +
+            (v.getDefaultDriver() == null ? "-" : v.getDefaultDriver().getFullName())
+        );
     }
 }

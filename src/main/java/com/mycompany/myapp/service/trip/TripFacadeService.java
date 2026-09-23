@@ -22,6 +22,7 @@ import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.repository.VehicleRepository;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
+import com.mycompany.myapp.service.audit.AuditRecorder;
 import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
 import com.mycompany.myapp.service.dto.trip.AssignOrdersToTripRequest;
 import com.mycompany.myapp.service.dto.trip.CloseTripRequest;
@@ -64,6 +65,7 @@ public class TripFacadeService {
     private final TripCodeGenerator tripCodeGenerator;
     private final OrderFacadeService orderFacadeService;
     private final StaffAccessService staffAccessService;
+    private final AuditRecorder auditRecorder;
 
     public TripFacadeService(
         TripRepository tripRepository,
@@ -76,7 +78,8 @@ public class TripFacadeService {
         OrderEventRepository orderEventRepository,
         TripCodeGenerator tripCodeGenerator,
         OrderFacadeService orderFacadeService,
-        StaffAccessService staffAccessService
+        StaffAccessService staffAccessService,
+        AuditRecorder auditRecorder
     ) {
         this.tripRepository = tripRepository;
         this.assignmentRepository = assignmentRepository;
@@ -89,6 +92,7 @@ public class TripFacadeService {
         this.tripCodeGenerator = tripCodeGenerator;
         this.orderFacadeService = orderFacadeService;
         this.staffAccessService = staffAccessService;
+        this.auditRecorder = auditRecorder;
     }
 
     @Transactional(readOnly = true)
@@ -149,7 +153,43 @@ public class TripFacadeService {
         trip.setDriver(driver);
         applyItineraryLabel(trip, req.getItineraryLabel());
         trip = tripRepository.save(trip);
+        auditRecorder.record(
+            "TRIP_CREATE",
+            "Trip",
+            trip.getTripCode(),
+            "xe=" +
+            (vehicle == null ? "-" : vehicle.getPlateNumber() + " (id " + vehicle.getId() + ")") +
+            " · nhập=" +
+            orDash(req.getVehiclePlate()) +
+            " · nguồn=" +
+            orDash(req.getVehicleSource()) +
+            " · CRM=" +
+            orDash(req.getExternalTripId()) +
+            " · tài=" +
+            (driver == null ? "-" : driver.getFullName()) +
+            " · VP=" +
+            office.getCode() +
+            " · giờ=" +
+            req.getDepartAt() +
+            " · lộ trình=" +
+            orDash(req.getItineraryLabel())
+        );
         return toSummary(trip, false);
+    }
+
+    private static String assignDetail(Trip trip) {
+        String detail = "Chuyến " + trip.getTripCode();
+        if (trip.getVehicle() != null && trip.getVehicle().getPlateNumber() != null) {
+            detail += " · xe " + trip.getVehicle().getPlateNumber();
+        }
+        if (trip.getDriver() != null && trip.getDriver().getFullName() != null) {
+            detail += " · tài " + trip.getDriver().getFullName();
+        }
+        return detail.length() <= 255 ? detail : detail.substring(0, 255);
+    }
+
+    private static String orDash(String s) {
+        return s == null || s.isBlank() ? "-" : s.trim();
     }
 
     public TripTransitionResponse transition(String tripCode, TripTransitionRequest req) {
@@ -185,7 +225,7 @@ public class TripFacadeService {
             order.setCurrentTrip(trip);
             order.setForwardStage(ForwardStage.TRANSFER_PENDING);
             shipmentOrderRepository.save(order);
-            appendOrderEvent(order, "ASSIGN_TRIP", "Chuyến " + trip.getTripCode(), currentActor());
+            appendOrderEvent(order, "ASSIGN_TRIP", assignDetail(trip), currentActor());
         }
         refreshCounts(trip);
         tripRepository.save(trip);
@@ -582,15 +622,45 @@ public class TripFacadeService {
             if (plate.matches("(?i)CH[0-9A-Z]+") || plate.toLowerCase().startsWith("chưa gán")) {
                 return null;
             }
-            return vehicleRepository
-                .findOneByPlateNumber(plate)
-                .orElseGet(() -> {
-                    Vehicle v = new Vehicle();
-                    v.setPlateNumber(plate.length() <= 20 ? plate : plate.substring(0, 20));
-                    v.setCapacityKg(java.math.BigDecimal.valueOf(500));
-                    v.setActive(true);
-                    return vehicleRepository.save(v);
-                });
+            if (!VehiclePlates.isValid(plate)) {
+                auditRecorder.recordRejected(
+                    "TRIP_CREATE_REJECTED",
+                    "Trip",
+                    null,
+                    "biển không hợp lệ \"" +
+                    plate +
+                    "\" · nguồn=" +
+                    orDash(req.getVehicleSource()) +
+                    " · CRM=" +
+                    orDash(req.getExternalTripId()) +
+                    " · VP=" +
+                    orDash(req.getOfficeCode()) +
+                    " · tài=" +
+                    orDash(req.getDriverName())
+                );
+                throw new BadRequestAlertException(
+                    "Biển số không hợp lệ: \"" + plate + "\" (vd 29H88524 hoặc 29H-885.24)",
+                    ENTITY,
+                    "invalidVehiclePlate"
+                );
+            }
+            String normalized = VehiclePlates.normalize(plate);
+            List<Vehicle> matches = vehicleRepository.findByNormalizedPlate(normalized);
+            if (!matches.isEmpty()) {
+                return matches.stream().filter(v -> plate.equalsIgnoreCase(v.getPlateNumber())).findFirst().orElse(matches.get(0));
+            }
+            Vehicle v = new Vehicle();
+            v.setPlateNumber(normalized);
+            v.setCapacityKg(java.math.BigDecimal.valueOf(500));
+            v.setActive(true);
+            v = vehicleRepository.save(v);
+            auditRecorder.record(
+                "VEHICLE_AUTO_CREATE",
+                "Vehicle",
+                v.getId(),
+                "biển=" + v.getPlateNumber() + " · nhập=" + plate + " · nguồn=" + orDash(req.getVehicleSource()) + " · khi tạo chuyến"
+            );
+            return v;
         }
         return null;
     }
