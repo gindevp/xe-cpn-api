@@ -19,13 +19,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-/** Mã đơn: {VP}{ddMM}{XXXX} — XXXX 4 ký tự A-Z0-9 (không 0/O/1/I/L), ít trùng đuôi. */
+/** Mã đơn: {VP}{ddMM}{XXXX} — XXXX 4 ký tự A-Za-z0-9. */
 @ExtendWith(MockitoExtension.class)
 class OrderCodeGeneratorTest {
 
     private static final String YB = "YB1";
     private static final String ND = "ND";
-    private static final String SAFE = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    private static final String SAFE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
     @Mock
     private ShipmentOrderRepository shipmentOrderRepository;

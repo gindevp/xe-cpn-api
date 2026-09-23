@@ -22,10 +22,10 @@ public class OrderCodeGenerator {
     private static final int DAILY_SOFT_LIMIT = 1000;
     private static final int SUFFIX_LEN = 4;
     /**
-     * Alphabet 32 ký tự — bỏ 0/O/1/I/L để đọc/nói điện thoại ít nhầm.
-     * 32^4 ≈ 1.05M hậu tố; kết hợp check trùng 4 ký tự cuối toàn DB.
+     * Chữ hoa + thường + số (62 ký tự) → 62^4 ≈ 14.7M hậu tố.
+     * Trùng đuôi vẫn check ignore-case để tìm 4 ký tự cuối ít đụng (AB2c ≡ ab2c).
      */
-    private static final char[] SUFFIX_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ".toCharArray();
+    private static final char[] SUFFIX_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".toCharArray();
     private static final int MAX_PROBES = 80;
 
     /** Mã đơn của VP/ngày đã vượt {@value #DAILY_SOFT_LIMIT} — FE bắt key này để hỏi xác nhận. */
@@ -57,8 +57,8 @@ public class OrderCodeGenerator {
     /**
      * Format: {@code {office}{ddMM}{XXXX}} e.g. {@code YB2309K7M2}
      * <p>
-     * XXXX = 4 ký tự chữ+số (không 0/O/1/I/L), random; ưu tiên không trùng 4 ký tự cuối với mọi mã đã có
-     * để tìm đơn bằng đuôi 4 ký tự ít đụng. Soft limit 1000 đơn/VP/ngày vẫn giữ (confirmOverflow).
+     * XXXX = 4 ký tự chữ hoa/thường + số, random; không trùng 4 ký tự cuối (ignore-case)
+     * với mọi mã đã có để tìm đơn bằng đuôi ít đụng. Soft limit 1000 đơn/VP/ngày vẫn giữ.
      */
     public String nextOrderCode(String officeCode, boolean confirmOverflow) {
         String office = normalizeOffice(officeCode);
