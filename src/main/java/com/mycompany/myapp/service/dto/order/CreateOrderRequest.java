@@ -95,7 +95,7 @@ public class CreateOrderRequest {
     private String routeLabel;
     private String itineraryLabel;
 
-    /** Nhân viên đã xác nhận VP vượt 1000 đơn/ngày — cho phép mã có STT 4 chữ số. */
+    /** Nhân viên đã xác nhận VP vượt 1000 đơn/ngày — cho phép tiếp tục cấp mã. */
     private Boolean confirmDailyOverflow = false;
 
     public Boolean getConfirmDailyOverflow() {

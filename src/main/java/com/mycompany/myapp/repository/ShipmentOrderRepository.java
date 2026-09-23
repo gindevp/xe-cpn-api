@@ -70,5 +70,8 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
 
     boolean existsByOrderCode(String orderCode);
 
+    /** Trùng đuôi mã (để 4 ký tự cuối tìm đơn ít đụng). */
+    boolean existsByOrderCodeEndingWithIgnoreCase(String suffix);
+
     List<ShipmentOrder> findByCurrentTrip_Id(Long tripId);
 }

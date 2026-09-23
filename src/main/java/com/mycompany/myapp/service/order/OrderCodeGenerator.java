@@ -5,7 +5,6 @@ import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.stereotype.Component;
 
@@ -15,14 +14,19 @@ import org.springframework.stereotype.Component;
 @Component
 public class OrderCodeGenerator {
 
-    private static final DateTimeFormatter DDMMYY = DateTimeFormatter.ofPattern("ddMMyy");
-    /** Số thứ tự reset theo ngày làm việc VN, không theo timezone của máy chủ (Railway chạy UTC). */
+    /** Ngày trong mã: ddMM (không năm) — dễ đọc, tìm theo ngày trong tháng. */
+    private static final DateTimeFormatter DDMM = DateTimeFormatter.ofPattern("ddMM");
+    /** Số thứ tự / quota reset theo ngày làm việc VN, không theo timezone máy chủ. */
     private static final ZoneId VN_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
-    /** 000..999 = 1000 đơn/VP/ngày; quá mức này phải có xác nhận của nhân viên. */
+    /** Soft limit đơn/VP/ngày — quá mức cần xác nhận nhân viên. */
     private static final int DAILY_SOFT_LIMIT = 1000;
-    private static final int SEQ_DIGITS = 3;
-    /** Chặn vòng lặp vô hạn nếu unique constraint và dữ liệu đọc được lệch nhau. */
-    private static final int MAX_PROBES = 2000;
+    private static final int SUFFIX_LEN = 4;
+    /**
+     * Alphabet 32 ký tự — bỏ 0/O/1/I/L để đọc/nói điện thoại ít nhầm.
+     * 32^4 ≈ 1.05M hậu tố; kết hợp check trùng 4 ký tự cuối toàn DB.
+     */
+    private static final char[] SUFFIX_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ".toCharArray();
+    private static final int MAX_PROBES = 80;
 
     /** Mã đơn của VP/ngày đã vượt {@value #DAILY_SOFT_LIMIT} — FE bắt key này để hỏi xác nhận. */
     public static final String OVERFLOW_ERROR_KEY = "orderDailySequenceOverflow";
@@ -51,54 +55,46 @@ public class OrderCodeGenerator {
     }
 
     /**
-     * Format: {@code {office}{DDMMYY}{STT 3 chữ số}} e.g. YB1070926000
+     * Format: {@code {office}{ddMM}{XXXX}} e.g. {@code YB2309K7M2}
      * <p>
-     * Số thứ tự đếm riêng từng VP, bắt đầu 000 mỗi ngày. Từ đơn thứ 1001 (STT 1000) mã dài thành 4 chữ số
-     * và chỉ sinh được khi {@code confirmOverflow} — nhân viên phải xác nhận ở FE.
-     * Mã cũ dạng random 5 ký tự cùng ngày không tham gia đếm (hậu tố không phải số) và không trùng được vì khác độ dài.
+     * XXXX = 4 ký tự chữ+số (không 0/O/1/I/L), random; ưu tiên không trùng 4 ký tự cuối với mọi mã đã có
+     * để tìm đơn bằng đuôi 4 ký tự ít đụng. Soft limit 1000 đơn/VP/ngày vẫn giữ (confirmOverflow).
      */
     public String nextOrderCode(String officeCode, boolean confirmOverflow) {
         String office = normalizeOffice(officeCode);
-        String prefix = office + LocalDate.now(VN_ZONE).format(DDMMYY);
-        int next = nextSequence(prefix);
+        String prefix = office + LocalDate.now(VN_ZONE).format(DDMM);
+        int usedToday = shipmentOrderRepository.findOrderCodesByPrefix(prefix).size();
 
-        if (next >= DAILY_SOFT_LIMIT && !confirmOverflow) {
+        if (usedToday >= DAILY_SOFT_LIMIT && !confirmOverflow) {
             throw new BadRequestAlertException(
-                "Office " + office + " reached " + next + " orders today",
+                "Office " + office + " reached " + usedToday + " orders today",
                 "shipmentOrder",
                 OVERFLOW_ERROR_KEY
             );
         }
 
-        for (int seq = next; seq < next + MAX_PROBES; seq++) {
-            String code = prefix + formatSeq(seq);
-            if (!shipmentOrderRepository.existsByOrderCode(code)) {
-                return code;
+        for (int i = 0; i < MAX_PROBES; i++) {
+            String suffix = randomSuffix();
+            String code = prefix + suffix;
+            if (shipmentOrderRepository.existsByOrderCode(code)) {
+                continue;
             }
+            // Tránh trùng đuôi 4 ký tự với đơn khác (kể cả mã cũ có năm) — tìm kiếm tail chính xác hơn.
+            if (shipmentOrderRepository.existsByOrderCodeEndingWithIgnoreCase(suffix)) {
+                continue;
+            }
+            return code;
         }
         throw new BadRequestAlertException("Cannot allocate order code for " + prefix, "shipmentOrder", "ordercodeexhausted");
     }
 
-    /** Số thứ tự đã dùng lớn nhất trong ngày của VP, + 1. Ngày mới / VP mới thì bắt đầu từ 0. */
-    private int nextSequence(String prefix) {
-        List<String> codes = shipmentOrderRepository.findOrderCodesByPrefix(prefix);
-        int max = -1;
-        for (String code : codes) {
-            if (code == null || code.length() <= prefix.length()) {
-                continue;
-            }
-            String suffix = code.substring(prefix.length());
-            if (suffix.length() > 9 || !suffix.chars().allMatch(Character::isDigit)) {
-                continue;
-            }
-            max = Math.max(max, Integer.parseInt(suffix));
+    private static String randomSuffix() {
+        ThreadLocalRandom rnd = ThreadLocalRandom.current();
+        char[] buf = new char[SUFFIX_LEN];
+        for (int i = 0; i < SUFFIX_LEN; i++) {
+            buf[i] = SUFFIX_CHARS[rnd.nextInt(SUFFIX_CHARS.length)];
         }
-        return max + 1;
-    }
-
-    /** 000..999 rồi tự nới thành 1000, 1001… khi vượt ngưỡng. */
-    private static String formatSeq(int seq) {
-        return String.format("%0" + SEQ_DIGITS + "d", seq);
+        return new String(buf);
     }
 
     /** Bỏ tiền tố VP / VP_ / VP- để mã ngắn (TDN thay vì VP_TDN). */
