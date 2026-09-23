@@ -33,6 +33,12 @@ public class IntegrationConfigDTO implements Serializable {
     @Size(max = 255)
     private String distanceApiToken;
 
+    @Size(max = 16)
+    private String mapProvider;
+
+    @Size(max = 255)
+    private String goongMapTilesKey;
+
     @Size(max = 255)
     private String telegramToken;
 
@@ -111,6 +117,22 @@ public class IntegrationConfigDTO implements Serializable {
         this.distanceApiToken = distanceApiToken;
     }
 
+    public String getMapProvider() {
+        return mapProvider;
+    }
+
+    public void setMapProvider(String mapProvider) {
+        this.mapProvider = mapProvider;
+    }
+
+    public String getGoongMapTilesKey() {
+        return goongMapTilesKey;
+    }
+
+    public void setGoongMapTilesKey(String goongMapTilesKey) {
+        this.goongMapTilesKey = goongMapTilesKey;
+    }
+
     public String getTelegramToken() {
         return telegramToken;
     }
@@ -184,6 +206,8 @@ public class IntegrationConfigDTO implements Serializable {
             ", grabToken='" + getGrabToken() + "'" +
             ", xanhsmToken='" + getXanhsmToken() + "'" +
             ", distanceApiToken='" + getDistanceApiToken() + "'" +
+            ", mapProvider='" + getMapProvider() + "'" +
+            ", goongMapTilesKey='" + getGoongMapTilesKey() + "'" +
             ", telegramToken='" + getTelegramToken() + "'" +
             ", telegramChatId='" + getTelegramChatId() + "'" +
             ", webhookUrl='" + getWebhookUrl() + "'" +

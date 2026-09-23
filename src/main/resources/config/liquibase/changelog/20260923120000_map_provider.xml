@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260923120000-1" author="cpn">
+        <comment>
+            Bản đồ: chọn provider OSM | GOONG;
+            goong_map_tiles_key = Map tiles key (goong-js);
+            distance_api_token giữ REST Places key.
+        </comment>
+        <addColumn tableName="integration_config">
+            <column name="map_provider" type="varchar(16)" defaultValue="OSM">
+                <constraints nullable="false"/>
+            </column>
+            <column name="goong_map_tiles_key" type="varchar(255)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

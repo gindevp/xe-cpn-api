@@ -88,12 +88,26 @@ public class ConfigFacadeService {
         // Không nhận ahamoveToken từ client — token do BE tự quản lý.
         if (incoming.getGrabToken() != null) current.setGrabToken(incoming.getGrabToken());
         if (incoming.getXanhsmToken() != null) current.setXanhsmToken(incoming.getXanhsmToken());
-        if (incoming.getDistanceApiToken() != null) current.setDistanceApiToken(incoming.getDistanceApiToken());
+        if (notBlank(incoming.getDistanceApiToken())) {
+            current.setDistanceApiToken(incoming.getDistanceApiToken().trim());
+        }
+        if (incoming.getMapProvider() != null) {
+            String p = incoming.getMapProvider().trim().toUpperCase();
+            if ("GOONG".equals(p) || "OSM".equals(p)) {
+                current.setMapProvider(p);
+            }
+        }
+        if (notBlank(incoming.getGoongMapTilesKey())) {
+            current.setGoongMapTilesKey(incoming.getGoongMapTilesKey().trim());
+        }
         if (incoming.getTelegramToken() != null) current.setTelegramToken(incoming.getTelegramToken());
         if (incoming.getTelegramChatId() != null) current.setTelegramChatId(incoming.getTelegramChatId());
         if (incoming.getWebhookUrl() != null) current.setWebhookUrl(incoming.getWebhookUrl());
         if (incoming.getWebhookSecret() != null) current.setWebhookSecret(incoming.getWebhookSecret());
 
+        if (current.getMapProvider() == null || current.getMapProvider().isBlank()) {
+            current.setMapProvider("OSM");
+        }
         if (ahamoveCredsChanged) {
             current.setAhamoveToken(null);
             current.setAhamoveTokenFetchedAt(null);

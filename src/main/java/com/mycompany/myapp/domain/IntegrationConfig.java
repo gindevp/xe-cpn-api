@@ -51,6 +51,16 @@ public class IntegrationConfig implements Serializable {
     @Column(name = "distance_api_token", length = 255)
     private String distanceApiToken;
 
+    /** OSM | GOONG — bản đồ pin trên FE. */
+    @Size(max = 16)
+    @Column(name = "map_provider", length = 16, nullable = false)
+    private String mapProvider = "OSM";
+
+    /** Goong Map tiles key (goong-js) — khác REST Places key. */
+    @Size(max = 255)
+    @Column(name = "goong_map_tiles_key", length = 255)
+    private String goongMapTilesKey;
+
     @Size(max = 255)
     @Column(name = "telegram_token", length = 255)
     private String telegramToken;
@@ -177,6 +187,32 @@ public class IntegrationConfig implements Serializable {
         this.distanceApiToken = distanceApiToken;
     }
 
+    public String getMapProvider() {
+        return this.mapProvider;
+    }
+
+    public IntegrationConfig mapProvider(String mapProvider) {
+        this.setMapProvider(mapProvider);
+        return this;
+    }
+
+    public void setMapProvider(String mapProvider) {
+        this.mapProvider = mapProvider != null && !mapProvider.isBlank() ? mapProvider.trim().toUpperCase() : "OSM";
+    }
+
+    public String getGoongMapTilesKey() {
+        return this.goongMapTilesKey;
+    }
+
+    public IntegrationConfig goongMapTilesKey(String goongMapTilesKey) {
+        this.setGoongMapTilesKey(goongMapTilesKey);
+        return this;
+    }
+
+    public void setGoongMapTilesKey(String goongMapTilesKey) {
+        this.goongMapTilesKey = goongMapTilesKey;
+    }
+
     public String getTelegramToken() {
         return this.telegramToken;
     }
@@ -272,6 +308,8 @@ public class IntegrationConfig implements Serializable {
             ", grabToken='" + getGrabToken() + "'" +
             ", xanhsmToken='" + getXanhsmToken() + "'" +
             ", distanceApiToken='" + getDistanceApiToken() + "'" +
+            ", mapProvider='" + getMapProvider() + "'" +
+            ", goongMapTilesKey='" + (getGoongMapTilesKey() != null ? "***" : null) + "'" +
             ", telegramToken='" + getTelegramToken() + "'" +
             ", telegramChatId='" + getTelegramChatId() + "'" +
             ", webhookUrl='" + getWebhookUrl() + "'" +
