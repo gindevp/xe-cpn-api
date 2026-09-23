@@ -2,6 +2,7 @@ package com.mycompany.myapp.service.order;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.OrderIssue;
 import com.mycompany.myapp.domain.OrderPodPhoto;
 import com.mycompany.myapp.domain.OrderReturnRequest;
@@ -13,6 +14,7 @@ import com.mycompany.myapp.domain.enumeration.IssueType;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.ReturnStage;
 import com.mycompany.myapp.domain.enumeration.RoleCode;
+import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.OrderIssueRepository;
 import com.mycompany.myapp.repository.OrderPodPhotoRepository;
 import com.mycompany.myapp.repository.OrderReturnRequestRepository;
@@ -46,6 +48,7 @@ public class ExceptionFacadeService {
     private final OrderIssueRepository orderIssueRepository;
     private final OrderReturnRequestRepository orderReturnRequestRepository;
     private final OrderPodPhotoRepository podPhotoRepository;
+    private final OrderEventRepository orderEventRepository;
     private final OrderFacadeService orderFacadeService;
     private final DayClosureGuard dayClosureGuard;
     private final StaffAccessService staffAccessService;
@@ -56,6 +59,7 @@ public class ExceptionFacadeService {
         OrderIssueRepository orderIssueRepository,
         OrderReturnRequestRepository orderReturnRequestRepository,
         OrderPodPhotoRepository podPhotoRepository,
+        OrderEventRepository orderEventRepository,
         OrderFacadeService orderFacadeService,
         DayClosureGuard dayClosureGuard,
         StaffAccessService staffAccessService,
@@ -65,6 +69,7 @@ public class ExceptionFacadeService {
         this.orderIssueRepository = orderIssueRepository;
         this.orderReturnRequestRepository = orderReturnRequestRepository;
         this.podPhotoRepository = podPhotoRepository;
+        this.orderEventRepository = orderEventRepository;
         this.orderFacadeService = orderFacadeService;
         this.dayClosureGuard = dayClosureGuard;
         this.staffAccessService = staffAccessService;
@@ -160,6 +165,9 @@ public class ExceptionFacadeService {
 
         OrderReturnRequest req = order.getReturnRequest();
         PriorSnapshot prior = decodePriorSnapshot(req != null ? req.getDecisionNote() : null);
+        if (prior.status() == null) {
+            prior = inferPriorFromEvents(order);
+        }
         if (prior.status() == null) {
             prior = fallbackPriorFromForward(order.getForwardStage());
         }
@@ -263,6 +271,50 @@ public class ExceptionFacadeService {
             forward = forwardFromStatus(status);
         }
         return new PriorSnapshot(status, forward, cod, fee);
+    }
+
+    private PriorSnapshot inferPriorFromEvents(ShipmentOrder order) {
+        if (order.getId() == null) {
+            return PriorSnapshot.empty();
+        }
+        List<OrderEvent> events = orderEventRepository.findByOrder_IdOrderByEventAtAsc(order.getId());
+        for (int i = events.size() - 1; i >= 0; i--) {
+            OrderEvent ev = events.get(i);
+            String action = ev.getAction() == null ? "" : ev.getAction().trim().toUpperCase();
+            if (action.isBlank() || action.equals("RETURN_START") || action.equals("RETURN_CANCEL") || action.startsWith("RETURN_")) {
+                continue;
+            }
+            if (action.equals("PATCH") || action.equals("PRINT") || action.equals("CREATE") || action.equals("SCAN_REMOVE")) {
+                continue;
+            }
+            // Map pipeline actions (FE/BE log) → status + forward trước khi hoàn.
+            PriorSnapshot hit =
+                switch (action) {
+                    case "FAILED", "FAIL" -> new PriorSnapshot(OrderStatus.FAILED_DELIVERY, ForwardStage.FAILED, null, null);
+                    case "REDELIVER_WAIT" -> new PriorSnapshot(OrderStatus.FAILED_DELIVERY, ForwardStage.REDELIVER_WAIT, null, null);
+                    case "DELIVERING", "ASSIGN_SHIPPER" -> new PriorSnapshot(
+                        OrderStatus.OUT_FOR_DELIVERY,
+                        ForwardStage.DELIVERING,
+                        null,
+                        null
+                    );
+                    case "SCAN_IN", "DEST_WH_IN", "HANDOVER" -> new PriorSnapshot(OrderStatus.AT_DEST, ForwardStage.DEST_WH_IN, null, null);
+                    case "SCAN_OUT", "TRANSFERRING" -> new PriorSnapshot(OrderStatus.IN_TRANSIT, ForwardStage.TRANSFERRING, null, null);
+                    case "ASSIGN_TRIP", "TRANSFER_PENDING" -> new PriorSnapshot(
+                        OrderStatus.WAITING,
+                        ForwardStage.TRANSFER_PENDING,
+                        null,
+                        null
+                    );
+                    case "WH_IN", "SCAN_WH_IN" -> new PriorSnapshot(OrderStatus.CONFIRMED, ForwardStage.WH_IN, null, null);
+                    case "POD", "DELIVERED" -> new PriorSnapshot(OrderStatus.DELIVERED, null, null, null);
+                    default -> PriorSnapshot.empty();
+                };
+            if (hit.status() != null) {
+                return hit;
+            }
+        }
+        return PriorSnapshot.empty();
     }
 
     private static PriorSnapshot fallbackPriorFromForward(ForwardStage currentReturnForward) {
