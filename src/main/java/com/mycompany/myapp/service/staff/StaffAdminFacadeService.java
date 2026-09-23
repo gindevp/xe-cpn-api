@@ -132,7 +132,11 @@ public class StaffAdminFacadeService {
         profile.setScopeAllOffices(allOffices);
         // StaffProfile.office is @NotNull — ALL scope still needs a home office (any master office).
         Office office;
-        if (!allOffices && req.officeCode() != null && !req.officeCode().isBlank()) {
+        if (!allOffices && req.officeId() != null) {
+            office = officeRepository
+                .findById(req.officeId())
+                .orElseThrow(() -> new BadRequestAlertException("Office not found", ENTITY, "officeNotFound"));
+        } else if (!allOffices && req.officeCode() != null && !req.officeCode().isBlank()) {
             office = officeRepository
                 .findOneByCode(req.officeCode().trim().toUpperCase())
                 .orElseThrow(() -> new BadRequestAlertException("Office not found", ENTITY, "officeNotFound"));
@@ -200,16 +204,19 @@ public class StaffAdminFacadeService {
             Boolean.TRUE.equals(p.getScopeAllOffices()) ? "ALL" : (p.getOffice() != null ? p.getOffice().getCode() : null),
             activated,
             null,
-            p.getRoleGroup() != null ? p.getRoleGroup().getCode() : (p.getRoleCode() != null ? p.getRoleCode().name() : null)
+            p.getRoleGroup() != null ? p.getRoleGroup().getCode() : (p.getRoleCode() != null ? p.getRoleCode().name() : null),
+            Boolean.TRUE.equals(p.getScopeAllOffices()) || p.getOffice() == null ? null : p.getOffice().getId()
         );
     }
 
+    /** {@code officeId} ưu tiên hơn {@code officeCode}: nhiều VP có thể trùng mã (khác địa chỉ). */
     public record StaffUserDTO(
         String username,
         String roleCode,
         String officeCode,
         Boolean active,
         String password,
-        String roleGroupCode
+        String roleGroupCode,
+        Long officeId
     ) {}
 }
