@@ -279,6 +279,15 @@ public class OrderFacadeResource {
         return exceptionFacadeService.startReturn(orderCode, reason);
     }
 
+    @PostMapping("/{orderCode}/return-cancel")
+    public OrderDetailDTO returnCancel(@PathVariable String orderCode, @RequestBody(required = false) Map<String, String> body) {
+        String note = body != null ? body.get("reason") : null;
+        if (note == null && body != null) {
+            note = body.get("note");
+        }
+        return exceptionFacadeService.cancelReturn(orderCode, note);
+    }
+
     @PostMapping("/{orderCode}/return-stage")
     public OrderDetailDTO returnStage(@PathVariable String orderCode, @RequestBody(required = false) Map<String, String> body) {
         ReturnStage stage = parseEnum(ReturnStage.class, body != null ? body.get("returnStage") : null, "returnStage");

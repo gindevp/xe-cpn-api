@@ -110,6 +110,7 @@ public class ExceptionFacadeService {
         req.setStatus(ApprovalStatus.APPROVED);
         req.setDecidedByUsername(actor());
         req.setDecidedAt(Instant.now());
+        req.setDecisionNote(encodePriorSnapshot(order));
         req.setOrder(order);
         req = orderReturnRequestRepository.save(req);
         order.setReturnRequest(req);
@@ -138,6 +139,187 @@ public class ExceptionFacadeService {
             }
         }
         return orderFacadeService.getByCode(order.getOrderCode());
+    }
+
+    /**
+     * Huỷ hoàn (chỉ Admin): đơn đang RETURNING tại nhập kho gửi (WH_IN) → trả về status/forward trước khi bấm hoàn.
+     */
+    public OrderDetailDTO cancelReturn(String orderCode, String note) {
+        ShipmentOrder order = requireOrder(orderCode);
+        dayClosureGuard.assertOrderMutable(order);
+
+        if (!canCancelReturnRole()) {
+            throw new BadRequestAlertException("Only Admin can cancel return", ENTITY, "returnCancelForbidden");
+        }
+        if (order.getStatus() != OrderStatus.RETURNING) {
+            throw new BadRequestAlertException("Order is not in return flow", ENTITY, "returnCancelNotActive");
+        }
+        if (order.getForwardStage() != ForwardStage.WH_IN) {
+            throw new BadRequestAlertException("Huỷ hoàn chỉ khi đơn còn ở nhập kho gửi (chiều hoàn)", ENTITY, "returnCancelWrongStage");
+        }
+
+        OrderReturnRequest req = order.getReturnRequest();
+        PriorSnapshot prior = decodePriorSnapshot(req != null ? req.getDecisionNote() : null);
+        if (prior.status() == null) {
+            prior = fallbackPriorFromForward(order.getForwardStage());
+        }
+
+        if (req != null) {
+            req.setStatus(ApprovalStatus.REJECTED);
+            req.setDecidedByUsername(actor());
+            req.setDecidedAt(Instant.now());
+            String cancelNote = note == null || note.isBlank() ? "Huỷ hoàn" : note.trim();
+            String existing = req.getDecisionNote();
+            String merged = (existing == null || existing.isBlank() ? "" : existing + " | ") + "CANCEL:" + cancelNote;
+            req.setDecisionNote(merged.length() <= 255 ? merged : merged.substring(0, 255));
+            orderReturnRequestRepository.save(req);
+        }
+
+        order.setReturnStage(null);
+        order.setReturnRequest(null);
+        if (prior.codAmount() != null) {
+            order.setCodAmount(prior.codAmount());
+        }
+        if (prior.codFee() != null) {
+            order.setCodFeeAmount(prior.codFee());
+        }
+        order.setForwardStage(prior.forward());
+        shipmentOrderRepository.save(order);
+
+        OrderTransitionRequest tr = new OrderTransitionRequest();
+        tr.setToStatus(prior.status());
+        tr.setAction("RETURN_CANCEL");
+        tr.setDetail(
+            note == null || note.isBlank()
+                ? "Huỷ hoàn → " + prior.status() + " / " + prior.forward()
+                : ("Huỷ hoàn · " + note.trim() + " → " + prior.status() + " / " + prior.forward())
+        );
+        orderFacadeService.transition(order.getOrderCode(), tr);
+
+        ShipmentOrder reloaded = requireOrder(orderCode);
+        if (reloaded.getForwardStage() != prior.forward()) {
+            reloaded.setForwardStage(prior.forward());
+            shipmentOrderRepository.save(reloaded);
+        }
+        if (reloaded.getReturnStage() != null || reloaded.getReturnRequest() != null) {
+            reloaded.setReturnStage(null);
+            reloaded.setReturnRequest(null);
+            shipmentOrderRepository.save(reloaded);
+        }
+        return orderFacadeService.getByCode(order.getOrderCode());
+    }
+
+    private boolean canCancelReturnRole() {
+        if (permissionService.isSystemAdmin()) {
+            return true;
+        }
+        return staffAccessService.current().map(p -> p.getRoleCode() == RoleCode.AD).orElse(false);
+    }
+
+    private static String encodePriorSnapshot(ShipmentOrder order) {
+        String status = order.getStatus() != null ? order.getStatus().name() : "";
+        String forward = order.getForwardStage() != null ? order.getForwardStage().name() : "";
+        String cod = order.getCodAmount() != null ? order.getCodAmount().toPlainString() : "";
+        String fee = order.getCodFeeAmount() != null ? order.getCodFeeAmount().toPlainString() : "";
+        String raw = "priorStatus=" + status + ";priorForward=" + forward + ";priorCod=" + cod + ";priorCodFee=" + fee;
+        return raw.length() <= 255 ? raw : raw.substring(0, 255);
+    }
+
+    private static PriorSnapshot decodePriorSnapshot(String note) {
+        if (note == null || note.isBlank()) {
+            return PriorSnapshot.empty();
+        }
+        OrderStatus status = null;
+        ForwardStage forward = null;
+        java.math.BigDecimal cod = null;
+        java.math.BigDecimal fee = null;
+        for (String part : note.split("[;|]")) {
+            String p = part.trim();
+            if (p.startsWith("priorStatus=")) {
+                status = parseOrderStatus(p.substring("priorStatus=".length()).trim());
+            } else if (p.startsWith("priorForward=")) {
+                forward = parseForward(p.substring("priorForward=".length()).trim());
+            } else if (p.startsWith("priorCod=") && p.length() > "priorCod=".length()) {
+                try {
+                    cod = new java.math.BigDecimal(p.substring("priorCod=".length()).trim());
+                } catch (Exception ignored) {
+                    // keep null
+                }
+            } else if (p.startsWith("priorCodFee=") && p.length() > "priorCodFee=".length()) {
+                try {
+                    fee = new java.math.BigDecimal(p.substring("priorCodFee=".length()).trim());
+                } catch (Exception ignored) {
+                    // keep null
+                }
+            }
+        }
+        if (status == null && forward == null) {
+            return PriorSnapshot.empty();
+        }
+        if (status == null) {
+            status = statusFromForward(forward);
+        }
+        if (forward == null) {
+            forward = forwardFromStatus(status);
+        }
+        return new PriorSnapshot(status, forward, cod, fee);
+    }
+
+    private static PriorSnapshot fallbackPriorFromForward(ForwardStage currentReturnForward) {
+        // Đơn hoàn đang ở WH_IN (chiều ngược): mặc định coi như trước đó ở nhập kho giao.
+        if (currentReturnForward == ForwardStage.WH_IN) {
+            return new PriorSnapshot(OrderStatus.AT_DEST, ForwardStage.DEST_WH_IN, null, null);
+        }
+        return new PriorSnapshot(OrderStatus.AT_DEST, ForwardStage.DEST_WH_IN, null, null);
+    }
+
+    private static OrderStatus statusFromForward(ForwardStage f) {
+        if (f == null) return OrderStatus.AT_DEST;
+        return switch (f) {
+            case WH_IN, PICKED -> OrderStatus.CONFIRMED;
+            case TRANSFER_PENDING -> OrderStatus.WAITING;
+            case TRANSFERRING -> OrderStatus.IN_TRANSIT;
+            case DEST_WH_IN -> OrderStatus.AT_DEST;
+            case DELIVERING -> OrderStatus.OUT_FOR_DELIVERY;
+            case FAILED, REDELIVER_WAIT -> OrderStatus.FAILED_DELIVERY;
+        };
+    }
+
+    private static ForwardStage forwardFromStatus(OrderStatus s) {
+        if (s == null) return ForwardStage.DEST_WH_IN;
+        return switch (s) {
+            case CONFIRMED -> ForwardStage.WH_IN;
+            case WAITING -> ForwardStage.TRANSFER_PENDING;
+            case IN_TRANSIT -> ForwardStage.TRANSFERRING;
+            case AT_DEST -> ForwardStage.DEST_WH_IN;
+            case OUT_FOR_DELIVERY -> ForwardStage.DELIVERING;
+            case FAILED_DELIVERY -> ForwardStage.FAILED;
+            default -> ForwardStage.DEST_WH_IN;
+        };
+    }
+
+    private static OrderStatus parseOrderStatus(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return OrderStatus.valueOf(raw.trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static ForwardStage parseForward(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return ForwardStage.valueOf(raw.trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private record PriorSnapshot(OrderStatus status, ForwardStage forward, java.math.BigDecimal codAmount, java.math.BigDecimal codFee) {
+        static PriorSnapshot empty() {
+            return new PriorSnapshot(null, null, null, null);
+        }
     }
 
     private boolean canStartReturnRole() {

@@ -26,7 +26,20 @@ public final class OrderStatusTransitions {
         ALLOWED.put(OrderStatus.FAILED_DELIVERY, Set.of(OrderStatus.OUT_FOR_DELIVERY, OrderStatus.AT_DEST, OrderStatus.RETURNING));
         ALLOWED.put(OrderStatus.DELIVERED, Set.of(OrderStatus.RETURNING));
         ALLOWED.put(OrderStatus.CANCELLED, Set.of());
-        ALLOWED.put(OrderStatus.RETURNING, Set.of(OrderStatus.RETURNED));
+        ALLOWED.put(
+            OrderStatus.RETURNING,
+            Set.of(
+                OrderStatus.RETURNED,
+                // Huỷ hoàn (admin): về đúng trạng thái trước khi bấm hoàn
+                OrderStatus.CONFIRMED,
+                OrderStatus.WAITING,
+                OrderStatus.IN_TRANSIT,
+                OrderStatus.AT_DEST,
+                OrderStatus.OUT_FOR_DELIVERY,
+                OrderStatus.FAILED_DELIVERY,
+                OrderStatus.DELIVERED
+            )
+        );
         // Re-return after complete (history cycle; FE has no button yet — API-only)
         ALLOWED.put(OrderStatus.RETURNED, Set.of(OrderStatus.RETURNING));
     }
