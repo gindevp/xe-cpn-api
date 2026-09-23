@@ -25,10 +25,19 @@ class FinanceFacadeServiceReceiptCandidateTest {
     }
 
     @Test
-    void guiTra_beforeWarehouse_notCandidate() {
+    void guiTra_beforeWarehouse_unpaid_notCandidate() {
         ShipmentOrder o = base(PaymentTerm.GUI_TRA, OrderStatus.CONFIRMED, null);
         assertThat(FinanceFacadeService.isSenderPayEarlyCandidate(o)).isFalse();
         assertThat(FinanceFacadeService.isReceiptCandidate(o)).isFalse();
+    }
+
+    @Test
+    void guiTra_prepaidTruoc_candidateEvenBeforeWarehouse() {
+        ShipmentOrder o = base(PaymentTerm.GUI_TRA, OrderStatus.CONFIRMED, null);
+        o.setPaidAmount(new BigDecimal("30000"));
+        BigDecimal truoc = new BigDecimal("30000");
+        assertThat(FinanceFacadeService.receiptSettleAmount(o, truoc)).isEqualByComparingTo("30000");
+        assertThat(FinanceFacadeService.isReceiptCandidate(o, truoc)).isTrue();
     }
 
     @Test
@@ -38,7 +47,7 @@ class FinanceFacadeServiceReceiptCandidateTest {
     }
 
     @Test
-    void zeroCollectable_notCandidate() {
+    void zeroCollectable_andNoTruoc_notCandidate() {
         ShipmentOrder o = base(PaymentTerm.GUI_TRA, OrderStatus.CONFIRMED, ForwardStage.WH_IN);
         o.setFareAmount(new BigDecimal("10000"));
         o.setPaidAmount(new BigDecimal("10000"));

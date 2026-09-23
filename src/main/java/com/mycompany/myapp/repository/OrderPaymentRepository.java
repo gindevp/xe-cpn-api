@@ -1,6 +1,8 @@
 package com.mycompany.myapp.repository;
 
 import com.mycompany.myapp.domain.OrderPayment;
+import com.mycompany.myapp.domain.enumeration.PaymentKind;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -42,4 +44,11 @@ public interface OrderPaymentRepository extends JpaRepository<OrderPayment, Long
     long countByPaymentAtGreaterThanEqualAndPaymentAtLessThan(Instant from, Instant to);
 
     Optional<OrderPayment> findFirstByOrder_IdOrderByPaymentAtDesc(Long orderId);
+
+    @Query(
+        "select coalesce(sum(orderPayment.amount), 0) from OrderPayment orderPayment where orderPayment.order.id = :orderId and orderPayment.paymentKind = com.mycompany.myapp.domain.enumeration.PaymentKind.TRUOC"
+    )
+    BigDecimal sumTruocByOrderId(@Param("orderId") Long orderId);
+
+    List<OrderPayment> findByOrder_IdAndPaymentKindOrderByPaymentAtDesc(Long orderId, PaymentKind paymentKind);
 }

@@ -92,6 +92,7 @@ class FinanceFacadeServiceReceiptCodTest {
 
         when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("GP-COD-001")).thenReturn(Optional.of(order));
         lenient().when(orderPaymentRepository.save(any(OrderPayment.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(orderPaymentRepository.sumTruocByOrderId(any())).thenReturn(BigDecimal.ZERO);
         lenient().when(shipmentOrderRepository.save(any(ShipmentOrder.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(receiptOrderLineRepository.save(any(ReceiptOrderLine.class))).thenAnswer(inv -> inv.getArgument(0));
         AtomicLong id = new AtomicLong(10);

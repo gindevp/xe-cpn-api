@@ -77,8 +77,9 @@ public class FinanceFacadeService {
     @Transactional(readOnly = true)
     public List<CandidateDTO> candidates(String officeCode, String keyword) {
         // Phiếu thu:
-        // - GUI_TRA: từ khi nhập kho gửi (thu cước tại VP gửi), chủ nợ = NV nhập kho/tạo đơn.
-        // - Còn lại (NHAN_TRA / COD / …): sau DELIVERED, chủ nợ = người POD / xuất kho giao.
+        // - GUI_TRA còn nợ cước: sau nhập kho gửi.
+        // - Đã thu TRUOC (đầu gửi) nhưng chưa lập phiếu: phải nộp tiền mặt (dù paid=fare).
+        // - NHAN_TRA / COD: sau DELIVERED.
         Specification<ShipmentOrder> spec = (root, q, cb) -> {
             var delivered = cb.equal(root.get("status"), OrderStatus.DELIVERED);
             var guiTra = cb.equal(root.get("paymentTerm"), PaymentTerm.GUI_TRA);
@@ -90,7 +91,8 @@ public class FinanceFacadeService {
                 cb.isNotNull(root.get("forwardStage")),
                 root.get("status").in(OrderStatus.IN_TRANSIT, OrderStatus.WAITING, OrderStatus.AT_DEST, OrderStatus.OUT_FOR_DELIVERY)
             );
-            return cb.or(delivered, cb.and(guiTra, notTerminal, pastSenderWh));
+            // GUI_TRA mọi trạng thái còn chạy (kể cả mới tạo đã TRUOC) — lọc settle > 0 ở Java.
+            return cb.or(delivered, cb.and(guiTra, notTerminal));
         };
         if (officeCode != null && !officeCode.isBlank()) {
             String scoped = officeCode.trim().toUpperCase();
@@ -100,7 +102,7 @@ public class FinanceFacadeService {
                 var fromCode = root.get("fromOffice").get("code");
                 var atFrom = cb.equal(fromCode, scoped);
                 var atTo = cb.or(cb.equal(toCode, scoped), cb.and(cb.isNotNull(root.get("finalToOffice")), cb.equal(finalCode, scoped)));
-                // DELIVERED: VP gửi hoặc VP nhận; GUI_TRA sớm: chỉ VP gửi.
+                // DELIVERED: VP gửi hoặc VP nhận; GUI_TRA / TRUOC sớm: chỉ VP gửi.
                 return cb.or(
                     cb.and(cb.equal(root.get("status"), OrderStatus.DELIVERED), cb.or(atFrom, atTo)),
                     cb.and(atFrom, cb.notEqual(root.get("status"), OrderStatus.DELIVERED))
@@ -121,61 +123,95 @@ public class FinanceFacadeService {
             .findAll(spec)
             .stream()
             .filter(o -> o.getId() == null || !receiptOrderLineRepository.existsByOrder_Id(o.getId()))
-            .filter(o -> OrderMoney.receiptCollectable(o).signum() > 0)
-            .filter(FinanceFacadeService::isReceiptCandidate)
-            .limit(300)
             .map(o -> {
-                // dueAmount trên candidate = số NV phải nộp (cước còn + COD), không phải OrderMoney.due thuần.
-                BigDecimal collectable = OrderMoney.receiptCollectable(o);
+                BigDecimal truoc = truocHeld(o);
+                BigDecimal settle = receiptSettleAmount(o, truoc);
+                return new Object[] { o, truoc, settle };
+            })
+            .filter(row -> ((BigDecimal) row[2]).signum() > 0)
+            .filter(row -> isReceiptCandidate((ShipmentOrder) row[0], (BigDecimal) row[1]))
+            .limit(300)
+            .map(row -> {
+                ShipmentOrder o = (ShipmentOrder) row[0];
+                BigDecimal truoc = (BigDecimal) row[1];
+                BigDecimal settle = (BigDecimal) row[2];
                 return new CandidateDTO(
                     o.getOrderCode(),
                     o.getReceiverName(),
                     o.getReceiverPhone(),
                     o.getFareAmount(),
                     o.getPaidAmount(),
-                    collectable,
+                    settle,
                     o.getStatus().name(),
                     o.getFromOffice() != null ? o.getFromOffice().getCode() : null,
-                    resolveReceiptOwner(o)
+                    resolveReceiptOwner(o, truoc)
                 );
             })
             .toList();
     }
 
+    /**
+     * Số NV phải nộp trên phiếu thu = cước/COD còn thiếu + tiền mặt đã thu TRUOC chưa lập phiếu.
+     * (Thu đầu gửi đã ghi paidAmount nên due=0 — vẫn phải lên phiếu để nộp quỹ.)
+     */
+    static BigDecimal receiptSettleAmount(ShipmentOrder order, BigDecimal truocHeld) {
+        return OrderMoney.receiptCollectable(order).add(OrderMoney.nz(truocHeld));
+    }
+
     /** Public for unit tests — điều kiện lên danh sách phiếu thu. */
     static boolean isReceiptCandidate(ShipmentOrder order) {
+        return isReceiptCandidate(order, BigDecimal.ZERO);
+    }
+
+    static boolean isReceiptCandidate(ShipmentOrder order, BigDecimal truocHeld) {
         if (order == null || order.getStatus() == null) {
             return false;
         }
-        if (OrderMoney.receiptCollectable(order).signum() <= 0) {
+        if (receiptSettleAmount(order, truocHeld).signum() <= 0) {
             return false;
         }
         if (order.getStatus() == OrderStatus.DELIVERED) {
             return true;
         }
+        // Đã cầm tiền TRUOC (đầu gửi) → lên phiếu ngay, kể cả chưa nhập kho.
+        if (OrderMoney.nz(truocHeld).signum() > 0) {
+            return isActiveForReceipt(order);
+        }
         return isSenderPayEarlyCandidate(order);
+    }
+
+    static boolean isActiveForReceipt(ShipmentOrder order) {
+        OrderStatus st = order.getStatus();
+        return (
+            st != OrderStatus.DRAFT &&
+            st != OrderStatus.CANCELLED &&
+            st != OrderStatus.RETURNING &&
+            st != OrderStatus.RETURNED &&
+            st != OrderStatus.FAILED_DELIVERY
+        );
     }
 
     static boolean isSenderPayEarlyCandidate(ShipmentOrder order) {
         if (order.getPaymentTerm() != PaymentTerm.GUI_TRA) {
             return false;
         }
-        OrderStatus st = order.getStatus();
-        if (
-            st == OrderStatus.DRAFT ||
-            st == OrderStatus.CANCELLED ||
-            st == OrderStatus.RETURNING ||
-            st == OrderStatus.RETURNED ||
-            st == OrderStatus.FAILED_DELIVERY
-        ) {
+        if (!isActiveForReceipt(order)) {
             return false;
         }
         if (order.getForwardStage() != null) {
             return true;
         }
+        OrderStatus st = order.getStatus();
         return (
             st == OrderStatus.IN_TRANSIT || st == OrderStatus.WAITING || st == OrderStatus.AT_DEST || st == OrderStatus.OUT_FOR_DELIVERY
         );
+    }
+
+    private BigDecimal truocHeld(ShipmentOrder order) {
+        if (order.getId() == null) {
+            return BigDecimal.ZERO;
+        }
+        return OrderMoney.nz(orderPaymentRepository.sumTruocByOrderId(order.getId()));
     }
 
     public ReceiptDTO createReceipt(CreateReceiptRequest req) {
@@ -212,7 +248,8 @@ public class FinanceFacadeService {
             }
             BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
             BigDecimal fareDue = OrderMoney.due(order);
-            BigDecimal collectable = OrderMoney.receiptCollectable(order);
+            BigDecimal truoc = truocHeld(order);
+            BigDecimal collectable = receiptSettleAmount(order, truoc);
             if (amount.compareTo(collectable) > 0) {
                 throw new BadRequestAlertException(
                     "amountCollected exceeds collectable for " +
@@ -221,6 +258,8 @@ public class FinanceFacadeService {
                     collectable +
                     ", fareDue=" +
                     fareDue +
+                    ", truoc=" +
+                    truoc +
                     ", cod=" +
                     OrderMoney.nz(order.getCodAmount()) +
                     ")",
@@ -230,9 +269,10 @@ public class FinanceFacadeService {
             }
             total = total.add(amount);
 
-            // Tách: phần ≤ fareDue → paidAmount (SAU); phần còn lại = COD thu hộ (không tăng paid).
+            // Chỉ ghi thêm payment khi còn fareDue/COD — phần TRUOC đã paid chỉ lập dòng phiếu (nộp quỹ).
             BigDecimal toFare = amount.min(fareDue);
-            BigDecimal toCod = amount.subtract(toFare);
+            BigDecimal afterFare = amount.subtract(toFare);
+            BigDecimal toCod = afterFare.min(OrderMoney.nz(order.getCodAmount()));
             if (toFare.compareTo(BigDecimal.ZERO) > 0) {
                 OrderPayment payment = new OrderPayment();
                 payment.setPaymentAt(now);
@@ -501,9 +541,18 @@ public class FinanceFacadeService {
     }
 
     /**
-     * Chủ nợ phiếu thu: GUI_TRA → NV nhập kho gửi / tạo đơn; còn lại → người POD.
+     * Chủ nợ phiếu thu: ưu tiên người cầm tiền TRUOC; GUI_TRA → NV nhập kho/tạo đơn; còn lại → POD.
      */
-    private String resolveReceiptOwner(ShipmentOrder order) {
+    private String resolveReceiptOwner(ShipmentOrder order, BigDecimal truocHeld) {
+        if (OrderMoney.nz(truocHeld).signum() > 0 && order.getId() != null) {
+            var truocPays = orderPaymentRepository.findByOrder_IdAndPaymentKindOrderByPaymentAtDesc(order.getId(), PaymentKind.TRUOC);
+            for (OrderPayment p : truocPays) {
+                String collector = p.getCollectorUsername();
+                if (collector != null && !collector.isBlank()) {
+                    return collector.trim();
+                }
+            }
+        }
         if (order.getPaymentTerm() == PaymentTerm.GUI_TRA) {
             String senderSide = resolveSenderWhActor(order);
             if (senderSide != null) {
@@ -511,6 +560,11 @@ public class FinanceFacadeService {
             }
         }
         return resolveDeliveryActor(order);
+    }
+
+    /** @deprecated kept for any leftover call sites */
+    private String resolveReceiptOwner(ShipmentOrder order) {
+        return resolveReceiptOwner(order, truocHeld(order));
     }
 
     /** Người nhập kho gửi (WAREHOUSE_RECEIVE) hoặc fallback tạo đơn / lấy hàng. */
