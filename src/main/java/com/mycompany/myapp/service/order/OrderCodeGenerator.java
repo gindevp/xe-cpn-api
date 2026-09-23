@@ -22,10 +22,10 @@ public class OrderCodeGenerator {
     private static final int DAILY_SOFT_LIMIT = 1000;
     private static final int SUFFIX_LEN = 4;
     /**
-     * Chữ hoa + thường + số (62 ký tự) → 62^4 ≈ 14.7M hậu tố.
-     * Trùng đuôi vẫn check ignore-case để tìm 4 ký tự cuối ít đụng (AB2c ≡ ab2c).
+     * Chữ hoa + số (36 ký tự) → 36^4 ≈ 1.68M hậu tố.
+     * Trùng đuôi check ignore-case để tìm 4 ký tự cuối ít đụng.
      */
-    private static final char[] SUFFIX_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".toCharArray();
+    private static final char[] SUFFIX_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".toCharArray();
     private static final int MAX_PROBES = 80;
 
     /** Mã đơn của VP/ngày đã vượt {@value #DAILY_SOFT_LIMIT} — FE bắt key này để hỏi xác nhận. */
