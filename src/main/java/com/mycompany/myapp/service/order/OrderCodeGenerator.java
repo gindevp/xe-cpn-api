@@ -57,7 +57,7 @@ public class OrderCodeGenerator {
     /**
      * Format: {@code {office}{ddMM}{XXXX}} e.g. {@code YB2309K7M2}
      * <p>
-     * XXXX = 4 ký tự chữ hoa/thường + số, random; không trùng 4 ký tự cuối (ignore-case)
+     * XXXX = 4 ký tự chữ hoa + số, random; không trùng 4 ký tự cuối (ignore-case)
      * với mọi mã đã có để tìm đơn bằng đuôi ít đụng. Soft limit 1000 đơn/VP/ngày vẫn giữ.
      */
     public String nextOrderCode(String officeCode, boolean confirmOverflow) {
