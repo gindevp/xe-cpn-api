@@ -279,6 +279,7 @@ public class OrderFacadeResource {
         return exceptionFacadeService.startReturn(orderCode, reason);
     }
 
+    /** Admin: huỷ hoàn tại WH_IN — khôi phục status/forward trước khi bắt đầu hoàn. */
     @PostMapping("/{orderCode}/return-cancel")
     public OrderDetailDTO returnCancel(@PathVariable String orderCode, @RequestBody(required = false) Map<String, String> body) {
         String note = body != null ? body.get("reason") : null;
