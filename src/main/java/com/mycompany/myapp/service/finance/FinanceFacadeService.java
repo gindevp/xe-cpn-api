@@ -11,6 +11,7 @@ import com.mycompany.myapp.domain.enumeration.DayClosureStatus;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentKind;
 import com.mycompany.myapp.domain.enumeration.PaymentMethod;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.DayClosureRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
@@ -75,18 +76,34 @@ public class FinanceFacadeService {
 
     @Transactional(readOnly = true)
     public List<CandidateDTO> candidates(String officeCode, String keyword) {
-        // Phiếu thu: đơn đã giao thành công chưa lập phiếu; người trách nhiệm = người POD (xuất khỏi kho giao).
-        Specification<ShipmentOrder> spec = (root, q, cb) -> cb.equal(root.get("status"), OrderStatus.DELIVERED);
+        // Phiếu thu:
+        // - GUI_TRA: từ khi nhập kho gửi (thu cước tại VP gửi), chủ nợ = NV nhập kho/tạo đơn.
+        // - Còn lại (NHAN_TRA / COD / …): sau DELIVERED, chủ nợ = người POD / xuất kho giao.
+        Specification<ShipmentOrder> spec = (root, q, cb) -> {
+            var delivered = cb.equal(root.get("status"), OrderStatus.DELIVERED);
+            var guiTra = cb.equal(root.get("paymentTerm"), PaymentTerm.GUI_TRA);
+            var notTerminal = root
+                .get("status")
+                .in(OrderStatus.DRAFT, OrderStatus.CANCELLED, OrderStatus.RETURNING, OrderStatus.RETURNED, OrderStatus.FAILED_DELIVERY)
+                .not();
+            var pastSenderWh = cb.or(
+                cb.isNotNull(root.get("forwardStage")),
+                root.get("status").in(OrderStatus.IN_TRANSIT, OrderStatus.WAITING, OrderStatus.AT_DEST, OrderStatus.OUT_FOR_DELIVERY)
+            );
+            return cb.or(delivered, cb.and(guiTra, notTerminal, pastSenderWh));
+        };
         if (officeCode != null && !officeCode.isBlank()) {
             String scoped = officeCode.trim().toUpperCase();
             spec = spec.and((root, q, cb) -> {
                 var toCode = root.get("toOffice").get("code");
                 var finalCode = root.get("finalToOffice").get("code");
                 var fromCode = root.get("fromOffice").get("code");
+                var atFrom = cb.equal(fromCode, scoped);
+                var atTo = cb.or(cb.equal(toCode, scoped), cb.and(cb.isNotNull(root.get("finalToOffice")), cb.equal(finalCode, scoped)));
+                // DELIVERED: VP gửi hoặc VP nhận; GUI_TRA sớm: chỉ VP gửi.
                 return cb.or(
-                    cb.equal(toCode, scoped),
-                    cb.and(cb.isNotNull(root.get("finalToOffice")), cb.equal(finalCode, scoped)),
-                    cb.equal(fromCode, scoped)
+                    cb.and(cb.equal(root.get("status"), OrderStatus.DELIVERED), cb.or(atFrom, atTo)),
+                    cb.and(atFrom, cb.notEqual(root.get("status"), OrderStatus.DELIVERED))
                 );
             });
         }
@@ -104,6 +121,8 @@ public class FinanceFacadeService {
             .findAll(spec)
             .stream()
             .filter(o -> o.getId() == null || !receiptOrderLineRepository.existsByOrder_Id(o.getId()))
+            .filter(o -> OrderMoney.receiptCollectable(o).signum() > 0)
+            .filter(FinanceFacadeService::isReceiptCandidate)
             .limit(300)
             .map(o -> {
                 // dueAmount trên candidate = số NV phải nộp (cước còn + COD), không phải OrderMoney.due thuần.
@@ -117,10 +136,46 @@ public class FinanceFacadeService {
                     collectable,
                     o.getStatus().name(),
                     o.getFromOffice() != null ? o.getFromOffice().getCode() : null,
-                    resolveDeliveryActor(o)
+                    resolveReceiptOwner(o)
                 );
             })
             .toList();
+    }
+
+    /** Public for unit tests — điều kiện lên danh sách phiếu thu. */
+    static boolean isReceiptCandidate(ShipmentOrder order) {
+        if (order == null || order.getStatus() == null) {
+            return false;
+        }
+        if (OrderMoney.receiptCollectable(order).signum() <= 0) {
+            return false;
+        }
+        if (order.getStatus() == OrderStatus.DELIVERED) {
+            return true;
+        }
+        return isSenderPayEarlyCandidate(order);
+    }
+
+    static boolean isSenderPayEarlyCandidate(ShipmentOrder order) {
+        if (order.getPaymentTerm() != PaymentTerm.GUI_TRA) {
+            return false;
+        }
+        OrderStatus st = order.getStatus();
+        if (
+            st == OrderStatus.DRAFT ||
+            st == OrderStatus.CANCELLED ||
+            st == OrderStatus.RETURNING ||
+            st == OrderStatus.RETURNED ||
+            st == OrderStatus.FAILED_DELIVERY
+        ) {
+            return false;
+        }
+        if (order.getForwardStage() != null) {
+            return true;
+        }
+        return (
+            st == OrderStatus.IN_TRANSIT || st == OrderStatus.WAITING || st == OrderStatus.AT_DEST || st == OrderStatus.OUT_FOR_DELIVERY
+        );
     }
 
     public ReceiptDTO createReceipt(CreateReceiptRequest req) {
@@ -446,7 +501,38 @@ public class FinanceFacadeService {
     }
 
     /**
-     * Người làm đơn ra khỏi kho giao (POD / giao thành công) — chịu trách nhiệm trên phiếu thu.
+     * Chủ nợ phiếu thu: GUI_TRA → NV nhập kho gửi / tạo đơn; còn lại → người POD.
+     */
+    private String resolveReceiptOwner(ShipmentOrder order) {
+        if (order.getPaymentTerm() == PaymentTerm.GUI_TRA) {
+            String senderSide = resolveSenderWhActor(order);
+            if (senderSide != null) {
+                return senderSide;
+            }
+        }
+        return resolveDeliveryActor(order);
+    }
+
+    /** Người nhập kho gửi (WAREHOUSE_RECEIVE) hoặc fallback tạo đơn / lấy hàng. */
+    private String resolveSenderWhActor(ShipmentOrder order) {
+        if (order.getId() != null) {
+            List<OrderEvent> events = orderEventRepository.findByOrder_IdOrderByEventAtAsc(order.getId());
+            for (int i = events.size() - 1; i >= 0; i--) {
+                OrderEvent event = events.get(i);
+                String action = event.getAction() == null ? "" : event.getAction().trim().toUpperCase();
+                if ("WAREHOUSE_RECEIVE".equals(action) || "WH_IN".equals(action) || "CONFIRM".equals(action)) {
+                    String actor = event.getActorUsername();
+                    if (actor != null && !actor.isBlank()) {
+                        return actor.trim();
+                    }
+                }
+            }
+        }
+        return resolveDebtOwner(order);
+    }
+
+    /**
+     * Người làm đơn ra khỏi kho giao (POD / giao thành công) — chịu trách nhiệm trên phiếu thu nhận trả/COD.
      */
     private String resolveDeliveryActor(ShipmentOrder order) {
         if (order.getId() != null) {
