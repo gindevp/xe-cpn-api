@@ -142,7 +142,7 @@ public class FinanceFacadeService {
         return out;
     }
 
-    private static CandidateDTO toCandidate(ShipmentOrder o, BigDecimal amount, String portion, String owner) {
+    private CandidateDTO toCandidate(ShipmentOrder o, BigDecimal amount, String portion, String owner) {
         return new CandidateDTO(
             o.getOrderCode(),
             o.getReceiverName(),
@@ -153,8 +153,50 @@ public class FinanceFacadeService {
             o.getStatus().name(),
             o.getFromOffice() != null ? o.getFromOffice().getCode() : null,
             owner,
-            portion
+            portion,
+            resolveCollectedAt(o, portion)
         );
+    }
+
+    /**
+     * Thời điểm nhận tiền khách theo phần SENDER/DELIVERY (paymentAt / event POD / WH_IN).
+     * Không dùng order.createdAt trừ khi không còn nguồn nào khác.
+     */
+    private Instant resolveCollectedAt(ShipmentOrder order, String portion) {
+        if (order.getId() == null) {
+            return order.getCreatedAt();
+        }
+        boolean delivery = ReceiptSettlement.DELIVERY.equals(portion);
+        for (OrderPayment p : orderPaymentRepository.findByOrder_IdOrderByPaymentAtDesc(order.getId())) {
+            boolean delSide =
+                ReceiptSettlement.isDeliverySidePayment(p.getPaymentKind(), p.getNote()) || p.getPaymentKind() == PaymentKind.COD;
+            if (delivery != delSide) {
+                continue;
+            }
+            String note = p.getNote() == null ? "" : p.getNote().trim().toUpperCase();
+            if (note.startsWith("RECEIPT")) {
+                continue;
+            }
+            if (p.getPaymentAt() != null) {
+                return p.getPaymentAt();
+            }
+        }
+        List<OrderEvent> events = orderEventRepository.findByOrder_IdOrderByEventAtAsc(order.getId());
+        for (int i = events.size() - 1; i >= 0; i--) {
+            OrderEvent event = events.get(i);
+            String action = event.getAction() == null ? "" : event.getAction().trim().toUpperCase();
+            boolean match = delivery
+                ? ("POD".equals(action) || "POD_QUAY".equals(action) || "POD_HOME".equals(action) || "DELIVERED".equals(action))
+                : ("WAREHOUSE_RECEIVE".equals(action) ||
+                    "WH_IN".equals(action) ||
+                    "CONFIRM".equals(action) ||
+                    "CREATED".equals(action) ||
+                    "CREATE".equals(action));
+            if (match && event.getEventAt() != null) {
+                return event.getEventAt();
+            }
+        }
+        return order.getCreatedAt();
     }
 
     private static boolean atReceiverOffice(ShipmentOrder o, String code) {
@@ -500,11 +542,21 @@ public class FinanceFacadeService {
 
     private ReceiptDTO toReceiptDto(Receipt r, List<ReceiptOrderLine> lines) {
         List<Map<String, Object>> lineViews = new ArrayList<>();
+        Instant customerPaidAt = null;
         for (ReceiptOrderLine l : lines) {
             Map<String, Object> m = new HashMap<>();
             m.put("orderCode", l.getOrder() != null ? l.getOrder().getOrderCode() : null);
             m.put("amountCollected", l.getAmountCollected());
             lineViews.add(m);
+            if (l.getOrder() != null && l.getOrder().getId() != null) {
+                Instant paid = resolveCustomerPaidAtForOrder(l.getOrder().getId());
+                if (paid != null && (customerPaidAt == null || paid.isAfter(customerPaidAt))) {
+                    customerPaidAt = paid;
+                }
+            }
+        }
+        if (customerPaidAt == null) {
+            customerPaidAt = r.getCreatedAt();
         }
         return new ReceiptDTO(
             r.getId(),
@@ -517,8 +569,39 @@ public class FinanceFacadeService {
             r.getOffice() != null ? r.getOffice().getCode() : null,
             lineViews,
             r.getConfirmedAt(),
-            r.getConfirmedByUsername()
+            r.getConfirmedByUsername(),
+            customerPaidAt
         );
+    }
+
+    /** Thời điểm nhận tiền khách gần nhất trên đơn (bỏ RECEIPT_* nộp quỹ). */
+    private Instant resolveCustomerPaidAtForOrder(Long orderId) {
+        for (OrderPayment p : orderPaymentRepository.findByOrder_IdOrderByPaymentAtDesc(orderId)) {
+            String note = p.getNote() == null ? "" : p.getNote().trim().toUpperCase();
+            if (note.startsWith("RECEIPT")) {
+                continue;
+            }
+            if (p.getPaymentAt() != null) {
+                return p.getPaymentAt();
+            }
+        }
+        List<OrderEvent> events = orderEventRepository.findByOrder_IdOrderByEventAtAsc(orderId);
+        for (int i = events.size() - 1; i >= 0; i--) {
+            OrderEvent event = events.get(i);
+            String action = event.getAction() == null ? "" : event.getAction().trim().toUpperCase();
+            if (
+                ("POD".equals(action) ||
+                    "POD_QUAY".equals(action) ||
+                    "POD_HOME".equals(action) ||
+                    "DELIVERED".equals(action) ||
+                    "WAREHOUSE_RECEIVE".equals(action) ||
+                    "WH_IN".equals(action)) &&
+                event.getEventAt() != null
+            ) {
+                return event.getEventAt();
+            }
+        }
+        return null;
     }
 
     private DayClosureDTO toDayDto(DayClosure c) {
@@ -648,7 +731,9 @@ public class FinanceFacadeService {
         String fromOfficeCode,
         String debtOwnerUsername,
         /** SENDER | DELIVERY */
-        String portion
+        String portion,
+        /** Thời điểm nhận tiền khách (payment/POD/WH), ISO instant. */
+        Instant collectedAt
     ) {}
 
     /** portion null = tự phân bổ (phần giao trước). */
@@ -667,7 +752,9 @@ public class FinanceFacadeService {
         String officeCode,
         List<Map<String, Object>> lines,
         Instant confirmedAt,
-        String confirmedByUsername
+        String confirmedByUsername,
+        /** Thời điểm nhận tiền khách (payment/POD), fallback createdAt. */
+        Instant customerPaidAt
     ) {}
 
     public record DayClosureDTO(
