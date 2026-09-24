@@ -233,10 +233,11 @@ public class SimpleFareCalculator {
             .filter(r -> Boolean.TRUE.equals(r.getActive()))
             .filter(r -> r.getKind() == kind)
             .toList();
-        List<DoorFeeRule> sameWeight = ofKind.stream().filter(r -> inBand(kg, r.getMinKg(), r.getMaxKg())).toList();
-        if (sameWeight.isEmpty()) {
-            sameWeight = weightBandOrHeaviest(ofKind, kg);
+        List<DoorFeeRule> matchedWeight = ofKind.stream().filter(r -> inBand(kg, r.getMinKg(), r.getMaxKg())).toList();
+        if (matchedWeight.isEmpty()) {
+            matchedWeight = weightBandOrHeaviest(ofKind, kg);
         }
+        List<DoorFeeRule> sameWeight = matchedWeight;
         DoorFeeRule hit = sameWeight
             .stream()
             .filter(r -> inBand(useKm, r.getMinKm(), r.getMaxKm()))
