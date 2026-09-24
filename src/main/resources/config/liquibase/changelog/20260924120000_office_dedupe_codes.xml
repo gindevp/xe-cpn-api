@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+      Sau split 20260914100000: 3 cặp trùng mã (VP_YB / VP_ND / VP_PT).
+      BE findFirstByCode luôn bind bản ghi id nhỏ hơn → chọn VP thứ 2 vẫn về VP thứ 1.
+      Đổi mã các dòng chưa có đơn (theo source_id của INSERT split); giữ mã cũ cho dòng đã phát sinh.
+    -->
+    <changeSet id="20260924120000-1" author="cpn">
+        <comment>Đổi mã VP trùng: Văn Phú / 77 Trần Anh Tông / IC8 Phú Ninh (chưa có đơn)</comment>
+        <sql>
+            UPDATE office SET code = 'VP_YB_VP'
+            WHERE source_id = 59165 AND code = 'VP_YB';
+
+            UPDATE office SET code = 'VP_ND_77'
+            WHERE source_id = 17323 AND code = 'VP_ND';
+
+            UPDATE office SET code = 'VP_PT_IC8'
+            WHERE source_id = 46159 AND code = 'VP_PT';
+        </sql>
+    </changeSet>
+
+    <changeSet id="20260924120000-2" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM (
+                    SELECT code FROM office GROUP BY code HAVING COUNT(*) &gt; 1
+                ) d
+            </sqlCheck>
+            <not>
+                <indexExists tableName="office" indexName="ux_office__code"/>
+            </not>
+        </preConditions>
+        <comment>Khôi phục unique office.code sau khi hết trùng</comment>
+        <addUniqueConstraint tableName="office" columnNames="code" constraintName="ux_office__code"/>
+    </changeSet>
+</databaseChangeLog>

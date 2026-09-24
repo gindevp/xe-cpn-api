@@ -90,5 +90,6 @@
     <include file="config/liquibase/changelog/20260922100000_ahamove_api_key.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260922110000_office_lat_lng.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260923120000_map_provider.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260924120000_office_dedupe_codes.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
