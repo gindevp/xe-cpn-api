@@ -243,7 +243,7 @@ public class SimpleFareCalculator {
             .findFirst()
             .orElseGet(() -> nearestKmBand(sameWeight, useKm));
         if (hit != null) {
-            return nz(hit.getFeeAmount()).add(doorOverage(policy(), kg, nz(hit.getMaxKg()), useKm, nz(hit.getMaxKm())));
+            return nz(hit.getFeeAmount()).add(doorOverage(policy(), kind, kg, nz(hit.getMaxKg()), useKm, nz(hit.getMaxKm())));
         }
         SurchargePolicy policy = policy();
         if (kind == DoorFeeKind.DELIVERY && policy != null && Boolean.TRUE.equals(policy.getHomeDeliveryEnabled())) {
@@ -259,14 +259,23 @@ public class SimpleFareCalculator {
         return surchargePolicyRepository.findAll().stream().findFirst().orElse(null);
     }
 
-    /** Phần vượt max cân / max km của bậc đã chọn: làm tròn lên theo bước. */
-    private static BigDecimal doorOverage(SurchargePolicy policy, BigDecimal kg, BigDecimal maxKg, BigDecimal km, BigDecimal maxKm) {
+    private static BigDecimal doorOverage(
+        SurchargePolicy policy,
+        DoorFeeKind kind,
+        BigDecimal kg,
+        BigDecimal maxKg,
+        BigDecimal km,
+        BigDecimal maxKm
+    ) {
         if (policy == null) {
             return BigDecimal.ZERO;
         }
-        return stepMoney(kg, maxKg, policy.getDoorOverKgStep(), policy.getDoorOverKgFee()).add(
-            stepMoney(km, maxKm, policy.getDoorOverKmStep(), policy.getDoorOverKmFee())
-        );
+        boolean delivery = kind == DoorFeeKind.DELIVERY;
+        BigDecimal kgStep = delivery ? policy.getDoorDeliveryOverKgStep() : policy.getDoorOverKgStep();
+        BigDecimal kgFee = delivery ? policy.getDoorDeliveryOverKgFee() : policy.getDoorOverKgFee();
+        BigDecimal kmStep = delivery ? policy.getDoorDeliveryOverKmStep() : policy.getDoorOverKmStep();
+        BigDecimal kmFee = delivery ? policy.getDoorDeliveryOverKmFee() : policy.getDoorOverKmFee();
+        return stepMoney(kg, maxKg, kgStep, kgFee).add(stepMoney(km, maxKm, kmStep, kmFee));
     }
 
     private static BigDecimal stepMoney(BigDecimal value, BigDecimal max, BigDecimal step, BigDecimal fee) {

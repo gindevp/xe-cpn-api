@@ -253,6 +253,10 @@ public class ConfigFacadeService {
         if (incoming.getDoorOverKgFee() != null) base.setDoorOverKgFee(incoming.getDoorOverKgFee());
         if (incoming.getDoorOverKmStep() != null) base.setDoorOverKmStep(incoming.getDoorOverKmStep());
         if (incoming.getDoorOverKmFee() != null) base.setDoorOverKmFee(incoming.getDoorOverKmFee());
+        if (incoming.getDoorDeliveryOverKgStep() != null) base.setDoorDeliveryOverKgStep(incoming.getDoorDeliveryOverKgStep());
+        if (incoming.getDoorDeliveryOverKgFee() != null) base.setDoorDeliveryOverKgFee(incoming.getDoorDeliveryOverKgFee());
+        if (incoming.getDoorDeliveryOverKmStep() != null) base.setDoorDeliveryOverKmStep(incoming.getDoorDeliveryOverKmStep());
+        if (incoming.getDoorDeliveryOverKmFee() != null) base.setDoorDeliveryOverKmFee(incoming.getDoorDeliveryOverKmFee());
         return base;
     }
 
@@ -286,6 +290,10 @@ public class ConfigFacadeService {
         p.setDoorOverKgFee(BigDecimal.ZERO);
         p.setDoorOverKmStep(BigDecimal.ZERO);
         p.setDoorOverKmFee(BigDecimal.ZERO);
+        p.setDoorDeliveryOverKgStep(BigDecimal.ZERO);
+        p.setDoorDeliveryOverKgFee(BigDecimal.ZERO);
+        p.setDoorDeliveryOverKmStep(BigDecimal.ZERO);
+        p.setDoorDeliveryOverKmFee(BigDecimal.ZERO);
         p.setUpdatedAt(Instant.now());
         return p;
     }

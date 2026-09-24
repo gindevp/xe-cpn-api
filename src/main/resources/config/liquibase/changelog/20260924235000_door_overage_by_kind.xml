@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260924235000-1" author="cpn">
+        <comment>Vượt bậc phí giao tận nơi, tách khỏi lấy tận nơi. Cột door_over_* giữ cho lấy tận nơi.</comment>
+        <addColumn tableName="surcharge_policy">
+            <column name="door_delivery_over_kg_step" type="decimal(21,2)" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="door_delivery_over_kg_fee" type="decimal(21,2)" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="door_delivery_over_km_step" type="decimal(21,2)" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="door_delivery_over_km_fee" type="decimal(21,2)" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <sql>
+            UPDATE surcharge_policy
+            SET door_delivery_over_kg_step = door_over_kg_step,
+                door_delivery_over_kg_fee = door_over_kg_fee,
+                door_delivery_over_km_step = door_over_km_step,
+                door_delivery_over_km_fee = door_over_km_fee
+        </sql>
+    </changeSet>
+</databaseChangeLog>

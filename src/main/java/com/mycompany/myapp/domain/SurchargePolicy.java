@@ -117,6 +117,23 @@ public class SurchargePolicy implements Serializable {
     @Column(name = "door_over_km_fee", precision = 21, scale = 2)
     private BigDecimal doorOverKmFee = BigDecimal.ZERO;
 
+    /** Vượt bậc của giao tận nơi. Lấy tận nơi dùng doorOver*. */
+    @DecimalMin(value = "0")
+    @Column(name = "door_delivery_over_kg_step", precision = 21, scale = 2)
+    private BigDecimal doorDeliveryOverKgStep = BigDecimal.ZERO;
+
+    @DecimalMin(value = "0")
+    @Column(name = "door_delivery_over_kg_fee", precision = 21, scale = 2)
+    private BigDecimal doorDeliveryOverKgFee = BigDecimal.ZERO;
+
+    @DecimalMin(value = "0")
+    @Column(name = "door_delivery_over_km_step", precision = 21, scale = 2)
+    private BigDecimal doorDeliveryOverKmStep = BigDecimal.ZERO;
+
+    @DecimalMin(value = "0")
+    @Column(name = "door_delivery_over_km_fee", precision = 21, scale = 2)
+    private BigDecimal doorDeliveryOverKmFee = BigDecimal.ZERO;
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 
@@ -360,6 +377,38 @@ public class SurchargePolicy implements Serializable {
 
     public void setDoorOverKmFee(BigDecimal doorOverKmFee) {
         this.doorOverKmFee = doorOverKmFee;
+    }
+
+    public BigDecimal getDoorDeliveryOverKgStep() {
+        return doorDeliveryOverKgStep;
+    }
+
+    public void setDoorDeliveryOverKgStep(BigDecimal doorDeliveryOverKgStep) {
+        this.doorDeliveryOverKgStep = doorDeliveryOverKgStep;
+    }
+
+    public BigDecimal getDoorDeliveryOverKgFee() {
+        return doorDeliveryOverKgFee;
+    }
+
+    public void setDoorDeliveryOverKgFee(BigDecimal doorDeliveryOverKgFee) {
+        this.doorDeliveryOverKgFee = doorDeliveryOverKgFee;
+    }
+
+    public BigDecimal getDoorDeliveryOverKmStep() {
+        return doorDeliveryOverKmStep;
+    }
+
+    public void setDoorDeliveryOverKmStep(BigDecimal doorDeliveryOverKmStep) {
+        this.doorDeliveryOverKmStep = doorDeliveryOverKmStep;
+    }
+
+    public BigDecimal getDoorDeliveryOverKmFee() {
+        return doorDeliveryOverKmFee;
+    }
+
+    public void setDoorDeliveryOverKmFee(BigDecimal doorDeliveryOverKmFee) {
+        this.doorDeliveryOverKmFee = doorDeliveryOverKmFee;
     }
 
     public Instant getUpdatedAt() {
