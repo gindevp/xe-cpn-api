@@ -58,7 +58,7 @@ public class Office implements Serializable {
     @Column(name = "longitude", precision = 10, scale = 7)
     private BigDecimal longitude;
 
-    /** Điểm lộ trình: NĐ/TB/YB/PT/TC/VT (tỉnh) hoặc BC/GA/HĐ/PHOCO (Hà Nội). Mỗi VP một điểm. */
+    /** Điểm lộ trình: NĐ/TB/YB/PT/TC/NB/VT (tỉnh) hoặc BC/GA/HĐ/PHOCO (Hà Nội). Mỗi VP một điểm. TC và NB cùng Ninh Bình nhưng chọn riêng. */
     @Size(max = 16)
     @Column(name = "itinerary_point", length = 16)
     private String itineraryPoint;

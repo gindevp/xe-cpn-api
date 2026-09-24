@@ -10,7 +10,22 @@ public final class OfficeItineraryPoints {
     public static final String ENTITY = "office";
 
     /** Mã lưu DB → nhãn hiển thị. */
-    public static final Map<String, String> PROVINCE = Map.of("ND", "NĐ", "TB", "TB", "YB", "YB", "PT", "PT", "TC", "TC", "VT", "VT");
+    public static final Map<String, String> PROVINCE = Map.of(
+        "ND",
+        "NĐ",
+        "TB",
+        "TB",
+        "YB",
+        "YB",
+        "PT",
+        "PT",
+        "TC",
+        "TC",
+        "NB",
+        "NB",
+        "VT",
+        "VT"
+    );
 
     public static final Map<String, String> HANOI = Map.of("BC", "BC", "GA", "GA", "HD", "HĐ", "PHOCO", "PHOCO");
 
