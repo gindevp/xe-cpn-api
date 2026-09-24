@@ -99,6 +99,24 @@ public class SurchargePolicy implements Serializable {
     @Column(name = "refund_percent", precision = 21, scale = 2, nullable = false)
     private BigDecimal refundPercent;
 
+    /** Vượt cân bậc cuối: mỗi bước kg cộng thêm một khoản. 0 = không cộng. */
+    @DecimalMin(value = "0")
+    @Column(name = "door_over_kg_step", precision = 21, scale = 2)
+    private BigDecimal doorOverKgStep = BigDecimal.ZERO;
+
+    @DecimalMin(value = "0")
+    @Column(name = "door_over_kg_fee", precision = 21, scale = 2)
+    private BigDecimal doorOverKgFee = BigDecimal.ZERO;
+
+    /** Vượt km bậc cuối: mỗi bước km cộng thêm một khoản. 0 = không cộng. */
+    @DecimalMin(value = "0")
+    @Column(name = "door_over_km_step", precision = 21, scale = 2)
+    private BigDecimal doorOverKmStep = BigDecimal.ZERO;
+
+    @DecimalMin(value = "0")
+    @Column(name = "door_over_km_fee", precision = 21, scale = 2)
+    private BigDecimal doorOverKmFee = BigDecimal.ZERO;
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 
@@ -310,6 +328,38 @@ public class SurchargePolicy implements Serializable {
 
     public void setRefundPercent(BigDecimal refundPercent) {
         this.refundPercent = refundPercent;
+    }
+
+    public BigDecimal getDoorOverKgStep() {
+        return doorOverKgStep;
+    }
+
+    public void setDoorOverKgStep(BigDecimal doorOverKgStep) {
+        this.doorOverKgStep = doorOverKgStep;
+    }
+
+    public BigDecimal getDoorOverKgFee() {
+        return doorOverKgFee;
+    }
+
+    public void setDoorOverKgFee(BigDecimal doorOverKgFee) {
+        this.doorOverKgFee = doorOverKgFee;
+    }
+
+    public BigDecimal getDoorOverKmStep() {
+        return doorOverKmStep;
+    }
+
+    public void setDoorOverKmStep(BigDecimal doorOverKmStep) {
+        this.doorOverKmStep = doorOverKmStep;
+    }
+
+    public BigDecimal getDoorOverKmFee() {
+        return doorOverKmFee;
+    }
+
+    public void setDoorOverKmFee(BigDecimal doorOverKmFee) {
+        this.doorOverKmFee = doorOverKmFee;
     }
 
     public Instant getUpdatedAt() {

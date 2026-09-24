@@ -249,6 +249,10 @@ public class ConfigFacadeService {
         if (incoming.getInsurancePercentOver() != null) base.setInsurancePercentOver(incoming.getInsurancePercentOver());
         if (incoming.getRefundEnabled() != null) base.setRefundEnabled(incoming.getRefundEnabled());
         if (incoming.getRefundPercent() != null) base.setRefundPercent(incoming.getRefundPercent());
+        if (incoming.getDoorOverKgStep() != null) base.setDoorOverKgStep(incoming.getDoorOverKgStep());
+        if (incoming.getDoorOverKgFee() != null) base.setDoorOverKgFee(incoming.getDoorOverKgFee());
+        if (incoming.getDoorOverKmStep() != null) base.setDoorOverKmStep(incoming.getDoorOverKmStep());
+        if (incoming.getDoorOverKmFee() != null) base.setDoorOverKmFee(incoming.getDoorOverKmFee());
         return base;
     }
 
@@ -278,6 +282,10 @@ public class ConfigFacadeService {
         p.setInsurancePercentOver(BigDecimal.ONE);
         p.setRefundEnabled(true);
         p.setRefundPercent(BigDecimal.valueOf(100));
+        p.setDoorOverKgStep(BigDecimal.ZERO);
+        p.setDoorOverKgFee(BigDecimal.ZERO);
+        p.setDoorOverKmStep(BigDecimal.ZERO);
+        p.setDoorOverKmFee(BigDecimal.ZERO);
         p.setUpdatedAt(Instant.now());
         return p;
     }

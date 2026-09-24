@@ -227,19 +227,25 @@ public class SimpleFareCalculator {
 
     private BigDecimal doorFee(DoorFeeKind kind, BigDecimal kg, BigDecimal km, BigDecimal kmMin, BigDecimal kmRate) {
         BigDecimal useKm = km == null ? kmMin : km.max(kmMin);
-        DoorFeeRule hit = doorFeeRuleRepository
+        List<DoorFeeRule> ofKind = doorFeeRuleRepository
             .findAll()
             .stream()
             .filter(r -> Boolean.TRUE.equals(r.getActive()))
             .filter(r -> r.getKind() == kind)
-            .filter(r -> inBand(kg, r.getMinKg(), r.getMaxKg()))
+            .toList();
+        List<DoorFeeRule> sameWeight = ofKind.stream().filter(r -> inBand(kg, r.getMinKg(), r.getMaxKg())).toList();
+        if (sameWeight.isEmpty()) {
+            sameWeight = weightBandOrHeaviest(ofKind, kg);
+        }
+        DoorFeeRule hit = sameWeight
+            .stream()
             .filter(r -> inBand(useKm, r.getMinKm(), r.getMaxKm()))
             .findFirst()
-            .orElse(null);
+            .orElseGet(() -> nearestKmBand(sameWeight, useKm));
         if (hit != null) {
-            return nz(hit.getFeeAmount());
+            return nz(hit.getFeeAmount()).add(doorOverage(policy(), kg, nz(hit.getMaxKg()), useKm, nz(hit.getMaxKm())));
         }
-        SurchargePolicy policy = surchargePolicyRepository.findAll().stream().findFirst().orElse(null);
+        SurchargePolicy policy = policy();
         if (kind == DoorFeeKind.DELIVERY && policy != null && Boolean.TRUE.equals(policy.getHomeDeliveryEnabled())) {
             return nz(policy.getDefaultHomeDeliveryAmount());
         }
@@ -247,6 +253,63 @@ public class SimpleFareCalculator {
             return useKm.multiply(kmRate).setScale(0, RoundingMode.HALF_UP);
         }
         return FALLBACK_DOOR;
+    }
+
+    private SurchargePolicy policy() {
+        return surchargePolicyRepository.findAll().stream().findFirst().orElse(null);
+    }
+
+    /** Phần vượt max cân / max km của bậc đã chọn: làm tròn lên theo bước. */
+    private static BigDecimal doorOverage(SurchargePolicy policy, BigDecimal kg, BigDecimal maxKg, BigDecimal km, BigDecimal maxKm) {
+        if (policy == null) {
+            return BigDecimal.ZERO;
+        }
+        return stepMoney(kg, maxKg, policy.getDoorOverKgStep(), policy.getDoorOverKgFee()).add(
+            stepMoney(km, maxKm, policy.getDoorOverKmStep(), policy.getDoorOverKmFee())
+        );
+    }
+
+    private static BigDecimal stepMoney(BigDecimal value, BigDecimal max, BigDecimal step, BigDecimal fee) {
+        BigDecimal over = nz(value).subtract(nz(max));
+        BigDecimal st = nz(step);
+        BigDecimal each = nz(fee);
+        if (over.signum() <= 0 || st.signum() <= 0 || each.signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal steps = over.divide(st, 0, RoundingMode.CEILING);
+        return steps.multiply(each);
+    }
+
+    /** Cân vượt mọi bậc thì lấy bậc nặng nhất; nằm giữa hai bậc thì lấy bậc kế trên. */
+    private static List<DoorFeeRule> weightBandOrHeaviest(List<DoorFeeRule> rows, BigDecimal kg) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<DoorFeeRule> sorted = rows.stream().sorted(Comparator.comparing(r -> nz(r.getMaxKg()))).toList();
+        DoorFeeRule top = sorted.get(sorted.size() - 1);
+        for (DoorFeeRule r : sorted) {
+            if (nz(kg).compareTo(nz(r.getMaxKg())) <= 0) {
+                top = r;
+                break;
+            }
+        }
+        BigDecimal min = nz(top.getMinKg());
+        BigDecimal max = nz(top.getMaxKg());
+        return rows.stream().filter(r -> nz(r.getMinKg()).compareTo(min) == 0 && nz(r.getMaxKg()).compareTo(max) == 0).toList();
+    }
+
+    /** Km vượt mọi bậc thì lấy bậc xa nhất; nằm giữa hai bậc thì lấy bậc kế trên. */
+    private static DoorFeeRule nearestKmBand(List<DoorFeeRule> rows, BigDecimal km) {
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        List<DoorFeeRule> sorted = rows.stream().sorted(Comparator.comparing(r -> nz(r.getMaxKm()))).toList();
+        for (DoorFeeRule r : sorted) {
+            if (nz(km).compareTo(nz(r.getMaxKm())) <= 0) {
+                return r;
+            }
+        }
+        return sorted.get(sorted.size() - 1);
     }
 
     /** FE-aligned: value > min - eps && value <= max + eps */
