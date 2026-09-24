@@ -39,6 +39,7 @@ public class OfficeService {
      */
     public OfficeDTO save(OfficeDTO officeDTO) {
         LOG.debug("Request to save Office : {}", officeDTO);
+        officeDTO.setItineraryPoint(OfficeItineraryPoints.require(officeDTO.getItineraryPoint()));
         Office office = officeMapper.toEntity(officeDTO);
         office = officeRepository.save(office);
         return officeMapper.toDto(office);
@@ -52,6 +53,7 @@ public class OfficeService {
      */
     public OfficeDTO update(OfficeDTO officeDTO) {
         LOG.debug("Request to update Office : {}", officeDTO);
+        officeDTO.setItineraryPoint(OfficeItineraryPoints.require(officeDTO.getItineraryPoint()));
         Office office = officeMapper.toEntity(officeDTO);
         office = officeRepository.save(office);
         return officeMapper.toDto(office);
@@ -69,6 +71,9 @@ public class OfficeService {
         return officeRepository
             .findById(officeDTO.getId())
             .map(existingOffice -> {
+                if (officeDTO.getItineraryPoint() != null) {
+                    officeDTO.setItineraryPoint(OfficeItineraryPoints.require(officeDTO.getItineraryPoint()));
+                }
                 officeMapper.partialUpdate(existingOffice, officeDTO);
 
                 return existingOffice;

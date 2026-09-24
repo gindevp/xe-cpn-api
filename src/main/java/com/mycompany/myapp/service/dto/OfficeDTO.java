@@ -40,6 +40,9 @@ public class OfficeDTO implements Serializable {
 
     private BigDecimal longitude;
 
+    @Size(max = 16)
+    private String itineraryPoint;
+
     public Long getId() {
         return id;
     }
@@ -120,6 +123,14 @@ public class OfficeDTO implements Serializable {
         this.longitude = longitude;
     }
 
+    public String getItineraryPoint() {
+        return itineraryPoint;
+    }
+
+    public void setItineraryPoint(String itineraryPoint) {
+        this.itineraryPoint = itineraryPoint;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -155,6 +166,7 @@ public class OfficeDTO implements Serializable {
             ", address='" + getAddress() + "'" +
             ", latitude=" + getLatitude() +
             ", longitude=" + getLongitude() +
+            ", itineraryPoint='" + getItineraryPoint() + "'" +
             "}";
     }
 }

@@ -87,7 +87,8 @@ class OfficeResourceIT {
             .name(DEFAULT_NAME)
             .officeType(DEFAULT_OFFICE_TYPE)
             .isHub(DEFAULT_IS_HUB)
-            .active(DEFAULT_ACTIVE);
+            .active(DEFAULT_ACTIVE)
+            .itineraryPoint("ND");
     }
 
     /**
@@ -102,7 +103,8 @@ class OfficeResourceIT {
             .name(UPDATED_NAME)
             .officeType(UPDATED_OFFICE_TYPE)
             .isHub(UPDATED_IS_HUB)
-            .active(UPDATED_ACTIVE);
+            .active(UPDATED_ACTIVE)
+            .itineraryPoint("BC");
     }
 
     @BeforeEach

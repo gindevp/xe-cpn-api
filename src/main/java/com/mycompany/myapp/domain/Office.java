@@ -58,6 +58,11 @@ public class Office implements Serializable {
     @Column(name = "longitude", precision = 10, scale = 7)
     private BigDecimal longitude;
 
+    /** Điểm lộ trình: NĐ/TB/YB/PT/TC/VT (tỉnh) hoặc BC/GA/HĐ/PHOCO (Hà Nội). Mỗi VP một điểm. */
+    @Size(max = 16)
+    @Column(name = "itinerary_point", length = 16)
+    private String itineraryPoint;
+
     // jhipster-needle-entity-add-field - JHipster will add fields here
 
     public Long getId() {
@@ -190,6 +195,19 @@ public class Office implements Serializable {
         this.longitude = longitude;
     }
 
+    public String getItineraryPoint() {
+        return this.itineraryPoint;
+    }
+
+    public Office itineraryPoint(String itineraryPoint) {
+        this.setItineraryPoint(itineraryPoint);
+        return this;
+    }
+
+    public void setItineraryPoint(String itineraryPoint) {
+        this.itineraryPoint = itineraryPoint;
+    }
+
     // jhipster-needle-entity-add-getters-setters - JHipster will add getters and setters here
 
     @Override
@@ -223,6 +241,7 @@ public class Office implements Serializable {
             ", address='" + getAddress() + "'" +
             ", latitude=" + getLatitude() +
             ", longitude=" + getLongitude() +
+            ", itineraryPoint='" + getItineraryPoint() + "'" +
             "}";
     }
 }
