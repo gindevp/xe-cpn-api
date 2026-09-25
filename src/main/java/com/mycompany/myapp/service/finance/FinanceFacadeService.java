@@ -7,6 +7,7 @@ import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.Receipt;
 import com.mycompany.myapp.domain.ReceiptOrderLine;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.domain.enumeration.DayClosureStatus;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentKind;
@@ -19,6 +20,7 @@ import com.mycompany.myapp.repository.OrderPaymentRepository;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ReceiptRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
+import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.order.OrderMoney;
@@ -56,6 +58,7 @@ public class FinanceFacadeService {
     private final OfficeRepository officeRepository;
     private final OrderPaymentRepository orderPaymentRepository;
     private final OrderEventRepository orderEventRepository;
+    private final StaffProfileRepository staffProfileRepository;
     private final DayClosureGuard dayClosureGuard;
 
     public FinanceFacadeService(
@@ -66,6 +69,7 @@ public class FinanceFacadeService {
         OfficeRepository officeRepository,
         OrderPaymentRepository orderPaymentRepository,
         OrderEventRepository orderEventRepository,
+        StaffProfileRepository staffProfileRepository,
         DayClosureGuard dayClosureGuard
     ) {
         this.shipmentOrderRepository = shipmentOrderRepository;
@@ -75,6 +79,7 @@ public class FinanceFacadeService {
         this.officeRepository = officeRepository;
         this.orderPaymentRepository = orderPaymentRepository;
         this.orderEventRepository = orderEventRepository;
+        this.staffProfileRepository = staffProfileRepository;
         this.dayClosureGuard = dayClosureGuard;
     }
 
@@ -245,12 +250,7 @@ public class FinanceFacadeService {
         if (req == null || req.lines() == null || req.lines().isEmpty()) {
             throw new BadRequestAlertException("Receipt lines required", ENTITY, "receiptLinesRequired");
         }
-        Office office = null;
-        if (req.officeCode() != null && !req.officeCode().isBlank()) {
-            office = officeRepository
-                .findOneByCode(req.officeCode().trim().toUpperCase())
-                .orElseThrow(() -> new BadRequestAlertException("Office not found", ENTITY, "officeNotFound"));
-        }
+        Office office = resolveReceiptOffice(req.officeCode(), req.payerCode());
         Instant now = Instant.now();
         String actor = actor();
         if (office != null) {
@@ -538,6 +538,33 @@ public class FinanceFacadeService {
         String prefix = "PT" + oc + stamp;
         long seq = receiptRepository.countByReceiptCodeStartingWith(prefix) + 1;
         return prefix + "-" + String.format("%03d", seq);
+    }
+
+    /**
+     * VP phiếu thu = VP người nộp tiền khi admin/KT (ALL) tạo hộ.
+     * Ưu tiên officeCode request; nếu trống/ALL thì lấy từ StaffProfile theo payerCode (login hoặc mã NV).
+     */
+    private Office resolveReceiptOffice(String officeCode, String payerCode) {
+        if (officeCode != null && !officeCode.isBlank() && !"ALL".equalsIgnoreCase(officeCode.trim())) {
+            return officeRepository
+                .findOneByCode(officeCode.trim().toUpperCase())
+                .orElseThrow(() -> new BadRequestAlertException("Office not found", ENTITY, "officeNotFound"));
+        }
+        if (payerCode == null || payerCode.isBlank()) {
+            return null;
+        }
+        String key = payerCode.trim();
+        StaffProfile profile = staffProfileRepository
+            .findOneByUserLoginIgnoreCase(key)
+            .or(() -> staffProfileRepository.findOneByStaffCodeIgnoreCase(key))
+            .orElse(null);
+        if (profile == null || profile.getOffice() == null) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(profile.getScopeAllOffices())) {
+            return null;
+        }
+        return profile.getOffice();
     }
 
     private ReceiptDTO toReceiptDto(Receipt r, List<ReceiptOrderLine> lines) {

@@ -23,6 +23,7 @@ import com.mycompany.myapp.repository.OrderPaymentRepository;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ReceiptRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
+import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.CreateReceiptRequest;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.ReceiptDTO;
@@ -67,6 +68,9 @@ class FinanceFacadeServiceReceiptCodTest {
     private OrderEventRepository orderEventRepository;
 
     @Mock
+    private StaffProfileRepository staffProfileRepository;
+
+    @Mock
     private DayClosureGuard dayClosureGuard;
 
     private FinanceFacadeService service;
@@ -82,6 +86,7 @@ class FinanceFacadeServiceReceiptCodTest {
             officeRepository,
             orderPaymentRepository,
             orderEventRepository,
+            staffProfileRepository,
             dayClosureGuard
         );
 

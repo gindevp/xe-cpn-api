@@ -42,4 +42,9 @@ public interface StaffProfileRepository extends JpaRepository<StaffProfile, Long
         "select staffProfile from StaffProfile staffProfile left join fetch staffProfile.office where lower(staffProfile.userLogin) = lower(:userLogin)"
     )
     Optional<StaffProfile> findOneByUserLoginIgnoreCase(@Param("userLogin") String userLogin);
+
+    @Query(
+        "select staffProfile from StaffProfile staffProfile left join fetch staffProfile.office where lower(staffProfile.staffCode) = lower(:staffCode)"
+    )
+    Optional<StaffProfile> findOneByStaffCodeIgnoreCase(@Param("staffCode") String staffCode);
 }
