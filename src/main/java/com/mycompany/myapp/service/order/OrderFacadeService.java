@@ -252,8 +252,10 @@ public class OrderFacadeService {
     public CreateDraftOrderResponse createDraft(CreateDraftOrderRequest req) {
         boolean homeDelivery = Boolean.TRUE.equals(req.getHomeDelivery());
         boolean homePickup = Boolean.TRUE.equals(req.getHomePickup());
-        if (homeDelivery && (isBlank(req.getDeliveryAddress()) || isBlank(req.getHubOfficeCode()))) {
-            throw new BadRequestAlertException("Home delivery requires address and hubOfficeCode", ENTITY, "homedelivery");
+        // GTN: VP nhận = toOffice (không còn hub trung chuyển). Chấp nhận hubOfficeCode legacy làm toOffice.
+        String destOfficeCode = !isBlank(req.getToOfficeCode()) ? req.getToOfficeCode() : (homeDelivery ? req.getHubOfficeCode() : null);
+        if (homeDelivery && (isBlank(req.getDeliveryAddress()) || isBlank(destOfficeCode))) {
+            throw new BadRequestAlertException("Home delivery requires address and toOfficeCode", ENTITY, "homedelivery");
         }
         if (!homeDelivery && isBlank(req.getToOfficeCode())) {
             throw new BadRequestAlertException("toOfficeCode is required when not home delivery", ENTITY, "toofficerequired");
@@ -264,16 +266,9 @@ public class OrderFacadeService {
 
         String fromCode = req.getFromOfficeCode().trim().toUpperCase();
         Office from = requireOffice(fromCode);
-        Office to;
-        Office hub = null;
-        if (homeDelivery) {
-            hub = requireOffice(req.getHubOfficeCode());
-            to = from;
-        } else {
-            to = requireOffice(req.getToOfficeCode());
-        }
+        Office to = requireOffice(destOfficeCode);
 
-        Office fareTo = hub != null ? hub : to;
+        Office fareTo = to;
         SimpleFareCalculator.FareBreakdown fare = fareCalculator.estimate(
             req.getEstimatedWeightKg(),
             homePickup,
@@ -335,8 +330,8 @@ public class OrderFacadeService {
         order.setNote(req.getNote());
         order.setFromOffice(from);
         order.setToOffice(to);
-        order.setHubOffice(hub);
-        order.setFinalToOffice(hub != null ? hub : to);
+        order.setHubOffice(null);
+        order.setFinalToOffice(to);
         order.setPublicTrackingAllowed(true);
 
         order = shipmentOrderRepository.save(order);
@@ -486,7 +481,6 @@ public class OrderFacadeService {
         boolean homePickup = Boolean.TRUE.equals(req.getHomePickup());
         Office from = requireOffice(req.getFromOfficeCode());
         Office to = requireOffice(req.getToOfficeCode());
-        Office hub = isBlank(req.getHubOfficeCode()) ? null : requireOffice(req.getHubOfficeCode());
 
         SimpleFareCalculator.FareBreakdown fare = fareCalculator.estimate(
             req.getWeightKg(),
@@ -518,7 +512,8 @@ public class OrderFacadeService {
         applyCreateFields(order, req);
         order.setFromOffice(from);
         order.setToOffice(to);
-        order.setHubOffice(hub);
+        // Không còn trung chuyển: bỏ hub; finalTo mặc định = toOffice.
+        order.setHubOffice(null);
         Office dest = !isBlank(req.getFinalToOfficeCode()) ? requireOffice(req.getFinalToOfficeCode()) : to;
         order.setFinalToOffice(dest);
         order.setServiceType(resolveServiceType(homePickup, homeDelivery));
@@ -633,7 +628,12 @@ public class OrderFacadeService {
             order.setToOffice(requireOffice(req.getToOfficeCode()));
         }
         if (req.getHubOfficeCode() != null) {
-            order.setHubOffice(requireOffice(req.getHubOfficeCode()));
+            // Chuỗi rỗng = xóa hub (hết trung chuyển).
+            if (isBlank(req.getHubOfficeCode())) {
+                order.setHubOffice(null);
+            } else {
+                order.setHubOffice(requireOffice(req.getHubOfficeCode()));
+            }
         }
         if (req.getFinalToOfficeCode() != null) {
             order.setFinalToOffice(requireOffice(req.getFinalToOfficeCode()));
@@ -813,9 +813,8 @@ public class OrderFacadeService {
         if (!isBlank(req.getToOfficeCode())) {
             order.setToOffice(requireOffice(req.getToOfficeCode()));
         }
-        if (!isBlank(req.getHubOfficeCode())) {
-            order.setHubOffice(requireOffice(req.getHubOfficeCode()));
-        }
+        // Bỏ ghi hub trên create — không còn trung chuyển.
+        order.setHubOffice(null);
         if (!isBlank(req.getFinalToOfficeCode())) {
             order.setFinalToOffice(requireOffice(req.getFinalToOfficeCode()));
         }

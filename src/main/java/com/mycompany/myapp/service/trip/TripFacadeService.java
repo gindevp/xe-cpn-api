@@ -359,9 +359,10 @@ public class TripFacadeService {
             String from = order.getFromOffice() != null ? order.getFromOffice().getCode() : null;
             boolean returning = order.getStatus() == OrderStatus.RETURNING;
             // Chiều hoàn: đích nhập kho là VP gửi gốc (fromOffice).
+            // Không còn trung chuyển hub: cho phép to / finalTo (hub chỉ tương thích data cũ).
             boolean okOffice = returning
-                ? officeCode.equals(from) || officeCode.equals(hub)
-                : officeCode.equals(dest) || officeCode.equals(hub) || officeCode.equals(finalDest);
+                ? officeCode.equals(from) || officeCode.equals(hub) || officeCode.equals(dest)
+                : officeCode.equals(dest) || officeCode.equals(finalDest) || officeCode.equals(hub);
             if (!okOffice && !req.isOverrideWrongOffice()) {
                 throw new BadRequestAlertException("Wrong office for order (E-VP-001)", ENTITY, "wrongOffice");
             }
@@ -372,16 +373,8 @@ public class TripFacadeService {
             tripRepository.save(trip);
         }
 
-        boolean hubIn =
-            order.getHubOffice() != null &&
-            officeCode != null &&
-            officeCode.equals(order.getHubOffice().getCode()) &&
-            order.getToOffice() != null &&
-            !officeCode.equals(order.getToOffice().getCode());
-
-        if (hubIn) {
-            appendOrderEvent(order, "HUB_IN", "Hub " + officeCode, currentActor());
-        } else if (order.getStatus() == OrderStatus.IN_TRANSIT || order.getStatus() == OrderStatus.WAITING) {
+        // Không còn HUB_IN / trung chuyển: quét nhập tại VP nhận → AT_DEST.
+        if (order.getStatus() == OrderStatus.IN_TRANSIT || order.getStatus() == OrderStatus.WAITING) {
             OrderTransitionRequest tr = new OrderTransitionRequest();
             tr.setToStatus(OrderStatus.AT_DEST);
             tr.setAction("SCAN_IN");
