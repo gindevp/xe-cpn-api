@@ -4,6 +4,7 @@ import static com.mycompany.myapp.security.SecurityUtils.AUTHORITIES_KEY;
 import static com.mycompany.myapp.security.SecurityUtils.JWT_ALGORITHM;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.mycompany.myapp.service.config.SessionPolicyService;
 import com.mycompany.myapp.web.rest.vm.LoginVM;
 import jakarta.validation.Valid;
 import java.security.Principal;
@@ -46,10 +47,16 @@ public class AuthenticateController {
     private long tokenValidityInSecondsForRememberMe;
 
     private final AuthenticationManagerBuilder authenticationManagerBuilder;
+    private final SessionPolicyService sessionPolicyService;
 
-    public AuthenticateController(JwtEncoder jwtEncoder, AuthenticationManagerBuilder authenticationManagerBuilder) {
+    public AuthenticateController(
+        JwtEncoder jwtEncoder,
+        AuthenticationManagerBuilder authenticationManagerBuilder,
+        SessionPolicyService sessionPolicyService
+    ) {
         this.jwtEncoder = jwtEncoder;
         this.authenticationManagerBuilder = authenticationManagerBuilder;
+        this.sessionPolicyService = sessionPolicyService;
     }
 
     @PostMapping("/authenticate")
@@ -89,6 +96,7 @@ public class AuthenticateController {
         } else {
             validity = now.plus(this.tokenValidityInSeconds, ChronoUnit.SECONDS);
         }
+        validity = sessionPolicyService.capExpiry(now, validity);
 
         // @formatter:off
         JwtClaimsSet claims = JwtClaimsSet.builder()

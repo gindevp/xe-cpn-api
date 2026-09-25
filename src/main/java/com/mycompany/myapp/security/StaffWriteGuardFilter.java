@@ -89,7 +89,7 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             return;
         }
         // Bảo trì hệ thống
-        if (path.startsWith("/api/admin/maintenance")) {
+        if (path.startsWith("/api/admin/maintenance") || path.startsWith("/api/admin/session-policy")) {
             staffAccessService.requireScreenWrite(ScreenKey.BAO_TRI);
             return;
         }

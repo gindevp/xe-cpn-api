@@ -94,5 +94,6 @@
     <include file="config/liquibase/changelog/20260924220000_office_itinerary_point.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260924233000_door_fee_overage.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260924235000_door_overage_by_kind.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260925100000_session_policy.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
