@@ -55,8 +55,11 @@ public class FinanceFacadeResource {
     }
 
     @PostMapping("/api/receipts/{receiptCode}/confirm")
-    public ReceiptDTO confirm(@PathVariable String receiptCode) {
-        return financeFacadeService.confirmReceipt(receiptCode);
+    public ReceiptDTO confirm(
+        @PathVariable String receiptCode,
+        @RequestBody(required = false) FinanceFacadeService.ConfirmReceiptRequest body
+    ) {
+        return financeFacadeService.confirmReceipt(receiptCode, body);
     }
 
     @PostMapping("/api/receipts/{receiptCode}/unconfirm")

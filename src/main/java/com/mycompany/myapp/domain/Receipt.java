@@ -56,6 +56,11 @@ public class Receipt implements Serializable {
     @Column(name = "confirmed_by_username", length = 50)
     private String confirmedByUsername;
 
+    /** Ảnh chứng từ giao dịch (data-URL / URL) khi AD/KT xác nhận thu. */
+    @Lob
+    @Column(name = "confirm_proof_image")
+    private String confirmProofImage;
+
     @ManyToOne(fetch = FetchType.LAZY)
     private Office office;
 
@@ -176,6 +181,19 @@ public class Receipt implements Serializable {
 
     public void setConfirmedByUsername(String confirmedByUsername) {
         this.confirmedByUsername = confirmedByUsername;
+    }
+
+    public String getConfirmProofImage() {
+        return this.confirmProofImage;
+    }
+
+    public void setConfirmProofImage(String confirmProofImage) {
+        this.confirmProofImage = confirmProofImage;
+    }
+
+    public Receipt confirmProofImage(String confirmProofImage) {
+        this.setConfirmProofImage(confirmProofImage);
+        return this;
     }
 
     public Office getOffice() {

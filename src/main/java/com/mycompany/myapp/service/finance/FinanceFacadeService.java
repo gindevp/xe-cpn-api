@@ -378,9 +378,16 @@ public class FinanceFacadeService {
         return receiptRepository.findAll(spec, pageable).map(r -> toReceiptDto(r, receiptOrderLineRepository.findByReceipt_Id(r.getId())));
     }
 
-    public ReceiptDTO confirmReceipt(String receiptCode) {
+    public ReceiptDTO confirmReceipt(String receiptCode, ConfirmReceiptRequest body) {
         if (receiptCode == null || receiptCode.isBlank()) {
             throw new BadRequestAlertException("receiptCode is required", ENTITY, "receiptCodeRequired");
+        }
+        String proof = body != null ? body.proofImage() : null;
+        if (proof == null || proof.isBlank()) {
+            throw new BadRequestAlertException("Transaction proof image is required", ENTITY, "receiptProofRequired");
+        }
+        if (proof.length() > 2_500_000) {
+            throw new BadRequestAlertException("Proof image too large", ENTITY, "receiptProofTooLarge");
         }
         Receipt receipt = receiptRepository
             .findOneByReceiptCode(receiptCode.trim())
@@ -390,6 +397,7 @@ public class FinanceFacadeService {
         }
         receipt.setConfirmedAt(Instant.now());
         receipt.setConfirmedByUsername(actor());
+        receipt.setConfirmProofImage(proof.trim());
         receipt = receiptRepository.save(receipt);
         return toReceiptDto(receipt, receiptOrderLineRepository.findByReceipt_Id(receipt.getId()));
     }
@@ -417,6 +425,7 @@ public class FinanceFacadeService {
         }
         receipt.setConfirmedAt(null);
         receipt.setConfirmedByUsername(null);
+        receipt.setConfirmProofImage(null);
         receipt = receiptRepository.save(receipt);
         return toReceiptDto(receipt, receiptOrderLineRepository.findByReceipt_Id(receipt.getId()));
     }
@@ -597,7 +606,8 @@ public class FinanceFacadeService {
             lineViews,
             r.getConfirmedAt(),
             r.getConfirmedByUsername(),
-            customerPaidAt
+            customerPaidAt,
+            r.getConfirmProofImage()
         );
     }
 
@@ -768,6 +778,8 @@ public class FinanceFacadeService {
 
     public record CreateReceiptRequest(String payerName, String payerCode, String officeCode, List<ReceiptLineRequest> lines) {}
 
+    public record ConfirmReceiptRequest(String proofImage) {}
+
     public record ReceiptDTO(
         Long id,
         String receiptCode,
@@ -781,7 +793,9 @@ public class FinanceFacadeService {
         Instant confirmedAt,
         String confirmedByUsername,
         /** Thời điểm nhận tiền khách (payment/POD), fallback createdAt. */
-        Instant customerPaidAt
+        Instant customerPaidAt,
+        /** Ảnh chứng từ khi xác nhận thu (data-URL). */
+        String confirmProofImage
     ) {}
 
     public record DayClosureDTO(

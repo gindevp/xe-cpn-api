@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260925140000-receipt-confirm-proof" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="receipt" columnName="confirm_proof_image"/>
+            </not>
+        </preConditions>
+        <comment>Ảnh giao dịch bắt buộc khi AD/KT xác nhận thu phiếu</comment>
+        <addColumn tableName="receipt">
+            <column name="confirm_proof_image" type="longtext"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>
