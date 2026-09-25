@@ -43,8 +43,10 @@ public class PatchOrderRequest {
     private String itineraryLabel;
     /** Optional override for order_event.action (default PATCH). */
     private String eventAction;
-    /** Optional override for order_event.detail (default "Order fields updated"). */
+    /** Optional override for order_event.detail (default Vietnamese note). */
     private String eventDetail;
+    /** true = chỉ cập nhật field, không ghi lịch sử tác động (vd. ghi kiện quét lên/xuống xe). */
+    private Boolean skipHistory;
 
     public String getSenderName() {
         return senderName;
@@ -348,5 +350,13 @@ public class PatchOrderRequest {
 
     public void setEventDetail(String eventDetail) {
         this.eventDetail = eventDetail;
+    }
+
+    public Boolean getSkipHistory() {
+        return skipHistory;
+    }
+
+    public void setSkipHistory(Boolean skipHistory) {
+        this.skipHistory = skipHistory;
     }
 }

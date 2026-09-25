@@ -221,6 +221,16 @@ public class TripFacadeService {
             if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.DELIVERED) {
                 throw new BadRequestAlertException("Order not assignable: " + code, ENTITY, "orderNotAssignable");
             }
+            boolean alreadyOnTrip =
+                order.getCurrentTrip() != null &&
+                trip.getId() != null &&
+                trip.getId().equals(order.getCurrentTrip().getId()) &&
+                assignmentRepository
+                    .findFirstByTrip_IdAndOrder_IdAndAssignmentStatusNot(trip.getId(), order.getId(), AssignmentStatus.REMOVED)
+                    .isPresent();
+            if (alreadyOnTrip) {
+                continue;
+            }
             ensureActiveAssignment(trip, order);
             order.setCurrentTrip(trip);
             order.setForwardStage(ForwardStage.TRANSFER_PENDING);
@@ -254,13 +264,16 @@ public class TripFacadeService {
         assignmentRepository.save(assignment);
 
         order.setCurrentTrip(trip);
+        // Gán xe chỉ để TRANSFER_PENDING. Quét lên xe phải sang hàng trên xe,
+        // nếu không web vẫn hiện tab Đợi trung chuyển dù lịch sử đã xác nhận lên xe.
+        markLoadedOnTruck(order);
         shipmentOrderRepository.save(order);
 
         if (order.getStatus() == OrderStatus.CONFIRMED || order.getStatus() == OrderStatus.WAITING) {
             OrderTransitionRequest tr = new OrderTransitionRequest();
             tr.setToStatus(OrderStatus.IN_TRANSIT);
             tr.setAction("SCAN_OUT");
-            tr.setDetail("Trip " + trip.getTripCode());
+            tr.setDetail("Chuyến " + trip.getTripCode());
             orderFacadeService.transition(order.getOrderCode(), tr);
         } else if (order.getStatus() != OrderStatus.IN_TRANSIT) {
             appendOrderEvent(order, "SCAN_OUT", "Chuyến " + trip.getTripCode(), currentActor());
@@ -269,6 +282,14 @@ public class TripFacadeService {
         refreshCounts(trip);
         tripRepository.save(trip);
         return toSummary(trip, true);
+    }
+
+    /** Đơn đã quét lên xe rời tab Đợi trung chuyển giao. Không đụng giai đoạn kho nhận. */
+    private static void markLoadedOnTruck(ShipmentOrder order) {
+        ForwardStage stage = order.getForwardStage();
+        if (stage == null || stage == ForwardStage.PICKED || stage == ForwardStage.WH_IN || stage == ForwardStage.TRANSFER_PENDING) {
+            order.setForwardStage(ForwardStage.TRANSFERRING);
+        }
     }
 
     public TripSummaryDTO removeScanOut(String tripCode, String orderCode) {
@@ -290,7 +311,7 @@ public class TripFacadeService {
             OrderTransitionRequest tr = new OrderTransitionRequest();
             tr.setToStatus(OrderStatus.WAITING);
             tr.setAction("SCAN_REMOVE");
-            tr.setDetail("Trip " + trip.getTripCode());
+            tr.setDetail("Chuyến " + trip.getTripCode());
             orderFacadeService.transition(order.getOrderCode(), tr);
         } else {
             appendOrderEvent(order, "SCAN_REMOVE", "Chuyến " + trip.getTripCode(), currentActor());
@@ -364,7 +385,7 @@ public class TripFacadeService {
             OrderTransitionRequest tr = new OrderTransitionRequest();
             tr.setToStatus(OrderStatus.AT_DEST);
             tr.setAction("SCAN_IN");
-            tr.setDetail(officeCode != null ? "VP " + officeCode : "SCAN_IN");
+            tr.setDetail(officeCode != null ? "Văn phòng " + officeCode : "Nhập kho nhận");
             orderFacadeService.transition(order.getOrderCode(), tr);
         }
 

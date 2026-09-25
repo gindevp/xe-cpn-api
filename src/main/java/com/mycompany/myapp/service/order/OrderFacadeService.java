@@ -678,9 +678,11 @@ public class OrderFacadeService {
             order.setItineraryLabel(blankToNull(req.getItineraryLabel()));
         }
         shipmentOrderRepository.save(order);
-        String eventAction = !isBlank(req.getEventAction()) ? req.getEventAction().trim() : "PATCH";
-        String eventDetail = !isBlank(req.getEventDetail()) ? req.getEventDetail().trim() : "Order fields updated";
-        appendEvent(order, eventAction, eventDetail, currentActor());
+        if (!Boolean.TRUE.equals(req.getSkipHistory())) {
+            String eventAction = !isBlank(req.getEventAction()) ? req.getEventAction().trim() : "PATCH";
+            String eventDetail = !isBlank(req.getEventDetail()) ? req.getEventDetail().trim() : "Cập nhật thông tin đơn";
+            appendEvent(order, eventAction, eventDetail, currentActor());
+        }
         return getByCode(order.getOrderCode());
     }
 
