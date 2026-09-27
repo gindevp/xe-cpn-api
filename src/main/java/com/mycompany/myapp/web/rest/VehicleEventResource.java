@@ -2,6 +2,8 @@ package com.mycompany.myapp.web.rest;
 
 import com.mycompany.myapp.service.dto.vehicle.VehicleBoardDtos;
 import com.mycompany.myapp.service.vehicle.VehicleBoardService;
+import java.time.LocalDate;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -17,6 +19,16 @@ public class VehicleEventResource {
     @GetMapping("/board")
     public VehicleBoardDtos.Board board() {
         return vehicleBoardService.board();
+    }
+
+    /** Theo dõi quản trị (screen bao-gio-xe). officeCode bỏ trống = toàn hệ thống. */
+    @GetMapping("/report")
+    public VehicleBoardDtos.Report reportList(
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+        @RequestParam(required = false) String officeCode
+    ) {
+        return vehicleBoardService.reportList(from, to, officeCode);
     }
 
     /** Ghi: NV có quyền Lên hàng hoặc Xuống hàng (StaffWriteGuardFilter). Báo lại cùng chuyến trả về giờ đã ghi. */

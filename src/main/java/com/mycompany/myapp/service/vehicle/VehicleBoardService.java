@@ -11,6 +11,7 @@ import com.mycompany.myapp.domain.VehicleOfficeEvent.Source;
 import com.mycompany.myapp.repository.ItineraryRepository;
 import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
+import com.mycompany.myapp.security.ScreenKey;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.dto.trip.AvailableTripDTO;
@@ -49,6 +50,7 @@ public class VehicleBoardService {
     private static final Logger LOG = LoggerFactory.getLogger(VehicleBoardService.class);
     static final String ENTITY = "vehicleEvent";
     private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
+    static final int MAX_REPORT_DAYS = 92;
 
     private final TripRepository tripRepository;
     private final ItineraryRepository itineraryRepository;
@@ -203,6 +205,69 @@ public class VehicleBoardService {
             throw new BadRequestAlertException("Chuyến này vừa được báo — tải lại danh sách", ENTITY, "alreadyReported");
         }
         return toItem(c, e);
+    }
+
+    /**
+     * Theo dõi quản trị: các lượt báo trong [from, to] (giờ VN), kèm lượt báo ở VP khác của cùng chuyến trong ±2 ngày
+     * để ghép rời → đến. VP bị giới hạn theo phạm vi nếu không phải admin.
+     */
+    @Transactional(readOnly = true)
+    public VehicleBoardDtos.Report reportList(LocalDate from, LocalDate to, String officeCode) {
+        staffAccessService.requireScreenRead(ScreenKey.BAO_GIO_XE);
+        if (from == null || to == null || to.isBefore(from)) {
+            throw new BadRequestAlertException("Khoảng ngày không hợp lệ", ENTITY, "rangeInvalid");
+        }
+        if (ChronoUnit.DAYS.between(from, to) > MAX_REPORT_DAYS) {
+            throw new BadRequestAlertException("Chỉ xem tối đa " + MAX_REPORT_DAYS + " ngày mỗi lần", ENTITY, "rangeTooLong");
+        }
+        String office = trimToNull(officeCode);
+        if (!staffAccessService.isSystemAdmin()) {
+            office = staffAccessService.scopedOfficeCode().orElse(office);
+        }
+        List<VehicleOfficeEvent> events = eventRepository.findForReport(
+            from.atStartOfDay(VN).toInstant(),
+            to.plusDays(1).atStartOfDay(VN).toInstant(),
+            from.minusDays(2).atStartOfDay(VN).toInstant(),
+            to.plusDays(3).atStartOfDay(VN).toInstant(),
+            office
+        );
+        Set<String> logins = new HashSet<>();
+        for (VehicleOfficeEvent e : events) {
+            if (e.getReportedBy() != null) {
+                logins.add(e.getReportedBy().toLowerCase(Locale.ROOT));
+            }
+        }
+        Map<String, String> names = new HashMap<>();
+        if (!logins.isEmpty()) {
+            for (Object[] row : eventRepository.findStaffNames(logins)) {
+                if (row[0] != null && row[1] != null) {
+                    names.put(row[0].toString().toLowerCase(Locale.ROOT), row[1].toString());
+                }
+            }
+        }
+        List<VehicleBoardDtos.ReportItem> items = events
+            .stream()
+            .map(e ->
+                new VehicleBoardDtos.ReportItem(
+                    e.getId(),
+                    e.getOffice().getCode(),
+                    e.getOffice().getName(),
+                    e.getEventType().name(),
+                    e.getSource().name(),
+                    e.getTripKey(),
+                    e.getTripCode(),
+                    e.getExternalTripId(),
+                    e.getVehiclePlate(),
+                    e.getDriverName(),
+                    e.getRouteLabel(),
+                    e.getPlannedDepartAt(),
+                    e.getEventAt(),
+                    e.getReportedBy(),
+                    e.getReportedBy() == null ? null : names.get(e.getReportedBy().toLowerCase(Locale.ROOT))
+                )
+            )
+            .toList();
+        return new VehicleBoardDtos.Report(items);
     }
 
     private void appendCrm(List<Candidate> candidates, String point, LocalDate today) {

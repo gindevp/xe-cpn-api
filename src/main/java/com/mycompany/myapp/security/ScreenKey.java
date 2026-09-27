@@ -22,6 +22,7 @@ public enum ScreenKey {
     NGOAI_LE("ngoai-le", "Ngoại lệ - Thất lạc - Hư hỏng", "Hoạt động"),
     TON_KHO("ton-kho", "Tồn kho", "Hoạt động"),
     BAO_CAO_GIO("bao-cao-gio", "Báo cáo đơn theo giờ", "Hoạt động"),
+    BAO_GIO_XE("bao-gio-xe", "Theo dõi báo giờ xe đến/đi", "Hoạt động"),
 
     VAN_DON("van-don", "Vận đơn — đơn chờ gán xe & chi tiết đơn", "Vận đơn"),
     DUYET_HUY("duyet-huy", "Hàng trên xe — huỷ đơn", "Vận đơn"),

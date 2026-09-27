@@ -24,6 +24,26 @@ public final class VehicleBoardDtos {
         String reportedBy
     ) {}
 
+    public record ReportItem(
+        Long id,
+        String officeCode,
+        String officeName,
+        String eventType,
+        String source,
+        String tripKey,
+        String tripCode,
+        String externalTripId,
+        String vehiclePlate,
+        String driverName,
+        String routeLabel,
+        Instant plannedDepartAt,
+        Instant eventAt,
+        String reportedBy,
+        String reportedByName
+    ) {}
+
+    public record Report(List<ReportItem> events) {}
+
     public record ReportRequest(
         String eventType,
         String source,
