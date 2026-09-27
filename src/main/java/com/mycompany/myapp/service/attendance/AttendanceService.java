@@ -150,6 +150,15 @@ public class AttendanceService {
         if (!ok) {
             throw new BadRequestAlertException("IP không hợp lệ", ENTITY, "ipInvalid");
         }
+        if (ClientIpResolver.isInternal(ip)) {
+            throw new BadRequestAlertException(
+                "IP " +
+                ip +
+                " là IP nội bộ (IP wifi / bộ định tuyến) — nhập IP công cộng của văn phòng, bấm \"Lấy IP máy này\" khi đang dùng mạng văn phòng",
+                ENTITY,
+                "ipPrivate"
+            );
+        }
         return ip;
     }
 

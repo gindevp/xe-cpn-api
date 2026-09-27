@@ -133,5 +133,7 @@ class AttendanceServiceTest {
         assertThat(AttendanceService.validateIp("2001:DB8::1")).isEqualTo("2001:db8::1");
         assertThatThrownBy(() -> AttendanceService.validateIp("300.1.1.1")).isInstanceOf(BadRequestAlertException.class);
         assertThatThrownBy(() -> AttendanceService.validateIp("abc")).isInstanceOf(BadRequestAlertException.class);
+        assertThatThrownBy(() -> AttendanceService.validateIp("192.168.1.1")).isInstanceOf(BadRequestAlertException.class);
+        assertThatThrownBy(() -> AttendanceService.validateIp("10.0.0.5")).isInstanceOf(BadRequestAlertException.class);
     }
 }

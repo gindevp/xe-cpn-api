@@ -47,7 +47,7 @@ public final class ClientIpResolver {
         return ip.isEmpty() ? null : ip;
     }
 
-    static boolean isInternal(String ip) {
+    public static boolean isInternal(String ip) {
         if (ip.contains(":")) {
             return ip.equals("::1") || ip.startsWith("fe80:") || ip.startsWith("fc") || ip.startsWith("fd");
         }
