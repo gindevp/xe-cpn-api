@@ -16,4 +16,10 @@ public final class AttendanceDtos {
     public record OfficeNetworkItem(Long id, String ipAddress, String label, String createdBy, Instant createdAt) {}
 
     public record OfficeNetworkRequest(String ipAddress, String label) {}
+
+    public record ReportStaff(String login, String staffCode, String displayName, String officeCode, String officeName, boolean active) {}
+
+    public record Report(List<ReportStaff> staff, List<AttendanceAdminRecordDTO> records) {}
+
+    public record Photo(Long id, String photo) {}
 }

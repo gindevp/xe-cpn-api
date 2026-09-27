@@ -5,7 +5,9 @@ import com.mycompany.myapp.service.attendance.AttendanceService;
 import com.mycompany.myapp.service.dto.attendance.AttendanceDtos;
 import com.mycompany.myapp.service.dto.attendance.AttendanceItemDTO;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.LocalDate;
 import java.util.List;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,6 +35,22 @@ public class AttendanceResource {
     @GetMapping("/api/attendance/my-ip")
     public AttendanceDtos.ClientIp myIp(HttpServletRequest request) {
         return new AttendanceDtos.ClientIp(ClientIpResolver.resolve(request), request.getHeader("X-Forwarded-For"));
+    }
+
+    /** Bảng công quản trị (screen cham-cong). officeCode / login bỏ trống = toàn hệ thống. */
+    @GetMapping("/api/attendance/report")
+    public AttendanceDtos.Report report(
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+        @RequestParam(required = false) String officeCode,
+        @RequestParam(required = false) String login
+    ) {
+        return attendanceService.report(from, to, officeCode, login);
+    }
+
+    @GetMapping("/api/attendance/records/{id}/photo")
+    public AttendanceDtos.Photo photo(@PathVariable Long id) {
+        return attendanceService.photo(id);
     }
 
     @GetMapping("/api/offices/{officeId}/networks")

@@ -64,6 +64,27 @@ public class StaffAccessService {
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Role not allowed for this screen write");
     }
 
+    /** Screen read (Y/R) on at least one of the given screens — ADMIN JWT always allowed. */
+    public void requireScreenRead(ScreenKey... screens) {
+        if (permissionService.isSystemAdmin()) {
+            return;
+        }
+        StaffProfile p = current().orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Staff profile required"));
+        if (Boolean.FALSE.equals(p.getActive())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Staff profile inactive");
+        }
+        for (ScreenKey screen : screens) {
+            if (permissionService.permOf(p, screen).canRead()) {
+                return;
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Role not allowed for this screen");
+    }
+
+    public boolean isSystemAdmin() {
+        return permissionService.isSystemAdmin();
+    }
+
     public void requireForceCloseRole() {
         Optional<StaffProfile> profile = current();
         if (profile.isEmpty()) {

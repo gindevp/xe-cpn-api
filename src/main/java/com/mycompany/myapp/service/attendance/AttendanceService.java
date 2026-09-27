@@ -9,8 +9,10 @@ import com.mycompany.myapp.repository.AttendanceRecordRepository;
 import com.mycompany.myapp.repository.OfficeNetworkRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.security.ClientIpResolver;
+import com.mycompany.myapp.security.ScreenKey;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
+import com.mycompany.myapp.service.dto.attendance.AttendanceAdminRecordDTO;
 import com.mycompany.myapp.service.dto.attendance.AttendanceDtos;
 import com.mycompany.myapp.service.dto.attendance.AttendanceItemDTO;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
@@ -20,6 +22,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +37,7 @@ public class AttendanceService {
     private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     /** ~1.5 MB ảnh gốc sau base64 — app đã nén ảnh nhỏ hơn nhiều. */
     static final int MAX_PHOTO_CHARS = 2_000_000;
+    static final int MAX_REPORT_DAYS = 92;
 
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final OfficeNetworkRepository officeNetworkRepository;
@@ -94,6 +98,58 @@ public class AttendanceService {
         r.setPhoto(photo.startsWith("data:") ? photo : "data:image/jpeg;base64," + photo);
         r = attendanceRecordRepository.save(r);
         return new AttendanceItemDTO(r.getId(), r.getCheckedAt(), office.getCode(), office.getName());
+    }
+
+    /** Bảng công: NV (lọc VP / cá nhân / toàn hệ thống) + các lượt chấm trong [from, to] theo giờ VN. */
+    @Transactional(readOnly = true)
+    public AttendanceDtos.Report report(LocalDate from, LocalDate to, String officeCode, String login) {
+        staffAccessService.requireScreenRead(ScreenKey.CHAM_CONG);
+        if (from == null || to == null || to.isBefore(from)) {
+            throw new BadRequestAlertException("Khoảng ngày không hợp lệ", ENTITY, "rangeInvalid");
+        }
+        if (ChronoUnit.DAYS.between(from, to) > MAX_REPORT_DAYS) {
+            throw new BadRequestAlertException("Chỉ xem tối đa " + MAX_REPORT_DAYS + " ngày mỗi lần", ENTITY, "rangeTooLong");
+        }
+        String office = blankToNull(officeCode);
+        if (!staffAccessService.isSystemAdmin()) {
+            office = staffAccessService.scopedOfficeCode().orElse(office);
+        }
+        String user = blankToNull(login);
+        user = user == null ? null : user.toLowerCase(Locale.ROOT);
+        List<AttendanceDtos.ReportStaff> staff = attendanceRecordRepository
+            .findReportStaff(office, user)
+            .stream()
+            .map(s ->
+                new AttendanceDtos.ReportStaff(
+                    s.getUserLogin(),
+                    s.getStaffCode(),
+                    s.getDisplayName(),
+                    s.getOffice() == null ? null : s.getOffice().getCode(),
+                    s.getOffice() == null ? null : s.getOffice().getName(),
+                    !Boolean.FALSE.equals(s.getActive())
+                )
+            )
+            .toList();
+        List<AttendanceAdminRecordDTO> records = attendanceRecordRepository.findAdminItems(
+            from.atStartOfDay(VN).toInstant(),
+            to.plusDays(1).atStartOfDay(VN).toInstant(),
+            office,
+            user
+        );
+        return new AttendanceDtos.Report(staff, records);
+    }
+
+    @Transactional(readOnly = true)
+    public AttendanceDtos.Photo photo(Long id) {
+        staffAccessService.requireScreenRead(ScreenKey.CHAM_CONG);
+        String photo = attendanceRecordRepository
+            .findPhotoById(id)
+            .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy lượt chấm công", ENTITY, "recordNotFound"));
+        return new AttendanceDtos.Photo(id, photo);
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     @Transactional(readOnly = true)
