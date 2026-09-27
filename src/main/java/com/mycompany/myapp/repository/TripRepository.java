@@ -59,5 +59,27 @@ public interface TripRepository extends JpaRepository<Trip, Long>, JpaSpecificat
     @Query("select count(trip) from Trip trip where trip.tripCode like concat(:prefix, '%')")
     long countByTripCodePrefix(@Param("prefix") String prefix);
 
+    /** Chuyến chưa huỷ trong khoảng giờ xuất bến, có liên quan tới VP (xuất phát hoặc tuyến đi/đến VP). */
+    @Query(
+        """
+        select trip from Trip trip
+        left join fetch trip.office
+        left join fetch trip.route r
+        left join fetch r.fromOffice
+        left join fetch r.toOffice
+        left join fetch trip.vehicle
+        left join fetch trip.driver
+        where trip.departAt >= :from and trip.departAt < :to
+          and trip.status <> com.mycompany.myapp.domain.enumeration.TripStatus.CANCELLED
+          and (trip.office.id = :officeId or r.fromOffice.id = :officeId or r.toOffice.id = :officeId)
+        order by trip.departAt asc
+        """
+    )
+    List<Trip> findForOfficeBoard(
+        @Param("officeId") Long officeId,
+        @Param("from") java.time.Instant from,
+        @Param("to") java.time.Instant to
+    );
+
     Optional<Trip> findFirstByVehicle_PlateNumberAndStatusInOrderByIdDesc(String plateNumber, Collection<TripStatus> statuses);
 }

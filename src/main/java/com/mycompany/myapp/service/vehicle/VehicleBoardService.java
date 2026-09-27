@@ -1,0 +1,364 @@
+package com.mycompany.myapp.service.vehicle;
+
+import com.mycompany.myapp.domain.Itinerary;
+import com.mycompany.myapp.domain.Office;
+import com.mycompany.myapp.domain.Route;
+import com.mycompany.myapp.domain.StaffProfile;
+import com.mycompany.myapp.domain.Trip;
+import com.mycompany.myapp.domain.VehicleOfficeEvent;
+import com.mycompany.myapp.domain.VehicleOfficeEvent.EventType;
+import com.mycompany.myapp.domain.VehicleOfficeEvent.Source;
+import com.mycompany.myapp.repository.ItineraryRepository;
+import com.mycompany.myapp.repository.TripRepository;
+import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
+import com.mycompany.myapp.security.SecurityUtils;
+import com.mycompany.myapp.security.StaffAccessService;
+import com.mycompany.myapp.service.dto.trip.AvailableTripDTO;
+import com.mycompany.myapp.service.dto.vehicle.VehicleBoardDtos;
+import com.mycompany.myapp.service.partner.AvailableTripSearchService;
+import com.mycompany.myapp.service.partner.VthkTripSearchClient;
+import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
+import java.text.Normalizer;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Danh sách xe đến/rời VP gốc của NV trong ngày + ghi nhận giờ. Không đổi trạng thái chuyến/đơn.
+ * Rời VP: chuyến xuất bến hôm nay từ VP. Đến VP: chuyến có điểm đến là VP, xuất bến hôm nay hoặc hôm qua mà chưa báo đến.
+ */
+@Service
+@Transactional
+public class VehicleBoardService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(VehicleBoardService.class);
+    static final String ENTITY = "vehicleEvent";
+    private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
+
+    private final TripRepository tripRepository;
+    private final ItineraryRepository itineraryRepository;
+    private final VehicleOfficeEventRepository eventRepository;
+    private final AvailableTripSearchService availableTripSearchService;
+    private final VthkTripSearchClient vthkClient;
+    private final StaffAccessService staffAccessService;
+
+    public VehicleBoardService(
+        TripRepository tripRepository,
+        ItineraryRepository itineraryRepository,
+        VehicleOfficeEventRepository eventRepository,
+        AvailableTripSearchService availableTripSearchService,
+        VthkTripSearchClient vthkClient,
+        StaffAccessService staffAccessService
+    ) {
+        this.tripRepository = tripRepository;
+        this.itineraryRepository = itineraryRepository;
+        this.eventRepository = eventRepository;
+        this.availableTripSearchService = availableTripSearchService;
+        this.vthkClient = vthkClient;
+        this.staffAccessService = staffAccessService;
+    }
+
+    record Candidate(
+        EventType type,
+        Source source,
+        String tripKey,
+        String tripCode,
+        String externalTripId,
+        String plate,
+        String driver,
+        String route,
+        Instant departAt
+    ) {}
+
+    @Transactional(readOnly = true)
+    public VehicleBoardDtos.Board board() {
+        Office office = homeOffice();
+        LocalDate today = LocalDate.now(VN);
+        Instant todayStart = today.atStartOfDay(VN).toInstant();
+        Instant yesterdayStart = today.minusDays(1).atStartOfDay(VN).toInstant();
+        Instant tomorrowStart = today.plusDays(1).atStartOfDay(VN).toInstant();
+
+        List<Candidate> candidates = new ArrayList<>();
+        for (Trip trip : tripRepository.findForOfficeBoard(office.getId(), yesterdayStart, tomorrowStart)) {
+            if (departsFrom(trip, office) && !trip.getDepartAt().isBefore(todayStart)) {
+                candidates.add(fromTrip(trip, EventType.DEPART));
+            }
+            if (arrivesAt(trip, office)) {
+                candidates.add(fromTrip(trip, EventType.ARRIVE));
+            }
+        }
+
+        String crmWarning = null;
+        String point = foldPoint(office.getItineraryPoint());
+        if (point != null && vthkClient.isEnabled()) {
+            try {
+                appendCrm(candidates, point, today);
+            } catch (RuntimeException e) {
+                LOG.warn("Vehicle board CRM lookup failed for office {}: {}", office.getCode(), e.getMessage());
+                crmWarning = "Không tải được xe Limousine từ CRM";
+            }
+        }
+
+        Map<String, VehicleOfficeEvent> reported = new HashMap<>();
+        Set<String> keys = new HashSet<>();
+        candidates.forEach(c -> keys.add(c.tripKey()));
+        if (!keys.isEmpty()) {
+            for (VehicleOfficeEvent e : eventRepository.findByOffice_IdAndTripKeyIn(office.getId(), keys)) {
+                reported.put(e.getEventType() + "|" + e.getTripKey(), e);
+            }
+        }
+
+        List<VehicleBoardDtos.Item> items = new ArrayList<>();
+        for (Candidate c : candidates) {
+            VehicleOfficeEvent e = reported.get(c.type() + "|" + c.tripKey());
+            boolean yesterday = c.departAt() != null && c.departAt().isBefore(todayStart);
+            if (yesterday && e != null) {
+                continue;
+            }
+            items.add(toItem(c, e));
+        }
+        items.sort(Comparator.comparing(VehicleBoardDtos.Item::plannedDepartAt, Comparator.nullsLast(Comparator.naturalOrder())));
+        return new VehicleBoardDtos.Board(office.getCode(), office.getName(), items, crmWarning);
+    }
+
+    public VehicleBoardDtos.Item report(VehicleBoardDtos.ReportRequest req) {
+        if (req == null) {
+            throw new BadRequestAlertException("Thiếu dữ liệu", ENTITY, "bodyRequired");
+        }
+        Office office = homeOffice();
+        EventType type = parse(EventType.class, req.eventType(), "eventTypeInvalid");
+        Source source = parse(Source.class, req.source(), "sourceInvalid");
+
+        Candidate c;
+        if (source == Source.TRIP) {
+            String code = trimToNull(req.tripCode());
+            if (code == null) {
+                throw new BadRequestAlertException("Thiếu mã chuyến", ENTITY, "tripCodeRequired");
+            }
+            Trip trip = tripRepository
+                .findOneByTripCode(code)
+                .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy chuyến " + code, ENTITY, "tripNotFound"));
+            boolean related = type == EventType.DEPART ? departsFrom(trip, office) : arrivesAt(trip, office);
+            if (!related) {
+                throw new BadRequestAlertException(
+                    type == EventType.DEPART ? "Chuyến không xuất phát từ văn phòng của bạn" : "Chuyến không đến văn phòng của bạn",
+                    ENTITY,
+                    "tripNotRelated"
+                );
+            }
+            c = fromTrip(trip, type);
+        } else {
+            String ext = trimToNull(req.externalTripId());
+            if (ext == null) {
+                throw new BadRequestAlertException("Thiếu mã chuyến CRM", ENTITY, "externalTripIdRequired");
+            }
+            c = new Candidate(
+                type,
+                Source.CRM,
+                "C:" + cut(ext, 60),
+                null,
+                cut(ext, 60),
+                cut(trimToNull(req.vehiclePlate()), 30),
+                cut(trimToNull(req.driverName()), 120),
+                cut(trimToNull(req.routeLabel()), 120),
+                req.plannedDepartAt()
+            );
+        }
+
+        var existing = eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(office.getId(), type, c.tripKey());
+        if (existing.isPresent()) {
+            return toItem(c, existing.get());
+        }
+        VehicleOfficeEvent e = new VehicleOfficeEvent();
+        e.setOffice(office);
+        e.setEventType(type);
+        e.setSource(c.source());
+        e.setTripKey(c.tripKey());
+        e.setTripCode(c.tripCode());
+        e.setExternalTripId(c.externalTripId());
+        e.setVehiclePlate(c.plate());
+        e.setDriverName(c.driver());
+        e.setRouteLabel(c.route());
+        e.setPlannedDepartAt(c.departAt());
+        e.setEventAt(Instant.now().truncatedTo(ChronoUnit.SECONDS));
+        e.setReportedBy(SecurityUtils.getCurrentUserLogin().orElse(null));
+        try {
+            e = eventRepository.saveAndFlush(e);
+        } catch (DataIntegrityViolationException dup) {
+            throw new BadRequestAlertException("Chuyến này vừa được báo — tải lại danh sách", ENTITY, "alreadyReported");
+        }
+        return toItem(c, e);
+    }
+
+    private void appendCrm(List<Candidate> candidates, String point, LocalDate today) {
+        Set<String> tripPlates = new HashSet<>();
+        for (Candidate c : candidates) {
+            if (c.plate() != null) {
+                tripPlates.add(c.type() + "|" + plateKey(c.plate()));
+            }
+        }
+        Set<String> seen = new HashSet<>();
+        for (Itinerary it : itineraryRepository.findFiltered(null, true)) {
+            String[] ends = itineraryEnds(it.getCode());
+            if (ends == null) {
+                continue;
+            }
+            EventType type;
+            LocalDate fromDay;
+            if (point.equals(ends[0])) {
+                type = EventType.DEPART;
+                fromDay = today;
+            } else if (point.equals(ends[1])) {
+                type = EventType.ARRIVE;
+                fromDay = today.minusDays(1);
+            } else {
+                continue;
+            }
+            List<AvailableTripDTO> trips = availableTripSearchService.searchWindow(it, fromDay.atStartOfDay(), today.atTime(23, 59, 59));
+            for (AvailableTripDTO t : trips) {
+                if (t.getVehiclePlate() != null && tripPlates.contains(type + "|" + plateKey(t.getVehiclePlate()))) {
+                    continue;
+                }
+                String key = "C:" + cut(t.getExternalTripId(), 60);
+                if (!seen.add(type + "|" + key)) {
+                    continue;
+                }
+                candidates.add(
+                    new Candidate(
+                        type,
+                        Source.CRM,
+                        key,
+                        null,
+                        cut(t.getExternalTripId(), 60),
+                        t.getVehiclePlate(),
+                        firstNonBlank(t.getDriverName(), t.getAssignDriverName()),
+                        firstNonBlank(it.getName(), t.getRouteLabel()),
+                        t.getDepartAt()
+                    )
+                );
+            }
+        }
+    }
+
+    private Office homeOffice() {
+        StaffProfile p = staffAccessService
+            .current()
+            .orElseThrow(() -> new BadRequestAlertException("Tài khoản chưa có hồ sơ nhân viên", ENTITY, "staffMissing"));
+        if (p.getOffice() == null) {
+            throw new BadRequestAlertException("Tài khoản chưa gắn văn phòng", ENTITY, "officeMissing");
+        }
+        return p.getOffice();
+    }
+
+    static boolean departsFrom(Trip trip, Office office) {
+        Route r = trip.getRoute();
+        return (
+            (trip.getOffice() != null && Objects.equals(trip.getOffice().getId(), office.getId())) ||
+            (r != null && r.getFromOffice() != null && Objects.equals(r.getFromOffice().getId(), office.getId()))
+        );
+    }
+
+    static boolean arrivesAt(Trip trip, Office office) {
+        Route r = trip.getRoute();
+        return r != null && r.getToOffice() != null && Objects.equals(r.getToOffice().getId(), office.getId());
+    }
+
+    private static Candidate fromTrip(Trip trip, EventType type) {
+        Route r = trip.getRoute();
+        String route = firstNonBlank(trip.getItineraryLabel(), r != null ? r.getName() : null, r != null ? r.getCode() : null);
+        return new Candidate(
+            type,
+            Source.TRIP,
+            "T:" + trip.getTripCode(),
+            trip.getTripCode(),
+            null,
+            trip.getVehicle() != null ? trip.getVehicle().getPlateNumber() : null,
+            trip.getDriver() != null ? trip.getDriver().getFullName() : null,
+            route,
+            trip.getDepartAt()
+        );
+    }
+
+    private static VehicleBoardDtos.Item toItem(Candidate c, VehicleOfficeEvent e) {
+        return new VehicleBoardDtos.Item(
+            c.type() + "|" + c.tripKey(),
+            c.type().name(),
+            c.source().name(),
+            c.tripCode(),
+            c.externalTripId(),
+            c.plate(),
+            c.driver(),
+            c.route(),
+            c.departAt(),
+            e != null ? e.getEventAt() : null,
+            e != null ? e.getReportedBy() : null
+        );
+    }
+
+    /** "GA-YB" → ["GA","YB"]; "HĐ-TB" → ["HD","TB"]. */
+    static String[] itineraryEnds(String code) {
+        if (code == null) {
+            return null;
+        }
+        String[] parts = code.split("-");
+        if (parts.length != 2) {
+            return null;
+        }
+        String from = foldPoint(parts[0]);
+        String to = foldPoint(parts[1]);
+        return from == null || to == null ? null : new String[] { from, to };
+    }
+
+    static String foldPoint(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String s = raw.trim().replace('Đ', 'D').replace('đ', 'd');
+        s = Normalizer.normalize(s, Normalizer.Form.NFD).replaceAll("\\p{M}", "").toUpperCase(Locale.ROOT);
+        return s.isEmpty() ? null : s;
+    }
+
+    private static String plateKey(String plate) {
+        return plate.replaceAll("[^0-9A-Za-z]", "").toUpperCase(Locale.ROOT);
+    }
+
+    private static <E extends Enum<E>> E parse(Class<E> type, String raw, String errorKey) {
+        try {
+            return Enum.valueOf(type, raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestAlertException("Giá trị không hợp lệ: " + raw, ENTITY, errorKey);
+        }
+    }
+
+    private static String trimToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    private static String cut(String s, int max) {
+        return s == null || s.length() <= max ? s : s.substring(0, max);
+    }
+
+    private static String firstNonBlank(String... vals) {
+        for (String v : vals) {
+            if (v != null && !v.isBlank()) {
+                return v.trim();
+            }
+        }
+        return null;
+    }
+}

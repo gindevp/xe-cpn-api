@@ -85,6 +85,25 @@ public class AvailableTripSearchService {
         return items;
     }
 
+    /** Chuyến CRM của một lộ trình, xuất bến trong [from, to] giờ VN — không tính tải hàng. */
+    public List<AvailableTripDTO> searchWindow(Itinerary itinerary, LocalDateTime from, LocalDateTime to) {
+        String maHanhTrinh = blankToNull(itinerary.getName());
+        if (maHanhTrinh == null) {
+            maHanhTrinh = blankToNull(itinerary.getCode());
+        }
+        if (maHanhTrinh == null) {
+            return List.of();
+        }
+        List<AvailableTripDTO> items = new ArrayList<>();
+        for (JsonNode n : vthkClient.searchTripsByItineraries(List.of(maHanhTrinh), CRM_DT.format(from), CRM_DT.format(to))) {
+            AvailableTripDTO dto = mapTrip(n, itinerary.getCode());
+            if (dto.getDepartAt() != null && dto.getExternalTripId() != null) {
+                items.add(dto);
+            }
+        }
+        return items;
+    }
+
     private void enrichCargo(List<AvailableTripDTO> items) {
         if (items.isEmpty()) {
             return;

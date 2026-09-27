@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260927140000-1" author="cpn">
+        <comment>IP công cộng của wifi văn phòng — chấm công chỉ hợp lệ khi request đến từ một IP trong danh sách.</comment>
+        <createTable tableName="office_network">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="office_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="ip_address" type="varchar(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="label" type="varchar(100)"/>
+            <column name="created_by" type="varchar(50)"/>
+            <column name="created_at" type="${datetimeType}"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="office_network" baseColumnNames="office_id"
+                                 constraintName="fk_office_network__office_id"
+                                 referencedTableName="office" referencedColumnNames="id"/>
+        <addUniqueConstraint tableName="office_network" columnNames="office_id, ip_address"
+                             constraintName="ux_office_network__office_ip"/>
+    </changeSet>
+
+    <changeSet id="20260927140000-2" author="cpn">
+        <comment>Lịch sử chấm công (ảnh khuôn mặt lưu làm bằng chứng).</comment>
+        <createTable tableName="attendance_record">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_login" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="office_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checked_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="client_ip" type="varchar(64)"/>
+            <column name="photo" type="longtext"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="attendance_record" baseColumnNames="office_id"
+                                 constraintName="fk_attendance_record__office_id"
+                                 referencedTableName="office" referencedColumnNames="id"/>
+        <createIndex tableName="attendance_record" indexName="ix_attendance_record__user_checked">
+            <column name="user_login"/>
+            <column name="checked_at"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20260927140000-3" author="cpn">
+        <comment>Giờ xe đến/rời văn phòng — chỉ ghi nhận, không đổi trạng thái chuyến/đơn. Một chuyến chỉ báo 1 lần mỗi loại mỗi VP.</comment>
+        <createTable tableName="vehicle_office_event">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="office_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="event_type" type="varchar(10)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source" type="varchar(10)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="trip_key" type="varchar(80)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="trip_code" type="varchar(60)"/>
+            <column name="external_trip_id" type="varchar(60)"/>
+            <column name="vehicle_plate" type="varchar(30)"/>
+            <column name="driver_name" type="varchar(120)"/>
+            <column name="route_label" type="varchar(120)"/>
+            <column name="planned_depart_at" type="${datetimeType}"/>
+            <column name="event_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="reported_by" type="varchar(50)"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="vehicle_office_event" baseColumnNames="office_id"
+                                 constraintName="fk_vehicle_office_event__office_id"
+                                 referencedTableName="office" referencedColumnNames="id"/>
+        <addUniqueConstraint tableName="vehicle_office_event" columnNames="office_id, event_type, trip_key"
+                             constraintName="ux_vehicle_office_event__office_type_trip"/>
+    </changeSet>
+</databaseChangeLog>

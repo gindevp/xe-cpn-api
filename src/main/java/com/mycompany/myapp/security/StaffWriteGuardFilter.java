@@ -33,7 +33,9 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         throws ServletException, IOException {
         String method = request.getMethod();
         String path = request.getRequestURI();
-        if (WRITE_METHODS.contains(method) && path.startsWith("/api/") && !isPublicWrite(method, path)) {
+        if (
+            WRITE_METHODS.contains(method) && path.startsWith("/api/") && !isPublicWrite(method, path) && !isSelfServiceWrite(method, path)
+        ) {
             try {
                 staffAccessService.requireWritable();
                 enforceScreenWrite(path);
@@ -103,7 +105,17 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             staffAccessService.requireScreenWrite(ScreenKey.QUAN_LY_DON_COD);
             return;
         }
+        // Báo giờ xe đến/rời VP: NV Lên hàng hoặc Xuống hàng
+        if (path.startsWith("/api/vehicle-events")) {
+            staffAccessService.requireScreenWrite(ScreenKey.HANG_CHO_LEN_XE, ScreenKey.QUET_NHAP);
+            return;
+        }
         // inventory-checks: mọi NV thao tác được (app Kiểm kho) — không chặn theo screen Y/R
+    }
+
+    /** Chấm công: mọi NV kể cả nhóm quyền chỉ đọc — AttendanceService tự chặn hồ sơ inactive / khách hàng. */
+    private static boolean isSelfServiceWrite(String method, String path) {
+        return "POST".equals(method) && "/api/attendance/check-in".equals(path);
     }
 
     private static boolean isPublicWrite(String method, String path) {
