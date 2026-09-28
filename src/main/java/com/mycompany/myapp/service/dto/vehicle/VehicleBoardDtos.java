@@ -24,6 +24,23 @@ public final class VehicleBoardDtos {
         String reportedBy
     ) {}
 
+    public record ItineraryOption(String code, String name) {}
+
+    /** Xe CRM của một lộ trình xuất bến hôm nay + giờ đã báo đến/rời tại VP của NV. */
+    public record DayBoard(String officeCode, String officeName, List<DayItem> items) {}
+
+    public record DayItem(
+        String externalTripId,
+        String vehiclePlate,
+        String driverName,
+        String routeLabel,
+        Instant plannedDepartAt,
+        Instant arrivedAt,
+        String arrivedBy,
+        Instant departedAt,
+        String departedBy
+    ) {}
+
     public record ReportItem(
         Long id,
         String officeCode,

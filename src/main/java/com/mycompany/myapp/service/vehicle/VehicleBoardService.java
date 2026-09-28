@@ -138,6 +138,81 @@ public class VehicleBoardService {
         return new VehicleBoardDtos.Board(office.getCode(), office.getName(), items, crmWarning);
     }
 
+    /** Lộ trình đang hoạt động có điểm đầu hoặc điểm cuối là VP gốc của NV (theo mã "GA-YB"). */
+    @Transactional(readOnly = true)
+    public List<VehicleBoardDtos.ItineraryOption> officeItineraries() {
+        Office office = homeOffice();
+        String point = foldPoint(office.getItineraryPoint());
+        if (point == null) {
+            throw new BadRequestAlertException(
+                "Văn phòng " + office.getName() + " chưa cấu hình điểm lộ trình",
+                ENTITY,
+                "itineraryPointMissing"
+            );
+        }
+        List<VehicleBoardDtos.ItineraryOption> out = new ArrayList<>();
+        for (Itinerary it : itineraryRepository.findFiltered(null, true)) {
+            String[] ends = itineraryEnds(it.getCode());
+            if (ends != null && (point.equals(ends[0]) || point.equals(ends[1]))) {
+                out.add(new VehicleBoardDtos.ItineraryOption(it.getCode(), firstNonBlank(it.getName(), it.getCode())));
+            }
+        }
+        out.sort(Comparator.comparing(VehicleBoardDtos.ItineraryOption::name, Comparator.nullsLast(Comparator.naturalOrder())));
+        return out;
+    }
+
+    /** Mọi xe CRM của lộ trình xuất bến hôm nay (giờ VN), kèm giờ đã báo đến/rời tại VP gốc của NV. */
+    @Transactional(readOnly = true)
+    public VehicleBoardDtos.DayBoard dayTrips(String itineraryCodeOrName) {
+        if (trimToNull(itineraryCodeOrName) == null) {
+            throw new BadRequestAlertException("Chưa chọn lộ trình", ENTITY, "itineraryRequired");
+        }
+        Office office = homeOffice();
+        Itinerary itinerary = availableTripSearchService.resolveItinerary(itineraryCodeOrName.trim());
+        String point = foldPoint(office.getItineraryPoint());
+        String[] ends = itineraryEnds(itinerary.getCode());
+        if (point != null && (ends == null || !(point.equals(ends[0]) || point.equals(ends[1])))) {
+            throw new BadRequestAlertException("Lộ trình không đi qua văn phòng của bạn", ENTITY, "itineraryNotRelated");
+        }
+        LocalDate today = LocalDate.now(VN);
+        List<AvailableTripDTO> trips = availableTripSearchService.searchWindow(itinerary, today.atStartOfDay(), today.atTime(23, 59, 59));
+
+        Map<String, VehicleOfficeEvent> reported = new HashMap<>();
+        Set<String> keys = new HashSet<>();
+        trips.forEach(t -> keys.add("C:" + cut(t.getExternalTripId(), 60)));
+        if (!keys.isEmpty()) {
+            for (VehicleOfficeEvent e : eventRepository.findByOffice_IdAndTripKeyIn(office.getId(), keys)) {
+                reported.put(e.getEventType() + "|" + e.getTripKey(), e);
+            }
+        }
+
+        Set<String> seen = new HashSet<>();
+        List<VehicleBoardDtos.DayItem> items = new ArrayList<>();
+        for (AvailableTripDTO t : trips) {
+            String key = "C:" + cut(t.getExternalTripId(), 60);
+            if (!seen.add(key)) {
+                continue;
+            }
+            VehicleOfficeEvent arrive = reported.get(EventType.ARRIVE + "|" + key);
+            VehicleOfficeEvent depart = reported.get(EventType.DEPART + "|" + key);
+            items.add(
+                new VehicleBoardDtos.DayItem(
+                    cut(t.getExternalTripId(), 60),
+                    firstNonBlank(t.getVehiclePlate(), t.getAssignVehiclePlate()),
+                    firstNonBlank(t.getDriverName(), t.getAssignDriverName()),
+                    firstNonBlank(itinerary.getName(), t.getRouteLabel()),
+                    t.getDepartAt(),
+                    arrive != null ? arrive.getEventAt() : null,
+                    arrive != null ? arrive.getReportedBy() : null,
+                    depart != null ? depart.getEventAt() : null,
+                    depart != null ? depart.getReportedBy() : null
+                )
+            );
+        }
+        items.sort(Comparator.comparing(VehicleBoardDtos.DayItem::plannedDepartAt, Comparator.nullsLast(Comparator.naturalOrder())));
+        return new VehicleBoardDtos.DayBoard(office.getCode(), office.getName(), items);
+    }
+
     public VehicleBoardDtos.Item report(VehicleBoardDtos.ReportRequest req) {
         if (req == null) {
             throw new BadRequestAlertException("Thiếu dữ liệu", ENTITY, "bodyRequired");
@@ -185,6 +260,12 @@ public class VehicleBoardService {
         var existing = eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(office.getId(), type, c.tripKey());
         if (existing.isPresent()) {
             return toItem(c, existing.get());
+        }
+        if (
+            type == EventType.DEPART &&
+            eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(office.getId(), EventType.ARRIVE, c.tripKey()).isEmpty()
+        ) {
+            throw new BadRequestAlertException("Chưa báo xe đến VP — báo xe đến trước rồi mới báo xe rời", ENTITY, "arriveFirst");
         }
         VehicleOfficeEvent e = new VehicleOfficeEvent();
         e.setOffice(office);

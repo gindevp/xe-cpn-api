@@ -11,6 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mycompany.myapp.domain.Itinerary;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.Route;
 import com.mycompany.myapp.domain.StaffProfile;
@@ -22,6 +23,7 @@ import com.mycompany.myapp.repository.ItineraryRepository;
 import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
 import com.mycompany.myapp.security.StaffAccessService;
+import com.mycompany.myapp.service.dto.trip.AvailableTripDTO;
 import com.mycompany.myapp.service.dto.vehicle.VehicleBoardDtos;
 import com.mycompany.myapp.service.partner.AvailableTripSearchService;
 import com.mycompany.myapp.service.partner.VthkTripSearchClient;
@@ -198,12 +200,101 @@ class VehicleBoardServiceTest {
         loginAt(ga);
 
         VehicleBoardDtos.Item item = service.report(
-            new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", "Lê Anh Tuấn", "GA - YB", todayAt(9))
+            new VehicleBoardDtos.ReportRequest("ARRIVE", "CRM", null, "CH123", "30H-83330", "Lê Anh Tuấn", "GA - YB", todayAt(9))
         );
 
         assertThat(item.source()).isEqualTo("CRM");
         assertThat(item.vehiclePlate()).isEqualTo("30H-83330");
         assertThat(item.reportedAt()).isNotNull();
+    }
+
+    @Test
+    void departRequiresArriveFirst() {
+        when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(anyLong(), any(), any())).thenReturn(Optional.empty());
+        loginAt(ga);
+
+        assertThatThrownBy(() ->
+            service.report(new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, todayAt(9)))
+        )
+            .isInstanceOf(BadRequestAlertException.class)
+            .hasMessageContaining("Chưa báo xe đến");
+        verify(eventRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void departAfterArriveSaves() {
+        VehicleOfficeEvent arrived = new VehicleOfficeEvent();
+        arrived.setEventAt(Instant.now());
+        when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(1L, EventType.DEPART, "C:CH123")).thenReturn(Optional.empty());
+        when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(1L, EventType.ARRIVE, "C:CH123")).thenReturn(Optional.of(arrived));
+        when(eventRepository.saveAndFlush(any(VehicleOfficeEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+        loginAt(ga);
+
+        VehicleBoardDtos.Item item = service.report(
+            new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, todayAt(9))
+        );
+        assertThat(item.eventType()).isEqualTo("DEPART");
+        assertThat(item.reportedAt()).isNotNull();
+    }
+
+    @Test
+    void dayTripsListsAllCrmTripsWithReportedTimes() {
+        Itinerary it = new Itinerary();
+        it.setCode("GA-YB");
+        it.setName("GA - YB");
+        when(availableTripSearchService.resolveItinerary("GA-YB")).thenReturn(it);
+        AvailableTripDTO a = new AvailableTripDTO();
+        a.setExternalTripId("CH2");
+        a.setVehiclePlate("30H-2");
+        a.setDepartAt(todayAt(14));
+        AvailableTripDTO b = new AvailableTripDTO();
+        b.setExternalTripId("CH1");
+        b.setVehiclePlate("30H-1");
+        b.setDepartAt(todayAt(7));
+        when(availableTripSearchService.searchWindow(eq(it), any(), any())).thenReturn(List.of(a, b));
+        VehicleOfficeEvent arrived = new VehicleOfficeEvent();
+        arrived.setEventType(EventType.ARRIVE);
+        arrived.setTripKey("C:CH1");
+        arrived.setEventAt(Instant.now());
+        arrived.setReportedBy("nv01");
+        when(eventRepository.findByOffice_IdAndTripKeyIn(eq(1L), any())).thenReturn(List.of(arrived));
+        loginAt(ga);
+
+        VehicleBoardDtos.DayBoard board = service.dayTrips("GA-YB");
+
+        assertThat(board.items()).extracting(VehicleBoardDtos.DayItem::externalTripId).containsExactly("CH1", "CH2");
+        assertThat(board.items().get(0).arrivedAt()).isNotNull();
+        assertThat(board.items().get(0).departedAt()).isNull();
+        assertThat(board.items().get(1).arrivedAt()).isNull();
+    }
+
+    private static Itinerary itinerary(String code, String name) {
+        Itinerary it = new Itinerary();
+        it.setCode(code);
+        it.setName(name);
+        return it;
+    }
+
+    @Test
+    void officeItinerariesOnlyStartOrEndAtOfficePoint() {
+        yb.setItineraryPoint("YB");
+        when(itineraryRepository.findFiltered(null, true)).thenReturn(
+            List.of(itinerary("GA-YB", "GA - YB"), itinerary("YB-HD", "YB - HĐ"), itinerary("GA-TB", "GA - TB"))
+        );
+        loginAt(yb);
+
+        assertThat(service.officeItineraries())
+            .extracting(VehicleBoardDtos.ItineraryOption::code)
+            .containsExactlyInAnyOrder("GA-YB", "YB-HD");
+    }
+
+    @Test
+    void dayTripsRejectsItineraryNotThroughOffice() {
+        yb.setItineraryPoint("YB");
+        when(availableTripSearchService.resolveItinerary("GA-TB")).thenReturn(itinerary("GA-TB", "GA - TB"));
+        loginAt(yb);
+
+        assertThatThrownBy(() -> service.dayTrips("GA-TB")).isInstanceOf(BadRequestAlertException.class);
     }
 
     @Test

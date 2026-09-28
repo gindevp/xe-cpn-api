@@ -190,7 +190,7 @@ public class AvailableTripSearchService {
         return dto;
     }
 
-    private Itinerary resolveItinerary(String codeOrName) {
+    public Itinerary resolveItinerary(String codeOrName) {
         String raw = codeOrName.trim();
         return itineraryRepository
             .findOneByCode(raw.toUpperCase(Locale.ROOT))

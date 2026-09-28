@@ -22,6 +22,16 @@ public class VehicleEventResource {
     }
 
     /** Theo dõi quản trị (screen bao-gio-xe). officeCode bỏ trống = toàn hệ thống. */
+    @GetMapping("/itineraries")
+    public java.util.List<VehicleBoardDtos.ItineraryOption> itineraries() {
+        return vehicleBoardService.officeItineraries();
+    }
+
+    @GetMapping("/day-trips")
+    public VehicleBoardDtos.DayBoard dayTrips(@RequestParam String itineraryCode) {
+        return vehicleBoardService.dayTrips(itineraryCode);
+    }
+
     @GetMapping("/report")
     public VehicleBoardDtos.Report reportList(
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
