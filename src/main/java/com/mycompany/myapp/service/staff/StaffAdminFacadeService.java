@@ -125,6 +125,28 @@ public class StaffAdminFacadeService {
             profile.setStaffCode(login.toUpperCase().replace(".", ""));
             profile.setDisplayName(login);
         }
+        if (req.staffCode() != null && !req.staffCode().isBlank()) {
+            String code = req.staffCode().trim().toUpperCase();
+            if (code.length() > 30) {
+                throw new BadRequestAlertException("Mã nhân viên tối đa 30 ký tự", ENTITY, "staffCodeTooLong");
+            }
+            Long selfId = profile.getId();
+            staffProfileRepository
+                .findOneByStaffCodeIgnoreCase(code)
+                .filter(other -> !other.getId().equals(selfId))
+                .ifPresent(other -> {
+                    throw new BadRequestAlertException(
+                        "Mã nhân viên " + code + " đã dùng cho tài khoản " + other.getUserLogin(),
+                        ENTITY,
+                        "staffCodeExists"
+                    );
+                });
+            profile.setStaffCode(code);
+        }
+        if (req.displayName() != null && !req.displayName().isBlank()) {
+            String name = req.displayName().trim();
+            profile.setDisplayName(name.length() > 100 ? name.substring(0, 100) : name);
+        }
         profile.setRoleCode(role);
         profile.setRoleGroup(group);
         profile.setActive(req.active() == null || Boolean.TRUE.equals(req.active()));
@@ -205,7 +227,9 @@ public class StaffAdminFacadeService {
             activated,
             null,
             p.getRoleGroup() != null ? p.getRoleGroup().getCode() : (p.getRoleCode() != null ? p.getRoleCode().name() : null),
-            Boolean.TRUE.equals(p.getScopeAllOffices()) || p.getOffice() == null ? null : p.getOffice().getId()
+            Boolean.TRUE.equals(p.getScopeAllOffices()) || p.getOffice() == null ? null : p.getOffice().getId(),
+            p.getStaffCode(),
+            p.getDisplayName()
         );
     }
 
@@ -217,6 +241,8 @@ public class StaffAdminFacadeService {
         Boolean active,
         String password,
         String roleGroupCode,
-        Long officeId
+        Long officeId,
+        String staffCode,
+        String displayName
     ) {}
 }
