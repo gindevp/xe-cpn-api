@@ -165,4 +165,47 @@ class LoginControlServiceTest {
         assertThat(d.allowed()).isTrue();
         verify(trustRepository, never()).save(any());
     }
+
+    @Test
+    void resolveChannel_infersLegacyAppFromUserAgent() {
+        assertThat(LoginControlService.resolveChannel("app", "okhttp/4.9.2")).isEqualTo("APP");
+        assertThat(LoginControlService.resolveChannel(null, "okhttp/4.9.2")).isEqualTo(LoginControlService.CHANNEL_LEGACY_APP);
+        assertThat(LoginControlService.resolveChannel(null, "XE/9 CFNetwork/1498 Darwin/23.6.0")).isEqualTo(
+            LoginControlService.CHANNEL_LEGACY_APP
+        );
+        assertThat(LoginControlService.resolveChannel(null, "Mozilla/5.0 (Windows NT 10.0) Chrome/152")).isEqualTo("WEB");
+    }
+
+    @Test
+    void legacyApp_opensAppSessionWithoutKickingWeb() {
+        role("q1", RoleCode.Q);
+
+        LoginDecision d = service.decide(
+            user("q1", "ROLE_USER"),
+            new LoginRequestInfo(LoginControlService.CHANNEL_LEGACY_APP, "9.9.9.9", null, null, "okhttp/4.9.2"),
+            exp
+        );
+
+        assertThat(d.allowed()).isTrue();
+        verify(sessionRepository).findByUserLoginIgnoreCaseAndChannelAndRevokedAtIsNull("q1", UserSession.APP);
+        verify(sessionRepository, never()).findByUserLoginIgnoreCaseAndChannelAndRevokedAtIsNull("q1", UserSession.WEB);
+        ArgumentCaptor<UserSession> cap = ArgumentCaptor.forClass(UserSession.class);
+        verify(sessionRepository).save(cap.capture());
+        assertThat(cap.getValue().getChannel()).isEqualTo(UserSession.APP);
+    }
+
+    @Test
+    void legacyApp_dispatcherStillNeedsApprovedIp() {
+        role("dh1", RoleCode.DH);
+
+        LoginDecision d = service.decide(
+            user("dh1", "ROLE_USER"),
+            new LoginRequestInfo(LoginControlService.CHANNEL_LEGACY_APP, "1.2.3.4", null, null, "okhttp/4.9.2"),
+            exp
+        );
+
+        assertThat(d.allowed()).isFalse();
+        assertThat(d.code()).isEqualTo("error.loginPendingApproval");
+        assertThat(d.kind()).isEqualTo(LoginTrust.KIND_IP);
+    }
 }

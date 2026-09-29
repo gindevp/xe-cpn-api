@@ -58,7 +58,24 @@ public class LoginControlService {
         this.auditRecorder = auditRecorder;
     }
 
+    /**
+     * App bản cũ trên store: không gửi {@code client}/mã thiết bị. Vẫn tính là phiên APP (không đá phiên web),
+     * nhưng áp luật như web vì chưa có mã thiết bị để duyệt.
+     */
+    public static final String CHANNEL_LEGACY_APP = "APP_LEGACY";
+
     public record LoginRequestInfo(String channel, String ip, String deviceId, String deviceName, String userAgent) {}
+
+    /** Không gửi client: trình duyệt luôn có "Mozilla" trong User-Agent, app React Native (okhttp / CFNetwork) thì không. */
+    public static String resolveChannel(String client, String userAgent) {
+        if (client != null && !client.isBlank()) {
+            return client.trim().toUpperCase();
+        }
+        if (userAgent == null || !userAgent.contains("Mozilla")) {
+            return CHANNEL_LEGACY_APP;
+        }
+        return UserSession.WEB;
+    }
 
     /** allowed=false: {@code code} là mã lỗi cho FE, {@code message} hiển thị cho người dùng. */
     public record LoginDecision(boolean allowed, String sid, String code, String message, String kind, String value) {
@@ -72,11 +89,12 @@ public class LoginControlService {
     public LoginDecision decide(Authentication auth, LoginRequestInfo info, Instant expiresAt) {
         String login = auth.getName().toLowerCase();
         boolean admin = isAdmin(auth, login);
-        String channel = UserSession.APP.equals(info.channel()) ? UserSession.APP : UserSession.WEB;
+        boolean legacyApp = CHANNEL_LEGACY_APP.equals(info.channel());
+        String channel = legacyApp || UserSession.APP.equals(info.channel()) ? UserSession.APP : UserSession.WEB;
         Instant now = Instant.now();
 
         if (!admin) {
-            if (UserSession.APP.equals(channel)) {
+            if (UserSession.APP.equals(channel) && !legacyApp) {
                 String deviceId = trimTo(info.deviceId(), 100);
                 if (deviceId == null) {
                     return LoginDecision.blocked(

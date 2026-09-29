@@ -84,7 +84,7 @@ public class AuthenticateController {
         LoginDecision decision = loginControlService.decide(
             authentication,
             new LoginRequestInfo(
-                loginVM.getClient() == null ? null : loginVM.getClient().trim().toUpperCase(),
+                LoginControlService.resolveChannel(loginVM.getClient(), request.getHeader(HttpHeaders.USER_AGENT)),
                 ClientIpResolver.resolve(request),
                 loginVM.getDeviceId(),
                 loginVM.getDeviceName(),
