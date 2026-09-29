@@ -90,6 +90,10 @@ jhipster:
 # ===================================================================
 
 # application:
+cpn:
+  login-control:
+    # Token test tự tạo không có sid
+    require-sid: false
 management:
   health:
     mail:

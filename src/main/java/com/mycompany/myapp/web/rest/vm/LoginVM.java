@@ -18,6 +18,40 @@ public class LoginVM {
 
     private boolean rememberMe;
 
+    /** APP = app mobile; rỗng / WEB = trình duyệt. */
+    @Size(max = 10)
+    private String client;
+
+    @Size(max = 100)
+    private String deviceId;
+
+    @Size(max = 255)
+    private String deviceName;
+
+    public String getClient() {
+        return client;
+    }
+
+    public void setClient(String client) {
+        this.client = client;
+    }
+
+    public String getDeviceId() {
+        return deviceId;
+    }
+
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
+    }
+
+    public String getDeviceName() {
+        return deviceName;
+    }
+
+    public void setDeviceName(String deviceName) {
+        this.deviceName = deviceName;
+    }
+
     public String getUsername() {
         return username;
     }

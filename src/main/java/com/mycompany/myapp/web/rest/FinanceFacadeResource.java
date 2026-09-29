@@ -67,6 +67,19 @@ public class FinanceFacadeResource {
         return financeFacadeService.unconfirmReceipt(receiptCode);
     }
 
+    @PostMapping("/api/receipts/waive")
+    public FinanceFacadeService.WaiveResult waive(@RequestBody FinanceFacadeService.WaiveRequest request) {
+        return financeFacadeService.waiveDues(request);
+    }
+
+    @GetMapping("/api/receipts/history")
+    public List<FinanceFacadeService.HistoryDTO> history(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return financeFacadeService.history(from, to);
+    }
+
     @GetMapping("/api/day-closures")
     public DayClosureDTO getDay(
         @RequestParam String officeCode,

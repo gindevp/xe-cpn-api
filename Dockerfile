@@ -24,7 +24,8 @@ COPY --from=build /app/target/cpn-0.0.1-SNAPSHOT.jar /app/app.jar
 USER 1001
 EXPOSE 8080
 ENV SPRING_PROFILES_ACTIVE=prod,demo
-# Railway Hobby often ~512MB–1GB; 75% MaxRAM + metaspace OOMs during Liquibase/Hibernate.
-# Override at runtime with JAVA_OPTS if you raise service memory.
-ENV JAVA_OPTS="-Xms128m -Xmx400m -XX:MaxMetaspaceSize=160m -XX:+UseSerialGC -XX:+UseContainerSupport"
+# Fixed heap (not MaxRAMPercentage): Railway reports the plan limit, not a real container cap.
+# Total RSS ≈ Xmx + metaspace + ~300MB (threads, code cache, direct buffers) ≈ 1.6GB.
+# A JAVA_OPTS variable set on Railway overrides this default.
+ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:MaxMetaspaceSize=256m -XX:ReservedCodeCacheSize=128m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseContainerSupport -XX:+ExitOnOutOfMemoryError"
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Djava.security.egd=file:/dev/./urandom -jar /app/app.jar --server.port=${PORT:-8080}"]

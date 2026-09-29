@@ -2,14 +2,22 @@ package com.mycompany.myapp.web.rest;
 
 import static com.mycompany.myapp.security.SecurityUtils.AUTHORITIES_KEY;
 import static com.mycompany.myapp.security.SecurityUtils.JWT_ALGORITHM;
+import static com.mycompany.myapp.security.SecurityUtils.SID_CLAIM;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.mycompany.myapp.security.ClientIpResolver;
+import com.mycompany.myapp.service.auth.LoginControlService;
+import com.mycompany.myapp.service.auth.LoginControlService.LoginDecision;
+import com.mycompany.myapp.service.auth.LoginControlService.LoginRequestInfo;
 import com.mycompany.myapp.service.config.SessionPolicyService;
 import com.mycompany.myapp.web.rest.vm.LoginVM;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +32,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
@@ -48,30 +57,64 @@ public class AuthenticateController {
 
     private final AuthenticationManagerBuilder authenticationManagerBuilder;
     private final SessionPolicyService sessionPolicyService;
+    private final LoginControlService loginControlService;
 
     public AuthenticateController(
         JwtEncoder jwtEncoder,
         AuthenticationManagerBuilder authenticationManagerBuilder,
-        SessionPolicyService sessionPolicyService
+        SessionPolicyService sessionPolicyService,
+        LoginControlService loginControlService
     ) {
+        this.loginControlService = loginControlService;
         this.jwtEncoder = jwtEncoder;
         this.authenticationManagerBuilder = authenticationManagerBuilder;
         this.sessionPolicyService = sessionPolicyService;
     }
 
     @PostMapping("/authenticate")
-    public ResponseEntity<JWTToken> authorize(@Valid @RequestBody LoginVM loginVM) {
+    public ResponseEntity<?> authorize(@Valid @RequestBody LoginVM loginVM, HttpServletRequest request) {
         UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
             loginVM.getUsername(),
             loginVM.getPassword()
         );
 
         Authentication authentication = authenticationManagerBuilder.getObject().authenticate(authenticationToken);
+        Instant now = Instant.now();
+        Instant validity = expiryOf(now, loginVM.isRememberMe());
+        LoginDecision decision = loginControlService.decide(
+            authentication,
+            new LoginRequestInfo(
+                loginVM.getClient() == null ? null : loginVM.getClient().trim().toUpperCase(),
+                ClientIpResolver.resolve(request),
+                loginVM.getDeviceId(),
+                loginVM.getDeviceName(),
+                request.getHeader(HttpHeaders.USER_AGENT)
+            ),
+            validity
+        );
+        if (!decision.allowed()) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("message", decision.code());
+            body.put("detail", decision.message());
+            body.put("title", decision.message());
+            body.put("kind", decision.kind());
+            body.put("value", decision.value());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+        }
         SecurityContextHolder.getContext().setAuthentication(authentication);
-        String jwt = this.createToken(authentication, loginVM.isRememberMe());
+        String jwt = this.createToken(authentication, now, validity, decision.sid());
         HttpHeaders httpHeaders = new HttpHeaders();
         httpHeaders.setBearerAuth(jwt);
         return new ResponseEntity<>(new JWTToken(jwt), httpHeaders, HttpStatus.OK);
+    }
+
+    /** Đăng xuất: thu hồi phiên hiện tại (sid trong JWT). */
+    @PostMapping("/logout-session")
+    public ResponseEntity<Void> logoutSession(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+            loginControlService.logoutSelf(jwt.getClaimAsString(SID_CLAIM));
+        }
+        return ResponseEntity.noContent().build();
     }
 
     /**
@@ -86,17 +129,15 @@ public class AuthenticateController {
         return principal == null ? null : principal.getName();
     }
 
-    public String createToken(Authentication authentication, boolean rememberMe) {
-        String authorities = authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.joining(" "));
+    private Instant expiryOf(Instant now, boolean rememberMe) {
+        Instant validity = rememberMe
+            ? now.plus(this.tokenValidityInSecondsForRememberMe, ChronoUnit.SECONDS)
+            : now.plus(this.tokenValidityInSeconds, ChronoUnit.SECONDS);
+        return sessionPolicyService.capExpiry(now, validity);
+    }
 
-        Instant now = Instant.now();
-        Instant validity;
-        if (rememberMe) {
-            validity = now.plus(this.tokenValidityInSecondsForRememberMe, ChronoUnit.SECONDS);
-        } else {
-            validity = now.plus(this.tokenValidityInSeconds, ChronoUnit.SECONDS);
-        }
-        validity = sessionPolicyService.capExpiry(now, validity);
+    public String createToken(Authentication authentication, Instant now, Instant validity, String sid) {
+        String authorities = authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.joining(" "));
 
         // @formatter:off
         JwtClaimsSet claims = JwtClaimsSet.builder()
@@ -104,6 +145,7 @@ public class AuthenticateController {
             .expiresAt(validity)
             .subject(authentication.getName())
             .claim(AUTHORITIES_KEY, authorities)
+            .claim(SID_CLAIM, sid)
             .build();
 
         JwsHeader jwsHeader = JwsHeader.with(JWT_ALGORITHM).build();

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260929100000-1" author="cpn">
+        <comment>Admin hủy khoản cần nộp phiếu thu của đơn (theo phần VP gửi / khi giao) — trừ khỏi danh sách đơn cần nộp.</comment>
+        <createTable tableName="receipt_waiver">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="order_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="portion" type="varchar(10)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="amount" type="decimal(21,2)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="owner_username" type="varchar(50)"/>
+            <column name="reason" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="waived_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="waived_by_username" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="receipt_waiver" baseColumnNames="order_id"
+                                 constraintName="fk_receipt_waiver__order_id"
+                                 referencedTableName="shipment_order" referencedColumnNames="id"/>
+        <createIndex tableName="receipt_waiver" indexName="ix_receipt_waiver__order">
+            <column name="order_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

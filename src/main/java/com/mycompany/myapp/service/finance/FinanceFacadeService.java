@@ -1,11 +1,13 @@
 package com.mycompany.myapp.service.finance;
 
+import com.mycompany.myapp.domain.AuditLog;
 import com.mycompany.myapp.domain.DayClosure;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.Receipt;
 import com.mycompany.myapp.domain.ReceiptOrderLine;
+import com.mycompany.myapp.domain.ReceiptWaiver;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.domain.enumeration.DayClosureStatus;
@@ -13,15 +15,19 @@ import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentKind;
 import com.mycompany.myapp.domain.enumeration.PaymentMethod;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
+import com.mycompany.myapp.repository.AuditLogRepository;
 import com.mycompany.myapp.repository.DayClosureRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ReceiptRepository;
+import com.mycompany.myapp.repository.ReceiptWaiverRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.security.SecurityUtils;
+import com.mycompany.myapp.security.StaffAccessService;
+import com.mycompany.myapp.service.audit.AuditRecorder;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
@@ -41,8 +47,10 @@ import java.util.Set;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -50,6 +58,8 @@ public class FinanceFacadeService {
 
     private static final String ENTITY = "finance";
     private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final String AUDIT_RECEIPT = "Receipt";
+    private static final String AUDIT_DUE = "ReceiptDue";
 
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final ReceiptRepository receiptRepository;
@@ -60,6 +70,10 @@ public class FinanceFacadeService {
     private final OrderEventRepository orderEventRepository;
     private final StaffProfileRepository staffProfileRepository;
     private final DayClosureGuard dayClosureGuard;
+    private final ReceiptWaiverRepository receiptWaiverRepository;
+    private final AuditRecorder auditRecorder;
+    private final AuditLogRepository auditLogRepository;
+    private final StaffAccessService staffAccessService;
 
     public FinanceFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -70,8 +84,16 @@ public class FinanceFacadeService {
         OrderPaymentRepository orderPaymentRepository,
         OrderEventRepository orderEventRepository,
         StaffProfileRepository staffProfileRepository,
-        DayClosureGuard dayClosureGuard
+        DayClosureGuard dayClosureGuard,
+        ReceiptWaiverRepository receiptWaiverRepository,
+        AuditRecorder auditRecorder,
+        AuditLogRepository auditLogRepository,
+        StaffAccessService staffAccessService
     ) {
+        this.receiptWaiverRepository = receiptWaiverRepository;
+        this.auditRecorder = auditRecorder;
+        this.auditLogRepository = auditLogRepository;
+        this.staffAccessService = staffAccessService;
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.receiptRepository = receiptRepository;
         this.receiptOrderLineRepository = receiptOrderLineRepository;
@@ -127,24 +149,79 @@ public class FinanceFacadeService {
             );
         }
         List<ShipmentOrder> orders = shipmentOrderRepository.findAll(spec);
-        Map<Long, ReceiptSettlement.Totals> totals = loadSettlementTotals(
-            orders.stream().map(ShipmentOrder::getId).filter(Objects::nonNull).toList()
-        );
+        List<Long> ids = orders.stream().map(ShipmentOrder::getId).filter(Objects::nonNull).toList();
+        Map<Long, ReceiptSettlement.Totals> totals = loadSettlementTotals(ids);
+        Map<Long, BigDecimal[]> waived = loadWaived(ids);
         List<CandidateDTO> out = new ArrayList<>();
         for (ShipmentOrder o : orders) {
             if (out.size() >= 300) {
                 break;
             }
-            ReceiptSettlement.Split s = ReceiptSettlement.split(o, totals.getOrDefault(o.getId(), ReceiptSettlement.Totals.ZERO));
+            BigDecimal[] outs = outstanding(o, totals.getOrDefault(o.getId(), ReceiptSettlement.Totals.ZERO), waived.get(o.getId()));
             String fromCode = o.getFromOffice() != null ? o.getFromOffice().getCode() : null;
-            if (s.senderOut().signum() > 0 && (scoped == null || scoped.equals(fromCode))) {
-                out.add(toCandidate(o, s.senderOut(), ReceiptSettlement.SENDER, resolveSenderOwner(o)));
+            if (outs[0].signum() > 0 && (scoped == null || scoped.equals(fromCode))) {
+                out.add(toCandidate(o, outs[0], ReceiptSettlement.SENDER, resolveSenderOwner(o)));
             }
-            if (s.deliveryOut().signum() > 0 && (scoped == null || scoped.equals(fromCode) || atReceiverOffice(o, scoped))) {
-                out.add(toCandidate(o, s.deliveryOut(), ReceiptSettlement.DELIVERY, resolveDeliveryActor(o)));
+            if (outs[1].signum() > 0 && (scoped == null || scoped.equals(fromCode) || atReceiverOffice(o, scoped))) {
+                out.add(toCandidate(o, outs[1], ReceiptSettlement.DELIVERY, resolveDeliveryActor(o)));
             }
         }
         return out;
+    }
+
+    /**
+     * Chặn huỷ đơn khi nhân viên còn giữ tiền đã thu của khách mà chưa lập phiếu thu
+     * (cước khách chưa trả không tính). Đơn huỷ rời "Đơn cần nộp" nên tiền sẽ mất dấu.
+     */
+    @Transactional(readOnly = true)
+    public void assertNoHeldMoney(String orderCode) {
+        ShipmentOrder order = shipmentOrderRepository.findOneByOrderCodeOrDraftCode(orderCode.trim()).orElse(null);
+        if (order == null || order.getId() == null) {
+            return;
+        }
+        ReceiptSettlement.Totals totals = loadSettlementTotals(List.of(order.getId())).getOrDefault(
+            order.getId(),
+            ReceiptSettlement.Totals.ZERO
+        );
+        ReceiptSettlement.Split s = ReceiptSettlement.split(order, totals);
+        BigDecimal[] outs = outstanding(order, totals, loadWaived(List.of(order.getId())).get(order.getId()));
+        BigDecimal held = s.senderHeldOut().min(outs[0]).add(s.deliveryHeldOut().min(outs[1]));
+        if (held.signum() > 0) {
+            throw new BadRequestAlertException(
+                "Đơn " + order.getOrderCode() + " còn " + money(held) + " đã thu chưa nộp — lập phiếu thu hoặc hủy nộp trước khi hủy đơn",
+                ENTITY,
+                "cancelHasHeldMoney"
+            );
+        }
+    }
+
+    /** Còn phải nộp [phần VP gửi, phần giao] sau khi trừ khoản admin đã hủy nộp. */
+    private static BigDecimal[] outstanding(ShipmentOrder o, ReceiptSettlement.Totals totals, BigDecimal[] waived) {
+        ReceiptSettlement.Split s = ReceiptSettlement.split(o, totals);
+        BigDecimal[] w = waived == null ? zeros2() : waived;
+        return new BigDecimal[] { nonNegative(s.senderOut().subtract(w[0])), nonNegative(s.deliveryOut().subtract(w[1])) };
+    }
+
+    /** orderId → [đã hủy nộp phần VP gửi, phần giao]. */
+    private Map<Long, BigDecimal[]> loadWaived(List<Long> orderIds) {
+        Map<Long, BigDecimal[]> out = new HashMap<>();
+        for (int i = 0; i < orderIds.size(); i += 500) {
+            List<Long> chunk = orderIds.subList(i, Math.min(orderIds.size(), i + 500));
+            for (Object[] row : receiptWaiverRepository.sumByOrderIds(chunk)) {
+                BigDecimal[] a = out.computeIfAbsent((Long) row[0], k -> zeros2());
+                int idx = ReceiptSettlement.DELIVERY.equals(row[1]) ? 1 : 0;
+                a[idx] = a[idx].add(toBigDecimal(row[2]));
+            }
+        }
+        return out;
+    }
+
+    private static BigDecimal[] zeros2() {
+        return new BigDecimal[] { BigDecimal.ZERO, BigDecimal.ZERO };
+    }
+
+    private static BigDecimal nonNegative(BigDecimal v) {
+        return v.signum() < 0 ? BigDecimal.ZERO : v;
     }
 
     private CandidateDTO toCandidate(ShipmentOrder o, BigDecimal amount, String portion, String owner) {
@@ -277,19 +354,20 @@ public class FinanceFacadeService {
             if (order.getId() != null && !seenOrderIds.add(order.getId())) {
                 throw new BadRequestAlertException("Duplicate order on receipt: " + order.getOrderCode(), ENTITY, "duplicateOrderLine");
             }
-            ReceiptSettlement.Split s = ReceiptSettlement.split(
-                order,
-                order.getId() == null
-                    ? ReceiptSettlement.Totals.ZERO
-                    : loadSettlementTotals(List.of(order.getId())).getOrDefault(order.getId(), ReceiptSettlement.Totals.ZERO)
-            );
+            ReceiptSettlement.Totals orderTotals = order.getId() == null
+                ? ReceiptSettlement.Totals.ZERO
+                : loadSettlementTotals(List.of(order.getId())).getOrDefault(order.getId(), ReceiptSettlement.Totals.ZERO);
+            ReceiptSettlement.Split s = ReceiptSettlement.split(order, orderTotals);
+            BigDecimal[] outs = order.getId() == null
+                ? new BigDecimal[] { s.senderOut(), s.deliveryOut() }
+                : outstanding(order, orderTotals, loadWaived(List.of(order.getId())).get(order.getId()));
             String portion = line.portion() == null || line.portion().isBlank() ? null : line.portion().trim().toUpperCase();
             if (portion != null && !ReceiptSettlement.SENDER.equals(portion) && !ReceiptSettlement.DELIVERY.equals(portion)) {
                 throw new BadRequestAlertException("Invalid receipt portion: " + line.portion(), ENTITY, "portionInvalid");
             }
             BigDecimal collectable = ReceiptSettlement.SENDER.equals(portion)
-                ? s.senderOut()
-                : ReceiptSettlement.DELIVERY.equals(portion) ? s.deliveryOut() : s.totalOut();
+                ? outs[0]
+                : ReceiptSettlement.DELIVERY.equals(portion) ? outs[1] : outs[0].add(outs[1]);
             if (amount.compareTo(collectable) > 0) {
                 throw new BadRequestAlertException(
                     "amountCollected exceeds collectable for " +
@@ -312,7 +390,7 @@ public class FinanceFacadeService {
             // Không chỉ định phần: ưu tiên phần giao, dư mới vào phần VP gửi.
             BigDecimal toDelivery = ReceiptSettlement.SENDER.equals(portion)
                 ? BigDecimal.ZERO
-                : ReceiptSettlement.DELIVERY.equals(portion) ? amount : amount.min(s.deliveryOut());
+                : ReceiptSettlement.DELIVERY.equals(portion) ? amount : amount.min(outs[1]);
             BigDecimal toSender = amount.subtract(toDelivery);
             // Tiền đã thu (đã vào paidAmount) chỉ lập dòng phiếu; phần còn nợ mới ghi payment mới.
             BigDecimal senderFare = toSender.subtract(toSender.min(s.senderHeldOut())).min(s.senderFareDue());
@@ -348,7 +426,24 @@ public class FinanceFacadeService {
             rol.setReceipt(receipt);
             receiptOrderLineRepository.save(rol);
         }
+        auditRecorder.record(
+            "RECEIPT_CREATE",
+            AUDIT_RECEIPT,
+            receipt.getReceiptCode(),
+            "Người nộp: " + receipt.getPayerName() + " · " + lines.size() + " đơn · " + money(total) + " · " + orderCodes(lines)
+        );
         return toReceiptDto(receipt, lines);
+    }
+
+    private static String money(BigDecimal v) {
+        return String.format("%,d đ", OrderMoney.nz(v).longValue()).replace(',', '.');
+    }
+
+    private static String orderCodes(List<ReceiptOrderLine> lines) {
+        return String.join(
+            ", ",
+            lines.stream().map(l -> l.getOrder() != null ? l.getOrder().getOrderCode() : null).filter(Objects::nonNull).toList()
+        );
     }
 
     private void savePayment(ShipmentOrder order, BigDecimal amount, PaymentKind kind, String note, String actor, Instant at) {
@@ -399,6 +494,12 @@ public class FinanceFacadeService {
         receipt.setConfirmedByUsername(actor());
         receipt.setConfirmProofImage(proof.trim());
         receipt = receiptRepository.save(receipt);
+        auditRecorder.record(
+            "RECEIPT_CONFIRM",
+            AUDIT_RECEIPT,
+            receipt.getReceiptCode(),
+            "Người nộp: " + receipt.getPayerName() + " · " + money(receipt.getTotalAmount())
+        );
         return toReceiptDto(receipt, receiptOrderLineRepository.findByReceipt_Id(receipt.getId()));
     }
 
@@ -427,7 +528,113 @@ public class FinanceFacadeService {
         receipt.setConfirmedByUsername(null);
         receipt.setConfirmProofImage(null);
         receipt = receiptRepository.save(receipt);
+        auditRecorder.record(
+            "RECEIPT_UNCONFIRM",
+            AUDIT_RECEIPT,
+            receipt.getReceiptCode(),
+            "Người nộp: " + receipt.getPayerName() + " · " + money(receipt.getTotalAmount())
+        );
         return toReceiptDto(receipt, receiptOrderLineRepository.findByReceipt_Id(receipt.getId()));
+    }
+
+    /** Admin hủy nộp: bỏ khoản còn phải nộp của đơn khỏi danh sách "Đơn cần nộp" (bắt buộc lý do). */
+    public WaiveResult waiveDues(WaiveRequest req) {
+        requireAdmin();
+        String reason = req == null || req.reason() == null ? "" : req.reason().trim();
+        if (reason.isEmpty()) {
+            throw new BadRequestAlertException("Reason is required", ENTITY, "waiveReasonRequired");
+        }
+        if (reason.length() > 255) {
+            reason = reason.substring(0, 255);
+        }
+        if (req.items() == null || req.items().isEmpty()) {
+            throw new BadRequestAlertException("Items required", ENTITY, "waiveItemsRequired");
+        }
+        Instant now = Instant.now();
+        String actor = actor();
+        int count = 0;
+        BigDecimal total = BigDecimal.ZERO;
+        for (WaiveItem item : req.items()) {
+            if (item == null || item.orderCode() == null || item.orderCode().isBlank()) {
+                continue;
+            }
+            ShipmentOrder order = shipmentOrderRepository
+                .findOneByOrderCodeOrDraftCode(item.orderCode().trim())
+                .orElseThrow(() -> new BadRequestAlertException("Order not found: " + item.orderCode(), ENTITY, "orderNotFound"));
+            dayClosureGuard.assertCollectionMutable(order);
+            String portion = item.portion() == null || item.portion().isBlank() ? null : item.portion().trim().toUpperCase();
+            if (portion != null && !ReceiptSettlement.SENDER.equals(portion) && !ReceiptSettlement.DELIVERY.equals(portion)) {
+                throw new BadRequestAlertException("Invalid portion: " + item.portion(), ENTITY, "portionInvalid");
+            }
+            BigDecimal[] outs = outstanding(
+                order,
+                loadSettlementTotals(List.of(order.getId())).getOrDefault(order.getId(), ReceiptSettlement.Totals.ZERO),
+                loadWaived(List.of(order.getId())).get(order.getId())
+            );
+            for (String p : List.of(ReceiptSettlement.SENDER, ReceiptSettlement.DELIVERY)) {
+                if (portion != null && !portion.equals(p)) {
+                    continue;
+                }
+                BigDecimal amount = ReceiptSettlement.SENDER.equals(p) ? outs[0] : outs[1];
+                if (amount.signum() <= 0) {
+                    continue;
+                }
+                String owner = ReceiptSettlement.SENDER.equals(p) ? resolveSenderOwner(order) : resolveDeliveryActor(order);
+                ReceiptWaiver w = new ReceiptWaiver();
+                w.setOrder(order);
+                w.setPortion(p);
+                w.setAmount(amount);
+                w.setOwnerUsername(owner);
+                w.setReason(reason);
+                w.setWaivedAt(now);
+                w.setWaivedByUsername(actor);
+                receiptWaiverRepository.save(w);
+                auditRecorder.record(
+                    "RECEIPT_DUE_WAIVE",
+                    AUDIT_DUE,
+                    order.getOrderCode(),
+                    (ReceiptSettlement.SENDER.equals(p) ? "Phần VP gửi" : "Phần giao") +
+                    " · " +
+                    money(amount) +
+                    " · người nộp: " +
+                    (owner == null ? "—" : owner) +
+                    " · lý do: " +
+                    reason
+                );
+                count++;
+                total = total.add(amount);
+            }
+        }
+        if (count == 0) {
+            throw new BadRequestAlertException("Nothing to waive", ENTITY, "waiveNothing");
+        }
+        return new WaiveResult(count, total);
+    }
+
+    /** Lịch sử thao tác màn phiếu thu (tạo / xác nhận / hoàn tác / hủy nộp) — chỉ admin. */
+    @Transactional(readOnly = true)
+    public List<HistoryDTO> history(LocalDate from, LocalDate to) {
+        requireAdmin();
+        LocalDate end = to == null ? LocalDate.now(VN) : to;
+        LocalDate start = from == null ? end.minusDays(6) : from;
+        if (start.isAfter(end)) {
+            throw new BadRequestAlertException("from must be <= to", ENTITY, "rangeInvalid");
+        }
+        if (start.plusDays(92).isBefore(end)) {
+            throw new BadRequestAlertException("Range too large (max 92 days)", ENTITY, "rangeTooLarge");
+        }
+        Map<String, String> names = new HashMap<>();
+        List<HistoryDTO> out = new ArrayList<>();
+        for (AuditLog a : auditLogRepository.findByEntityTypeInAndActedAtGreaterThanEqualAndActedAtLessThanOrderByActedAtDesc(
+            List.of(AUDIT_RECEIPT, AUDIT_DUE),
+            start.atStartOfDay(VN).toInstant(),
+            end.plusDays(1).atStartOfDay(VN).toInstant()
+        )) {
+            String by = a.getActedByUsername();
+            String name = by == null ? null : names.computeIfAbsent(by, this::displayNameOf);
+            out.add(new HistoryDTO(a.getId(), a.getActedAt(), by, name, a.getAction(), a.getEntityType(), a.getEntityId(), a.getDetail()));
+        }
+        return out;
     }
 
     @Transactional(readOnly = true)
@@ -756,6 +963,33 @@ public class FinanceFacadeService {
     private static String actor() {
         return SecurityUtils.getCurrentUserLogin().orElse("system");
     }
+
+    private void requireAdmin() {
+        if (!staffAccessService.isSystemAdmin()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin only");
+        }
+    }
+
+    private String displayNameOf(String login) {
+        return staffProfileRepository.findOneByUserLoginIgnoreCase(login).map(StaffProfile::getDisplayName).orElse(null);
+    }
+
+    public record WaiveItem(String orderCode, /** SENDER | DELIVERY | null = cả hai */String portion) {}
+
+    public record WaiveRequest(String reason, List<WaiveItem> items) {}
+
+    public record WaiveResult(int count, BigDecimal totalAmount) {}
+
+    public record HistoryDTO(
+        Long id,
+        Instant at,
+        String username,
+        String displayName,
+        String action,
+        String entityType,
+        String entityId,
+        String detail
+    ) {}
 
     public record CandidateDTO(
         String orderCode,

@@ -126,7 +126,45 @@ public class OrderFacadeService {
         String itineraryLabel,
         Pageable pageable
     ) {
+        return list(
+            status,
+            fromOfficeCode,
+            toOfficeCode,
+            receiverOfficeCode,
+            keyword,
+            paymentTerm,
+            createdFrom,
+            createdTo,
+            routeLabel,
+            itineraryLabel,
+            null,
+            pageable
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public Page<OrderSummaryDTO> list(
+        OrderStatus status,
+        String fromOfficeCode,
+        String toOfficeCode,
+        String receiverOfficeCode,
+        String keyword,
+        PaymentTerm paymentTerm,
+        String createdFrom,
+        String createdTo,
+        String routeLabel,
+        String itineraryLabel,
+        java.util.Collection<String> codes,
+        Pageable pageable
+    ) {
         Specification<ShipmentOrder> spec = Specification.where(null);
+        if (codes != null && !codes.isEmpty()) {
+            List<String> wanted = codes.stream().filter(c -> c != null && !c.isBlank()).map(String::trim).distinct().limit(500).toList();
+            if (wanted.isEmpty()) {
+                return Page.empty(pageable);
+            }
+            spec = spec.and((root, q, cb) -> cb.or(root.get("orderCode").in(wanted), root.get("draftCode").in(wanted)));
+        }
         if (status != null) {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), status));
         }
@@ -182,7 +220,25 @@ public class OrderFacadeService {
                 )
             );
         }
-        return shipmentOrderRepository.findAll(spec, pageable).map(this::toSummary);
+        Page<ShipmentOrder> page = shipmentOrderRepository.findAll(spec, pageable);
+        java.util.Map<Long, List<OrderLeg>> legsByOrder = legsByOrderId(page.getContent());
+        return page.map(o -> {
+            OrderSummaryDTO dto = new OrderSummaryDTO();
+            fillSummary(dto, o, legsByOrder.getOrDefault(o.getId(), List.of()));
+            return dto;
+        });
+    }
+
+    private java.util.Map<Long, List<OrderLeg>> legsByOrderId(List<ShipmentOrder> orders) {
+        List<Long> ids = orders.stream().map(ShipmentOrder::getId).filter(java.util.Objects::nonNull).toList();
+        if (ids.isEmpty()) {
+            return java.util.Map.of();
+        }
+        java.util.Map<Long, List<OrderLeg>> out = new java.util.HashMap<>();
+        for (OrderLeg leg : orderLegRepository.findByOrderIdsWithTrip(ids)) {
+            out.computeIfAbsent(leg.getOrder().getId(), k -> new java.util.ArrayList<>()).add(leg);
+        }
+        return out;
     }
 
     public int markCodExported(MarkCodExportedRequest req) {
@@ -999,6 +1055,10 @@ public class OrderFacadeService {
     }
 
     private void fillSummary(OrderSummaryDTO dto, ShipmentOrder o) {
+        fillSummary(dto, o, null);
+    }
+
+    private void fillSummary(OrderSummaryDTO dto, ShipmentOrder o, List<OrderLeg> preloadedLegs) {
         dto.setId(o.getId());
         dto.setOrderCode(o.getOrderCode());
         dto.setDraftCode(o.getDraftCode());
@@ -1073,9 +1133,9 @@ public class OrderFacadeService {
             }
             dto.setDepartAt(o.getCurrentTrip().getDepartAt());
         }
-        java.util.List<OrderLeg> legs = o.getId() == null
-            ? java.util.List.of()
-            : orderLegRepository.findByOrder_IdOrderByLegIndexAsc(o.getId());
+        java.util.List<OrderLeg> legs = preloadedLegs != null
+            ? preloadedLegs
+            : o.getId() == null ? java.util.List.of() : orderLegRepository.findByOrder_IdOrderByLegIndexAsc(o.getId());
         dto.setLegs(legs.stream().map(this::toLegView).toList());
         dto.setCurrentLegIndex(currentLegIndex(legs));
         if ((dto.getVehiclePlate() == null || dto.getDriverName() == null || dto.getDepartAt() == null) && !legs.isEmpty()) {

@@ -27,6 +27,7 @@ import com.mycompany.myapp.service.dto.order.TrackOrderRequest;
 import com.mycompany.myapp.service.dto.order.TrackOrderResponse;
 import com.mycompany.myapp.service.dto.trip.AssignOrdersToTripRequest;
 import com.mycompany.myapp.service.dto.trip.TripSummaryDTO;
+import com.mycompany.myapp.service.finance.FinanceFacadeService;
 import com.mycompany.myapp.service.invoice.MeInvoiceIssueService;
 import com.mycompany.myapp.service.order.DeliveryFacadeService;
 import com.mycompany.myapp.service.order.ExceptionFacadeService;
@@ -69,14 +70,17 @@ public class OrderFacadeResource {
     private final DeliveryFacadeService deliveryFacadeService;
     private final ExceptionFacadeService exceptionFacadeService;
     private final MeInvoiceIssueService meInvoiceIssueService;
+    private final FinanceFacadeService financeFacadeService;
 
     public OrderFacadeResource(
         OrderFacadeService orderFacadeService,
         TripFacadeService tripFacadeService,
         DeliveryFacadeService deliveryFacadeService,
         ExceptionFacadeService exceptionFacadeService,
-        MeInvoiceIssueService meInvoiceIssueService
+        MeInvoiceIssueService meInvoiceIssueService,
+        FinanceFacadeService financeFacadeService
     ) {
+        this.financeFacadeService = financeFacadeService;
         this.orderFacadeService = orderFacadeService;
         this.tripFacadeService = tripFacadeService;
         this.deliveryFacadeService = deliveryFacadeService;
@@ -96,6 +100,7 @@ public class OrderFacadeResource {
         @RequestParam(required = false) String createdTo,
         @RequestParam(required = false) String routeLabel,
         @RequestParam(required = false) String itineraryLabel,
+        @RequestParam(required = false) List<String> codes,
         Pageable pageable
     ) {
         LOG.debug("REST request to get orders facade list");
@@ -110,6 +115,7 @@ public class OrderFacadeResource {
             createdTo,
             routeLabel,
             itineraryLabel,
+            codes,
             pageable
         );
         HttpHeaders headers = PaginationUtil.generatePaginationHttpHeaders(ServletUriComponentsBuilder.fromCurrentRequest(), page);
@@ -196,6 +202,9 @@ public class OrderFacadeResource {
 
     @PostMapping("/{orderCode}/transition")
     public OrderTransitionResponse transition(@PathVariable String orderCode, @Valid @RequestBody OrderTransitionRequest request) {
+        if (request.getToStatus() == OrderStatus.CANCELLED) {
+            financeFacadeService.assertNoHeldMoney(orderCode);
+        }
         return orderFacadeService.transition(orderCode, request);
     }
 

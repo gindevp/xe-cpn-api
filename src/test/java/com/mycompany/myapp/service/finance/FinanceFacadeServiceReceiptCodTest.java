@@ -3,6 +3,8 @@ package com.mycompany.myapp.service.finance;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -12,22 +14,29 @@ import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.Receipt;
 import com.mycompany.myapp.domain.ReceiptOrderLine;
+import com.mycompany.myapp.domain.ReceiptWaiver;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentKind;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
+import com.mycompany.myapp.repository.AuditLogRepository;
 import com.mycompany.myapp.repository.DayClosureRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ReceiptRepository;
+import com.mycompany.myapp.repository.ReceiptWaiverRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.repository.StaffProfileRepository;
+import com.mycompany.myapp.security.StaffAccessService;
+import com.mycompany.myapp.service.audit.AuditRecorder;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.CreateReceiptRequest;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.ReceiptDTO;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.ReceiptLineRequest;
+import com.mycompany.myapp.service.finance.FinanceFacadeService.WaiveItem;
+import com.mycompany.myapp.service.finance.FinanceFacadeService.WaiveRequest;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.util.List;
@@ -39,6 +48,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Phiếu thu gồm COD: tổng line = fareDue + cod; paidAmount chỉ tăng phần cước.
@@ -73,6 +83,18 @@ class FinanceFacadeServiceReceiptCodTest {
     @Mock
     private DayClosureGuard dayClosureGuard;
 
+    @Mock
+    private ReceiptWaiverRepository receiptWaiverRepository;
+
+    @Mock
+    private AuditRecorder auditRecorder;
+
+    @Mock
+    private AuditLogRepository auditLogRepository;
+
+    @Mock
+    private StaffAccessService staffAccessService;
+
     private FinanceFacadeService service;
     private ShipmentOrder order;
 
@@ -87,7 +109,11 @@ class FinanceFacadeServiceReceiptCodTest {
             orderPaymentRepository,
             orderEventRepository,
             staffProfileRepository,
-            dayClosureGuard
+            dayClosureGuard,
+            receiptWaiverRepository,
+            auditRecorder,
+            auditLogRepository,
+            staffAccessService
         );
 
         order = new ShipmentOrder();
@@ -99,7 +125,7 @@ class FinanceFacadeServiceReceiptCodTest {
         order.setStatus(OrderStatus.DELIVERED);
         order.setPaymentTerm(PaymentTerm.NHAN_TRA);
 
-        when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("GP-COD-001")).thenReturn(Optional.of(order));
+        lenient().when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("GP-COD-001")).thenReturn(Optional.of(order));
         lenient().when(orderPaymentRepository.save(any(OrderPayment.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(shipmentOrderRepository.save(any(ShipmentOrder.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(receiptOrderLineRepository.save(any(ReceiptOrderLine.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -183,5 +209,86 @@ class FinanceFacadeServiceReceiptCodTest {
         verify(orderPaymentRepository).save(payCap.capture());
         assertThat(payCap.getValue().getPaymentKind()).isEqualTo(PaymentKind.COD);
         assertThat(payCap.getValue().getAmount()).isEqualByComparingTo("50000");
+    }
+
+    @Test
+    void waiveDues_rejectsNonAdmin() {
+        when(staffAccessService.isSystemAdmin()).thenReturn(false);
+
+        assertThatThrownBy(() -> service.waiveDues(new WaiveRequest("x", List.of(new WaiveItem("GP-COD-001", null))))).isInstanceOf(
+            ResponseStatusException.class
+        );
+        verify(receiptWaiverRepository, never()).save(any());
+    }
+
+    @Test
+    void waiveDues_requiresReason() {
+        when(staffAccessService.isSystemAdmin()).thenReturn(true);
+
+        assertThatThrownBy(() -> service.waiveDues(new WaiveRequest("  ", List.of(new WaiveItem("GP-COD-001", null)))))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("waiveReasonRequired");
+    }
+
+    @Test
+    void waiveDues_savesOutstandingDeliveryAndAudits() {
+        when(staffAccessService.isSystemAdmin()).thenReturn(true);
+
+        var result = service.waiveDues(new WaiveRequest("Khách bùng", List.of(new WaiveItem("GP-COD-001", ReceiptSettlement.DELIVERY))));
+
+        ArgumentCaptor<ReceiptWaiver> cap = ArgumentCaptor.forClass(ReceiptWaiver.class);
+        verify(receiptWaiverRepository).save(cap.capture());
+        assertThat(cap.getValue().getPortion()).isEqualTo(ReceiptSettlement.DELIVERY);
+        assertThat(cap.getValue().getAmount()).isEqualByComparingTo("80000");
+        assertThat(cap.getValue().getReason()).isEqualTo("Khách bùng");
+        assertThat(result.count()).isEqualTo(1);
+        verify(auditRecorder).record(eq("RECEIPT_DUE_WAIVE"), eq("ReceiptDue"), eq("GP-COD-001"), anyString());
+    }
+
+    @Test
+    void assertNoHeldMoney_blocksCancelWhenCollectedNotSubmitted() {
+        order.setStatus(OrderStatus.CONFIRMED);
+
+        assertThatThrownBy(() -> service.assertNoHeldMoney("GP-COD-001"))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("cancelHasHeldMoney");
+    }
+
+    @Test
+    void assertNoHeldMoney_allowsWhenNothingCollected() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setPaidAmount(BigDecimal.ZERO);
+
+        service.assertNoHeldMoney("GP-COD-001");
+    }
+
+    @Test
+    void assertNoHeldMoney_allowsAfterWaive() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        when(receiptWaiverRepository.sumByOrderIds(any())).thenReturn(
+            List.<Object[]>of(new Object[] { 1L, ReceiptSettlement.SENDER, new BigDecimal("10000") })
+        );
+
+        service.assertNoHeldMoney("GP-COD-001");
+    }
+
+    @Test
+    void createReceipt_rejectsWaivedAmount() {
+        when(receiptWaiverRepository.sumByOrderIds(any())).thenReturn(
+            List.<Object[]>of(new Object[] { 1L, ReceiptSettlement.DELIVERY, new BigDecimal("80000") })
+        );
+        CreateReceiptRequest req = new CreateReceiptRequest(
+            "NV A",
+            null,
+            null,
+            List.of(new ReceiptLineRequest("GP-COD-001", new BigDecimal("1000"), ReceiptSettlement.DELIVERY))
+        );
+
+        assertThatThrownBy(() -> service.createReceipt(req))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("amountExceedsDue");
     }
 }

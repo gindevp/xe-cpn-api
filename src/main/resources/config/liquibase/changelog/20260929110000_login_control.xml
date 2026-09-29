@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260929110000-1" author="cpn">
+        <comment>IP (web DH/KT) / thiết bị (app) được admin duyệt cho từng tài khoản.</comment>
+        <createTable tableName="login_trust">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_login" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="kind" type="varchar(10)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="trust_value" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="label" type="varchar(255)"/>
+            <column name="status" type="varchar(10)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="requested_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_seen_at" type="${datetimeType}"/>
+            <column name="last_ip" type="varchar(64)"/>
+            <column name="decided_at" type="${datetimeType}"/>
+            <column name="decided_by" type="varchar(50)"/>
+        </createTable>
+        <addUniqueConstraint tableName="login_trust" columnNames="user_login, kind, trust_value"
+                             constraintName="ux_login_trust__user_kind_value"/>
+        <createIndex tableName="login_trust" indexName="ix_login_trust__status">
+            <column name="status"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20260929110000-2" author="cpn">
+        <comment>Phiên đăng nhập (sid trong JWT) — admin xem / đăng xuất từ xa.</comment>
+        <createTable tableName="user_session">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="sid" type="varchar(40)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_user_session__sid"/>
+            </column>
+            <column name="user_login" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="channel" type="varchar(10)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="ip" type="varchar(64)"/>
+            <column name="device_id" type="varchar(100)"/>
+            <column name="device_name" type="varchar(255)"/>
+            <column name="user_agent" type="varchar(255)"/>
+            <column name="created_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_seen_at" type="${datetimeType}"/>
+            <column name="expires_at" type="${datetimeType}"/>
+            <column name="revoked_at" type="${datetimeType}"/>
+            <column name="revoked_by" type="varchar(50)"/>
+            <column name="revoke_reason" type="varchar(255)"/>
+        </createTable>
+        <createIndex tableName="user_session" indexName="ix_user_session__user">
+            <column name="user_login"/>
+            <column name="channel"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

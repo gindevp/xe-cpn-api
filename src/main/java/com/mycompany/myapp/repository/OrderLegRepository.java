@@ -43,4 +43,7 @@ public interface OrderLegRepository extends JpaRepository<OrderLeg, Long> {
     Optional<OrderLeg> findOneWithToOneRelationships(@Param("id") Long id);
 
     List<OrderLeg> findByOrder_IdOrderByLegIndexAsc(Long orderId);
+
+    @Query("select l from OrderLeg l left join fetch l.trip where l.order.id in :orderIds order by l.order.id asc, l.legIndex asc")
+    List<OrderLeg> findByOrderIdsWithTrip(@Param("orderIds") java.util.Collection<Long> orderIds);
 }

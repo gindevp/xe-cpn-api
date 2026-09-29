@@ -20,6 +20,9 @@ public final class SecurityUtils {
 
     public static final String AUTHORITIES_KEY = "auth";
 
+    /** Mã phiên đăng nhập trong JWT ({@code user_session.sid}). */
+    public static final String SID_CLAIM = "sid";
+
     private SecurityUtils() {}
 
     /**

@@ -97,5 +97,7 @@
     <include file="config/liquibase/changelog/20260925100000_session_policy.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260925140000_receipt_confirm_proof.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260927140000_attendance_vehicle_events.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260929100000_receipt_waiver.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260929110000_login_control.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
