@@ -1100,7 +1100,7 @@ public class FinanceFacadeService {
         return resolveSenderWhActor(order);
     }
 
-    /** Người nhập kho gửi (WAREHOUSE_RECEIVE) hoặc fallback tạo đơn / lấy hàng. */
+    /** Người nhập kho gửi (WAREHOUSE_RECEIVE); bỏ qua nhập kho → người quét lên xe đầu tiên; rồi tạo đơn / lấy hàng. */
     private String resolveSenderWhActor(ShipmentOrder order) {
         if (order.getId() != null) {
             List<OrderEvent> events = orderEventRepository.findByOrder_IdOrderByEventAtAsc(order.getId());
@@ -1108,14 +1108,32 @@ public class FinanceFacadeService {
                 OrderEvent event = events.get(i);
                 String action = event.getAction() == null ? "" : event.getAction().trim().toUpperCase();
                 if ("WAREHOUSE_RECEIVE".equals(action) || "WH_IN".equals(action) || "CONFIRM".equals(action)) {
-                    String actor = event.getActorUsername();
-                    if (actor != null && !actor.isBlank()) {
-                        return actor.trim();
+                    String actor = staffActor(event);
+                    if (actor != null) {
+                        return actor;
+                    }
+                }
+            }
+            for (OrderEvent event : events) {
+                if ("SCAN_OUT".equalsIgnoreCase(event.getAction() == null ? "" : event.getAction().trim())) {
+                    String actor = staffActor(event);
+                    if (actor != null) {
+                        return actor;
                     }
                 }
             }
         }
         return resolveDebtOwner(order);
+    }
+
+    /** Actor là nhân viên (bỏ khách tự tạo đơn / hệ thống). */
+    private static String staffActor(OrderEvent event) {
+        String actor = event.getActorUsername();
+        if (actor == null || actor.isBlank()) {
+            return null;
+        }
+        String a = actor.trim();
+        return "customer".equalsIgnoreCase(a) || "system".equalsIgnoreCase(a) || "anonymousUser".equalsIgnoreCase(a) ? null : a;
     }
 
     /**
@@ -1161,12 +1179,8 @@ public class FinanceFacadeService {
         }
         if (order.getId() != null) {
             for (OrderEvent event : orderEventRepository.findByOrder_IdOrderByEventAtAsc(order.getId())) {
-                if ("CREATED".equalsIgnoreCase(event.getAction())) {
-                    String actor = event.getActorUsername();
-                    if (actor != null && !actor.isBlank()) {
-                        return actor.trim();
-                    }
-                    break;
+                if ("CREATE".equalsIgnoreCase(event.getAction()) || "CREATED".equalsIgnoreCase(event.getAction())) {
+                    return staffActor(event);
                 }
             }
         }
