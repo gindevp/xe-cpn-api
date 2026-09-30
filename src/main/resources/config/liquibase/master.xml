@@ -100,5 +100,6 @@
     <include file="config/liquibase/changelog/20260929100000_receipt_waiver.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260929110000_login_control.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260930160000_shipment_order_list_indexes.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260930200000_shipment_order_on_credit.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 

@@ -32,6 +32,18 @@ class ReceiptSettlementTest {
     }
 
     @Test
+    void creditOrder_unpaidFareNotOwedByStaff_codStillDue() {
+        ShipmentOrder o = order(PaymentTerm.GUI_TRA, OrderStatus.IN_TRANSIT, ForwardStage.TRANSFERRING, "30000", "0", "50000");
+        o.setOnCredit(true);
+        assertThat(ReceiptSettlement.split(o, Totals.ZERO).totalOut()).isEqualByComparingTo("0");
+
+        o.setStatus(OrderStatus.DELIVERED);
+        Split after = ReceiptSettlement.split(o, Totals.ZERO);
+        assertThat(after.senderOut()).isEqualByComparingTo("0");
+        assertThat(after.deliveryOut()).isEqualByComparingTo("50000");
+    }
+
+    @Test
     void guiTra_unpaidBeforeWarehouse_nothing() {
         ShipmentOrder o = order(PaymentTerm.GUI_TRA, OrderStatus.CONFIRMED, null, "30000", "0", "0");
         assertThat(ReceiptSettlement.split(o, Totals.ZERO).totalOut()).isEqualByComparingTo("0");

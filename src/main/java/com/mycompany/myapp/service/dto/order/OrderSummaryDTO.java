@@ -69,6 +69,7 @@ public class OrderSummaryDTO {
     private String bankAccountNo;
     private String bankAccountName;
     private Boolean invoiceRequested;
+    private Boolean onCredit;
     private String invoiceTaxCode;
     private String invoiceCompanyName;
     private String invoiceEmail;
@@ -513,6 +514,14 @@ public class OrderSummaryDTO {
 
     public Boolean getInvoiceRequested() {
         return invoiceRequested;
+    }
+
+    public Boolean getOnCredit() {
+        return onCredit;
+    }
+
+    public void setOnCredit(Boolean onCredit) {
+        this.onCredit = onCredit;
     }
 
     public void setInvoiceRequested(Boolean invoiceRequested) {

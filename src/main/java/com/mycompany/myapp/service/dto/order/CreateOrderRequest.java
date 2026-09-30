@@ -88,6 +88,8 @@ public class CreateOrderRequest {
     private String bankAccountNo;
     private String bankAccountName;
     private Boolean invoiceRequested;
+    /** Đơn công nợ — cước ghi nợ khách, nhân viên không thu. */
+    private Boolean onCredit;
     private String invoiceTaxCode;
     private String invoiceCompanyName;
     private String invoiceEmail;
@@ -372,6 +374,14 @@ public class CreateOrderRequest {
 
     public Boolean getInvoiceRequested() {
         return invoiceRequested;
+    }
+
+    public Boolean getOnCredit() {
+        return onCredit;
+    }
+
+    public void setOnCredit(Boolean onCredit) {
+        this.onCredit = onCredit;
     }
 
     public void setInvoiceRequested(Boolean invoiceRequested) {

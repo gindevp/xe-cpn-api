@@ -199,6 +199,10 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "invoice_requested", nullable = false)
     private Boolean invoiceRequested = false;
 
+    /** Đơn công nợ: cước ghi nợ khách, không thu tại VP gửi / khi giao. */
+    @Column(name = "on_credit", nullable = false)
+    private Boolean onCredit = false;
+
     @Size(max = 20)
     @Column(name = "invoice_tax_code", length = 20)
     private String invoiceTaxCode;
@@ -861,6 +865,14 @@ public class ShipmentOrder implements Serializable {
 
     public void setInvoiceRequested(Boolean invoiceRequested) {
         this.invoiceRequested = invoiceRequested;
+    }
+
+    public Boolean getOnCredit() {
+        return this.onCredit;
+    }
+
+    public void setOnCredit(Boolean onCredit) {
+        this.onCredit = onCredit;
     }
 
     public String getInvoiceTaxCode() {

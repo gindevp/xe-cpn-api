@@ -133,6 +133,15 @@ class OrderFacadeServiceSenderPrepaidTest {
     }
 
     @Test
+    void creditOrder_recordsNothing() {
+        order.setOnCredit(true);
+
+        service.collectSenderFareOnWarehouseIn(order);
+
+        verify(orderPaymentRepository, never()).save(any());
+    }
+
+    @Test
     void returningOrder_recordsNothing() {
         order.setStatus(OrderStatus.RETURNING);
 

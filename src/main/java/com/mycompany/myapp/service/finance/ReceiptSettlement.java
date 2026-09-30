@@ -99,7 +99,7 @@ final class ReceiptSettlement {
         }
         Totals t = totals == null ? Totals.ZERO : totals;
         BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
-        BigDecimal due = OrderMoney.due(order);
+        BigDecimal due = OrderMoney.collectDue(order);
         BigDecimal cod = OrderMoney.nz(order.getCodAmount());
         boolean delivered = st == OrderStatus.DELIVERED;
         boolean returned = st == OrderStatus.RETURNING || st == OrderStatus.RETURNED;

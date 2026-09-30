@@ -136,7 +136,8 @@ public class FinanceFacadeService {
             );
             return cb.and(
                 status.in(OrderStatus.DRAFT, OrderStatus.CANCELLED).not(),
-                cb.or(cb.equal(status, OrderStatus.DELIVERED), cb.greaterThan(root.get("paidAmount"), BigDecimal.ZERO), guiTraPastWh)
+                cb.or(cb.equal(status, OrderStatus.DELIVERED), cb.greaterThan(root.get("paidAmount"), BigDecimal.ZERO), guiTraPastWh),
+                notFullySettled(root, q, cb)
             );
         };
         String scoped = officeCode == null || officeCode.isBlank() ? null : officeCode.trim().toUpperCase();
@@ -165,9 +166,6 @@ public class FinanceFacadeService {
         Map<Long, BigDecimal[]> waived = loadWaived(ids);
         List<CandidateDTO> out = new ArrayList<>();
         for (ShipmentOrder o : orders) {
-            if (out.size() >= 300) {
-                break;
-            }
             BigDecimal[] outs = outstanding(o, totals.getOrDefault(o.getId(), ReceiptSettlement.Totals.ZERO), waived.get(o.getId()));
             String fromCode = o.getFromOffice() != null ? o.getFromOffice().getCode() : null;
             if (outs[0].signum() > 0 && (scoped == null || scoped.equals(fromCode))) {
@@ -178,6 +176,44 @@ public class FinanceFacadeService {
             }
         }
         return out;
+    }
+
+    /**
+     * Lọc sẵn trong DB: đã lập phiếu + hủy nộp < mức tối đa có thể phải nộp (chặn trên của
+     * {@link ReceiptSettlement#split}). Đơn đã nộp đủ không bị nạp lại mỗi lần mở màn.
+     */
+    private static jakarta.persistence.criteria.Predicate notFullySettled(
+        jakarta.persistence.criteria.Root<ShipmentOrder> root,
+        jakarta.persistence.criteria.CriteriaQuery<?> q,
+        jakarta.persistence.criteria.CriteriaBuilder cb
+    ) {
+        var receipted = q.subquery(BigDecimal.class);
+        var line = receipted.from(ReceiptOrderLine.class);
+        receipted
+            .select(cb.coalesce(cb.sum(line.<BigDecimal>get("amountCollected")), BigDecimal.ZERO))
+            .where(cb.equal(line.get("order"), root));
+        var waivedSum = q.subquery(BigDecimal.class);
+        var waiver = waivedSum.from(ReceiptWaiver.class);
+        waivedSum.select(cb.coalesce(cb.sum(waiver.<BigDecimal>get("amount")), BigDecimal.ZERO)).where(cb.equal(waiver.get("order"), root));
+
+        var status = root.get("status");
+        jakarta.persistence.criteria.Expression<BigDecimal> paid = cb.coalesce(root.<BigDecimal>get("paidAmount"), BigDecimal.ZERO);
+        jakarta.persistence.criteria.Expression<BigDecimal> fare = cb.coalesce(root.<BigDecimal>get("fareAmount"), BigDecimal.ZERO);
+        jakarta.persistence.criteria.Expression<BigDecimal> cod = cb.coalesce(root.<BigDecimal>get("codAmount"), BigDecimal.ZERO);
+        jakarta.persistence.criteria.Expression<BigDecimal> paidOrFare = cb
+            .<BigDecimal>selectCase()
+            .when(cb.greaterThan(paid, fare), paid)
+            .otherwise(fare);
+        var delivered = cb.equal(status, OrderStatus.DELIVERED);
+        var credit = cb.isTrue(root.get("onCredit"));
+        jakarta.persistence.criteria.Expression<BigDecimal> bound = cb
+            .<BigDecimal>selectCase()
+            .when(status.in(OrderStatus.RETURNING, OrderStatus.RETURNED), paid)
+            .when(cb.and(credit, delivered), cb.sum(paid, cod))
+            .when(credit, paid)
+            .when(delivered, cb.sum(paidOrFare, cod))
+            .otherwise(paidOrFare);
+        return cb.lessThan(cb.sum(receipted, waivedSum), bound);
     }
 
     /**

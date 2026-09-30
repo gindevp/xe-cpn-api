@@ -118,7 +118,7 @@ public class DeliveryFacadeService {
         res.setStatus(order.getStatus());
         res.setPaidAmount(order.getPaidAmount());
         res.setFareAmount(order.getFareAmount());
-        res.setDueAmount(OrderMoney.due(order));
+        res.setDueAmount(OrderMoney.collectDue(order));
         res.setPhotoUrls(savedUrls);
         return res;
     }
@@ -354,7 +354,7 @@ public class DeliveryFacadeService {
 
     private void assertPaymentAllowed(ShipmentOrder order, BigDecimal amount) {
         dayClosureGuard.assertCollectionMutable(order);
-        BigDecimal due = OrderMoney.due(order);
+        BigDecimal due = OrderMoney.collectDue(order);
         if (amount.compareTo(due) > 0) {
             throw new BadRequestAlertException(
                 "amount exceeds due for " + order.getOrderCode() + " (due=" + due + ")",

@@ -1036,6 +1036,7 @@ public class OrderFacadeService {
         order.setHomePickup(homePickup);
         order.setHomeDelivery(homeDelivery);
         order.setQrDropOff(Boolean.TRUE.equals(req.getQrDropOff()));
+        order.setOnCredit(Boolean.TRUE.equals(req.getOnCredit()));
         order.setWeightKg(req.getWeightKg());
         order.setQuantity(req.getQuantity() == null ? 1 : req.getQuantity());
         order.setNote(req.getNote());
@@ -1143,7 +1144,7 @@ public class OrderFacadeService {
         if (order.getStatus() != OrderStatus.CONFIRMED && order.getStatus() != OrderStatus.WAITING) {
             return;
         }
-        BigDecimal due = OrderMoney.due(order);
+        BigDecimal due = OrderMoney.collectDue(order);
         if (due.signum() <= 0) {
             return;
         }
@@ -1365,7 +1366,8 @@ public class OrderFacadeService {
         dto.setQuantity(o.getQuantity());
         dto.setFareAmount(o.getFareAmount());
         dto.setPaidAmount(o.getPaidAmount());
-        dto.setDueAmount(OrderMoney.due(o));
+        dto.setDueAmount(OrderMoney.collectDue(o));
+        dto.setOnCredit(Boolean.TRUE.equals(o.getOnCredit()));
         dto.setPickupFeeAmount(o.getPickupFeeAmount());
         dto.setDeliveryFeeAmount(o.getDeliveryFeeAmount());
         dto.setHomePickup(o.getHomePickup());

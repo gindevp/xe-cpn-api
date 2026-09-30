@@ -28,6 +28,14 @@ public final class OrderMoney {
         return due(order.getFareAmount(), order.getPaidAmount());
     }
 
+    /** Cước nhân viên còn phải thu của khách; đơn công nợ = 0 (ghi nợ khách, không thu tiền mặt). */
+    public static BigDecimal collectDue(ShipmentOrder order) {
+        if (order == null || Boolean.TRUE.equals(order.getOnCredit())) {
+            return BigDecimal.ZERO;
+        }
+        return due(order);
+    }
+
     /**
      * Số tiền NV nộp trên phiếu thu: cước còn thiếu + tiền COD thu hộ.
      * COD không làm tăng {@code paidAmount} (H1 / overpay vẫn theo fare due).
