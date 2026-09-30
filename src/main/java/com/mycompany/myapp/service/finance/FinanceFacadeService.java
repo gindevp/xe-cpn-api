@@ -187,7 +187,7 @@ public class FinanceFacadeService {
         }
         return cache.computeIfAbsent(login.toLowerCase(), k -> {
             String name = displayNameOf(login);
-            return name == null || name.isBlank() || name.trim().equalsIgnoreCase(login.trim()) ? "" : name.trim();
+            return name == null || name.isBlank() ? "" : name.trim();
         });
     }
 
