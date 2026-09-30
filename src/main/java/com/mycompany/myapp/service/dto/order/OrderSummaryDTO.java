@@ -91,6 +91,12 @@ public class OrderSummaryDTO {
     private String driverName;
     /** Giờ xuất phát chuyến hiện tại (trip.departAt) — FE tab Hàng trên xe. */
     private Instant departAt;
+    /** Mốc thời gian theo tab nhập kho/luân chuyển (sự kiện mới nhất của từng bước). */
+    private Instant warehouseInAt;
+    private Instant tripAssignedAt;
+    private Instant driverSignedAt;
+    private Instant destWarehouseInAt;
+    private Instant shipperAssignedAt;
     /** Vụ việc OPEN hiện tại (list) — FE /ngoai-le. */
     private String issueType;
     private String issueReason;
@@ -679,6 +685,46 @@ public class OrderSummaryDTO {
 
     public void setDepartAt(Instant departAt) {
         this.departAt = departAt;
+    }
+
+    public Instant getWarehouseInAt() {
+        return warehouseInAt;
+    }
+
+    public void setWarehouseInAt(Instant warehouseInAt) {
+        this.warehouseInAt = warehouseInAt;
+    }
+
+    public Instant getTripAssignedAt() {
+        return tripAssignedAt;
+    }
+
+    public void setTripAssignedAt(Instant tripAssignedAt) {
+        this.tripAssignedAt = tripAssignedAt;
+    }
+
+    public Instant getDriverSignedAt() {
+        return driverSignedAt;
+    }
+
+    public void setDriverSignedAt(Instant driverSignedAt) {
+        this.driverSignedAt = driverSignedAt;
+    }
+
+    public Instant getDestWarehouseInAt() {
+        return destWarehouseInAt;
+    }
+
+    public void setDestWarehouseInAt(Instant destWarehouseInAt) {
+        this.destWarehouseInAt = destWarehouseInAt;
+    }
+
+    public Instant getShipperAssignedAt() {
+        return shipperAssignedAt;
+    }
+
+    public void setShipperAssignedAt(Instant shipperAssignedAt) {
+        this.shipperAssignedAt = shipperAssignedAt;
     }
 
     public String getIssueType() {

@@ -222,11 +222,64 @@ public class OrderFacadeService {
         }
         Page<ShipmentOrder> page = shipmentOrderRepository.findAll(spec, pageable);
         java.util.Map<Long, List<OrderLeg>> legsByOrder = legsByOrderId(page.getContent());
+        java.util.Map<Long, java.util.Map<String, Instant>> stageTimes = stageEventTimes(
+            page.getContent().stream().map(ShipmentOrder::getId).filter(java.util.Objects::nonNull).toList()
+        );
         return page.map(o -> {
             OrderSummaryDTO dto = new OrderSummaryDTO();
             fillSummary(dto, o, legsByOrder.getOrDefault(o.getId(), List.of()));
+            applyStageTimes(dto, stageTimes.getOrDefault(o.getId(), java.util.Map.of()));
             return dto;
         });
+    }
+
+    private static final List<String> WAREHOUSE_IN_ACTIONS = List.of("WAREHOUSE_RECEIVE", "WH_IN", "CONFIRM", "CREATE");
+    private static final List<String> TRIP_ASSIGN_ACTIONS = List.of("ASSIGN_TRIP");
+    private static final List<String> DRIVER_SIGN_ACTIONS = List.of("KY_BAN_GIAO_TAI_XE", "SCAN_OUT", "HANDOVER");
+    private static final List<String> DEST_WAREHOUSE_IN_ACTIONS = List.of("SCAN_IN", "HUB_IN", "DEST_WH_IN");
+    private static final List<String> SHIPPER_ASSIGN_ACTIONS = List.of("DELIVERING");
+    private static final List<String> STAGE_TIME_ACTIONS = java.util.stream.Stream.of(
+        WAREHOUSE_IN_ACTIONS,
+        TRIP_ASSIGN_ACTIONS,
+        DRIVER_SIGN_ACTIONS,
+        DEST_WAREHOUSE_IN_ACTIONS,
+        SHIPPER_ASSIGN_ACTIONS
+    )
+        .flatMap(List::stream)
+        .toList();
+
+    /** orderId → (ACTION → thời điểm mới nhất). */
+    private java.util.Map<Long, java.util.Map<String, Instant>> stageEventTimes(List<Long> orderIds) {
+        if (orderIds.isEmpty()) {
+            return java.util.Map.of();
+        }
+        java.util.Map<Long, java.util.Map<String, Instant>> out = new java.util.HashMap<>();
+        for (Object[] row : orderEventRepository.latestEventAtByOrderIdsAndAction(orderIds, STAGE_TIME_ACTIONS)) {
+            if (row[0] == null || row[1] == null || row[2] == null) {
+                continue;
+            }
+            out.computeIfAbsent((Long) row[0], k -> new java.util.HashMap<>()).put((String) row[1], (Instant) row[2]);
+        }
+        return out;
+    }
+
+    private static Instant latestOf(java.util.Map<String, Instant> times, List<String> actions) {
+        Instant best = null;
+        for (String a : actions) {
+            Instant t = times.get(a);
+            if (t != null && (best == null || t.isAfter(best))) {
+                best = t;
+            }
+        }
+        return best;
+    }
+
+    private static void applyStageTimes(OrderSummaryDTO dto, java.util.Map<String, Instant> times) {
+        dto.setWarehouseInAt(latestOf(times, WAREHOUSE_IN_ACTIONS));
+        dto.setTripAssignedAt(latestOf(times, TRIP_ASSIGN_ACTIONS));
+        dto.setDriverSignedAt(latestOf(times, DRIVER_SIGN_ACTIONS));
+        dto.setDestWarehouseInAt(latestOf(times, DEST_WAREHOUSE_IN_ACTIONS));
+        dto.setShipperAssignedAt(latestOf(times, SHIPPER_ASSIGN_ACTIONS));
     }
 
     private java.util.Map<Long, List<OrderLeg>> legsByOrderId(List<ShipmentOrder> orders) {
@@ -381,6 +434,8 @@ public class OrderFacadeService {
         }
         // Endpoint công khai: không tin paidAmount từ client — tiền chỉ ghi qua order_payment do nhân viên thu.
         order.setPaidAmount(BigDecimal.ZERO);
+        order.setRouteLabel(blankToNull(req.getRouteLabel()));
+        order.setItineraryLabel(blankToNull(req.getItineraryLabel()));
         order.setNote(req.getNote());
         order.setFromOffice(from);
         order.setToOffice(to);
@@ -1054,6 +1109,9 @@ public class OrderFacadeService {
 
     private void fillSummary(OrderSummaryDTO dto, ShipmentOrder o) {
         fillSummary(dto, o, null);
+        if (o.getId() != null) {
+            applyStageTimes(dto, stageEventTimes(List.of(o.getId())).getOrDefault(o.getId(), java.util.Map.of()));
+        }
     }
 
     private void fillSummary(OrderSummaryDTO dto, ShipmentOrder o, List<OrderLeg> preloadedLegs) {

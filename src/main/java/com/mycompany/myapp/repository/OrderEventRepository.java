@@ -48,4 +48,13 @@ public interface OrderEventRepository extends JpaRepository<OrderEvent, Long> {
         @Param("orderIds") java.util.Collection<Long> orderIds,
         @Param("actions") java.util.Collection<String> actions
     );
+
+    /** Hàng: [orderId, upper(action), max(eventAt)] — tách theo từng action. */
+    @Query(
+        "select e.order.id, upper(e.action), max(e.eventAt) from OrderEvent e where e.order.id in :orderIds and upper(e.action) in :actions group by e.order.id, upper(e.action)"
+    )
+    List<Object[]> latestEventAtByOrderIdsAndAction(
+        @Param("orderIds") java.util.Collection<Long> orderIds,
+        @Param("actions") java.util.Collection<String> actions
+    );
 }
