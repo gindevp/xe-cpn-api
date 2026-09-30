@@ -62,6 +62,9 @@ public class SecurityConfiguration {
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/product-price-rules")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/door-fee-rules")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/surcharge-policy")).permitAll()
+                    // Public create-order: tìm địa chỉ + ước tính KM lấy/giao tận nơi (giới hạn lượt ở PublicPartnerRateLimitFilter)
+                    .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/geo/**")).permitAll()
+                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/ahamove/estimate-pickup-km")).permitAll()
                     // App mobile hỏi chính sách phiên bản trước khi đăng nhập
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/mobile/app-version")).permitAll()
                     // Web/app hỏi trạng thái bảo trì trước khi vào (không cần token)
