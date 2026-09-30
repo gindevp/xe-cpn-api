@@ -195,12 +195,29 @@ class LoginControlServiceTest {
     }
 
     @Test
-    void legacyApp_dispatcherStillNeedsApprovedIp() {
+    void legacyApp_dispatcherSkipsIpApproval() {
         role("dh1", RoleCode.DH);
 
         LoginDecision d = service.decide(
             user("dh1", "ROLE_USER"),
             new LoginRequestInfo(LoginControlService.CHANNEL_LEGACY_APP, "1.2.3.4", null, null, "okhttp/4.9.2"),
+            exp
+        );
+
+        assertThat(d.allowed()).isTrue();
+        verify(trustRepository, never()).save(any());
+        ArgumentCaptor<UserSession> cap = ArgumentCaptor.forClass(UserSession.class);
+        verify(sessionRepository).save(cap.capture());
+        assertThat(cap.getValue().getChannel()).isEqualTo(UserSession.APP);
+    }
+
+    @Test
+    void web_dispatcherStillNeedsApprovedIp() {
+        role("dh1", RoleCode.DH);
+
+        LoginDecision d = service.decide(
+            user("dh1", "ROLE_USER"),
+            new LoginRequestInfo(UserSession.WEB, "1.2.3.4", null, null, "Mozilla/5.0"),
             exp
         );
 

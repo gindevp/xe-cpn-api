@@ -59,8 +59,8 @@ public class LoginControlService {
     }
 
     /**
-     * App bản cũ trên store: không gửi {@code client}/mã thiết bị. Vẫn tính là phiên APP (không đá phiên web),
-     * nhưng áp luật như web vì chưa có mã thiết bị để duyệt.
+     * App bản cũ trên store: không gửi {@code client}/mã thiết bị. Vẫn tính là phiên APP (không đá phiên web)
+     * và không duyệt theo IP — IP 4G đổi liên tục nên duyệt IP bắt duyệt lại mỗi lần đổi mạng.
      */
     public static final String CHANNEL_LEGACY_APP = "APP_LEGACY";
 
@@ -108,7 +108,7 @@ public class LoginControlService {
                 if (d != null) {
                     return d;
                 }
-            } else if (roleOf(login).map(IP_CONTROLLED_ROLES::contains).orElse(false)) {
+            } else if (!legacyApp && roleOf(login).map(IP_CONTROLLED_ROLES::contains).orElse(false)) {
                 String ip = trimTo(info.ip(), 100);
                 if (ip == null) {
                     return LoginDecision.blocked("error.loginIpUnknown", "Không xác định được IP máy đăng nhập", LoginTrust.KIND_IP, null);

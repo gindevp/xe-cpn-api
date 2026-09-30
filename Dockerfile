@@ -25,7 +25,8 @@ USER 1001
 EXPOSE 8080
 ENV SPRING_PROFILES_ACTIVE=prod,demo
 # Fixed heap (not MaxRAMPercentage): Railway reports the plan limit, not a real container cap.
-# Total RSS ≈ Xmx + metaspace + ~300MB (threads, code cache, direct buffers) ≈ 1.6GB.
+# Total RSS ≈ Xmx + metaspace + ~300MB (threads, code cache, direct buffers) — peak ≈ 1.5GB.
+# G1PeriodicGCInterval + MaxHeapFreeRatio: khi rảnh G1 trả heap thừa cho OS (Railway tính tiền theo RAM dùng).
 # A JAVA_OPTS variable set on Railway overrides this default.
-ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:MaxMetaspaceSize=256m -XX:ReservedCodeCacheSize=128m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseContainerSupport -XX:+ExitOnOutOfMemoryError"
+ENV JAVA_OPTS="-Xms256m -Xmx1024m -Xss512k -XX:MaxMetaspaceSize=256m -XX:ReservedCodeCacheSize=96m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:G1PeriodicGCInterval=60000 -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=30 -XX:+UseStringDeduplication -XX:+UseContainerSupport -XX:+ExitOnOutOfMemoryError"
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Djava.security.egd=file:/dev/./urandom -jar /app/app.jar --server.port=${PORT:-8080}"]

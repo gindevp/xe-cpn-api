@@ -40,8 +40,8 @@ spring:
       poolName: Hikari
       auto-commit: false
       # Railway MySQL max_connections mặc định 151 — giữ dưới ngưỡng này.
-      maximum-pool-size: ${CPN_DB_POOL_MAX:30}
-      minimum-idle: ${CPN_DB_POOL_MIN_IDLE:5}
+      maximum-pool-size: ${CPN_DB_POOL_MAX:20}
+      minimum-idle: ${CPN_DB_POOL_MIN_IDLE:3}
       data-source-properties:
         cachePrepStmts: true
         prepStmtCacheSize: 250
@@ -88,8 +88,8 @@ server:
   shutdown: graceful # see https://docs.spring.io/spring-boot/docs/current/reference/html/spring-boot-features.html#boot-features-graceful-shutdown
   tomcat:
     threads:
-      max: ${CPN_TOMCAT_THREADS_MAX:200}
-      min-spare: 20
+      max: ${CPN_TOMCAT_THREADS_MAX:100}
+      min-spare: 10
     accept-count: 200
   compression:
     enabled: true
