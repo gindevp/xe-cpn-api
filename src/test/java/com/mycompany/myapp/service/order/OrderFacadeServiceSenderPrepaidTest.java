@@ -1,10 +1,13 @@
 package com.mycompany.myapp.service.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.ShipmentOrder;
@@ -20,7 +23,9 @@ import com.mycompany.myapp.repository.OrderPodPhotoRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.day.DayClosureGuard;
+import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
+import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -144,5 +149,25 @@ class OrderFacadeServiceSenderPrepaidTest {
 
         verify(orderPaymentRepository, never()).save(any());
         assertThat(order.getPaidAmount()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void customerOrderNotWarehouseReceived_cannotBeLoaded() {
+        when(orderEventRepository.existsByOrder_IdAndActionAndActorUsername(1L, "CREATE", "customer")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.assertSenderWarehouseReceived(order))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("notWarehouseReceived");
+    }
+
+    @Test
+    void warehouseReceivedOrStaffOrder_canBeLoaded() {
+        order.setPickedUpAt(Instant.now());
+        assertThatCode(() -> service.assertSenderWarehouseReceived(order)).doesNotThrowAnyException();
+
+        order.setPickedUpAt(null);
+        when(orderEventRepository.existsByOrder_IdAndActionAndActorUsername(1L, "CREATE", "customer")).thenReturn(false);
+        assertThatCode(() -> service.assertSenderWarehouseReceived(order)).doesNotThrowAnyException();
     }
 }

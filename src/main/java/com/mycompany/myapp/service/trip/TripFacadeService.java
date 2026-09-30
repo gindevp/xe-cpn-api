@@ -221,6 +221,7 @@ public class TripFacadeService {
             if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.DELIVERED) {
                 throw new BadRequestAlertException("Order not assignable: " + code, ENTITY, "orderNotAssignable");
             }
+            orderFacadeService.assertSenderWarehouseReceived(order);
             boolean alreadyOnTrip =
                 order.getCurrentTrip() != null &&
                 trip.getId() != null &&
@@ -255,6 +256,7 @@ public class TripFacadeService {
             trip.setStatus(TripStatus.LOADING);
         }
         ShipmentOrder order = requireOrder(req.getOrderCode());
+        orderFacadeService.assertSenderWarehouseReceived(order);
         TripOrderAssignment assignment = ensureActiveAssignment(trip, order);
         Instant now = Instant.now();
         assignment.setScannedAt(now);

@@ -1115,6 +1115,23 @@ public class OrderFacadeService {
 
     static final String NOTE_SENDER_PREPAID = "Thu đầu gửi (người gửi thanh toán)";
 
+    /** Đơn khách tự tạo phải được VP gửi xác nhận nhập kho trước khi xếp xe / quét lên xe. */
+    public void assertSenderWarehouseReceived(ShipmentOrder order) {
+        if (order.getStatus() != OrderStatus.CONFIRMED && order.getStatus() != OrderStatus.WAITING) {
+            return;
+        }
+        if (order.getPickedUpAt() != null || order.getId() == null) {
+            return;
+        }
+        if (orderEventRepository.existsByOrder_IdAndActionAndActorUsername(order.getId(), "CREATE", "customer")) {
+            throw new BadRequestAlertException(
+                "Đơn " + order.getOrderCode() + " do khách tạo chưa nhập kho gửi — xác nhận nhập kho trước khi xếp xe",
+                ENTITY,
+                "notWarehouseReceived"
+            );
+        }
+    }
+
     /**
      * Đơn người gửi trả: VP gửi xác nhận nhập kho nghĩa là đã thu cước của người gửi → ghi khoản thu đầu gửi
      * (người thu = người nhập kho) cho phần cước còn thiếu, để shipper không thu lại người nhận.

@@ -40,6 +40,8 @@ public interface OrderEventRepository extends JpaRepository<OrderEvent, Long> {
 
     List<OrderEvent> findByOrder_IdOrderByEventAtAsc(Long orderId);
 
+    boolean existsByOrder_IdAndActionAndActorUsername(Long orderId, String action, String actorUsername);
+
     /** Hàng: [orderId, max(eventAt)] của các sự kiện thuộc {@code actions}. */
     @Query(
         "select e.order.id, max(e.eventAt) from OrderEvent e where e.order.id in :orderIds and upper(e.action) in :actions group by e.order.id"

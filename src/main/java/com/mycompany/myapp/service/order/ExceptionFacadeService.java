@@ -624,6 +624,9 @@ public class ExceptionFacadeService {
     public OrderDetailDTO setForwardStage(String orderCode, ForwardStage stage) {
         ShipmentOrder order = requireOrder(orderCode);
         dayClosureGuard.assertOrderMutable(order);
+        if (stage == ForwardStage.TRANSFER_PENDING || stage == ForwardStage.TRANSFERRING) {
+            orderFacadeService.assertSenderWarehouseReceived(order);
+        }
         order.setForwardStage(stage);
         Instant now = Instant.now();
         if (stage == ForwardStage.PICKED && order.getPickingAt() == null) {
