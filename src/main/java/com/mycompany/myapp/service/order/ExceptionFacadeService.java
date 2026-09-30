@@ -124,8 +124,8 @@ public class ExceptionFacadeService {
         order.setCodAmount(java.math.BigDecimal.ZERO);
         order.setCodFeeAmount(java.math.BigDecimal.ZERO);
         order.setForwardStage(nextForward);
-        if (caseAtOriginWh) {
-            // Hoàn tại chỗ: không còn trên chuyến.
+        if (caseAtOriginWh || leftTrip(order, current)) {
+            // Hoàn tại chỗ / hàng đã xuống kho giao: không còn trên chuyến chiều đi.
             order.setCurrentTrip(null);
         }
         shipmentOrderRepository.save(order);
@@ -144,6 +144,29 @@ public class ExceptionFacadeService {
             }
         }
         return orderFacadeService.getByCode(order.getOrderCode());
+    }
+
+    /** Hàng đã rời xe chiều đi (đã nhập kho giao trở đi) — đang trên xe / chờ lên xe thì giữ chuyến. */
+    static boolean leftTrip(ShipmentOrder order, ForwardStage current) {
+        if (
+            current == ForwardStage.DEST_WH_IN ||
+            current == ForwardStage.DELIVERING ||
+            current == ForwardStage.FAILED ||
+            current == ForwardStage.REDELIVER_WAIT
+        ) {
+            return true;
+        }
+        if (current == ForwardStage.TRANSFER_PENDING || current == ForwardStage.TRANSFERRING) {
+            return false;
+        }
+        OrderStatus s = order.getStatus();
+        return (
+            s == OrderStatus.AT_DEST ||
+            s == OrderStatus.OUT_FOR_DELIVERY ||
+            s == OrderStatus.FAILED_DELIVERY ||
+            s == OrderStatus.DELIVERED ||
+            s == OrderStatus.RETURNED
+        );
     }
 
     /**
