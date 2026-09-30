@@ -59,6 +59,13 @@ public class CreateDraftOrderRequest {
     /** Tuyến (Branch) code or name — preferred fare table. */
     private String branchCode;
 
+    /** Tên tuyến / lộ trình FE suy từ VP gửi–nhận — dùng preset khi gán xe. */
+    @Size(max = 120)
+    private String routeLabel;
+
+    @Size(max = 200)
+    private String itineraryLabel;
+
     /** FE gửi tổng cước theo kiện — nếu có thì dùng thay vì ước lượng 1 cân. */
     private BigDecimal fareAmount;
     private BigDecimal goodsFareAmount;
@@ -199,6 +206,22 @@ public class CreateDraftOrderRequest {
 
     public void setBranchCode(String branchCode) {
         this.branchCode = branchCode;
+    }
+
+    public String getRouteLabel() {
+        return routeLabel;
+    }
+
+    public void setRouteLabel(String routeLabel) {
+        this.routeLabel = routeLabel;
+    }
+
+    public String getItineraryLabel() {
+        return itineraryLabel;
+    }
+
+    public void setItineraryLabel(String itineraryLabel) {
+        this.itineraryLabel = itineraryLabel;
     }
 
     public BigDecimal getFareAmount() {

@@ -10,6 +10,7 @@ import com.mycompany.myapp.domain.enumeration.LegStatus;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.domain.enumeration.ServiceType;
+import com.mycompany.myapp.repository.ItineraryRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.OrderIssueRepository;
@@ -39,6 +40,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -66,6 +68,7 @@ public class OrderFacadeService {
     private final OrderIssueRepository orderIssueRepository;
     private final DraftExpiryService draftExpiryService;
     private final ApplicationEventPublisher eventPublisher;
+    private ItineraryRepository itineraryRepository;
 
     public OrderFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -442,6 +445,7 @@ public class OrderFacadeService {
         order.setHubOffice(null);
         order.setFinalToOffice(to);
         order.setPublicTrackingAllowed(true);
+        fillItineraryIfMissing(order);
 
         order = shipmentOrderRepository.save(order);
         ensureLegs(order);
@@ -579,6 +583,7 @@ public class OrderFacadeService {
         String fromCode = order.getFromOffice().getCode();
         order.setOrderCode(orderCodeGenerator.nextOrderCode(fromCode, Boolean.TRUE.equals(req.getConfirmDailyOverflow())));
         order.setStatus(OrderStatus.CONFIRMED);
+        fillItineraryIfMissing(order);
         order = shipmentOrderRepository.save(order);
         ensureLegs(order);
         appendEvent(order, "CONFIRM", "Xác nhận từ nháp", currentActor());
@@ -636,6 +641,7 @@ public class OrderFacadeService {
         order.setPickupFeeAmount(req.getPickupFeeAmount() != null ? req.getPickupFeeAmount() : fare.pickupFee());
         order.setDeliveryFeeAmount(req.getDeliveryFeeAmount() != null ? req.getDeliveryFeeAmount() : fare.deliveryFee());
         order.setPublicTrackingAllowed(true);
+        fillItineraryIfMissing(order);
 
         order = shipmentOrderRepository.save(order);
         ensureLegs(order);
@@ -969,6 +975,39 @@ public class OrderFacadeService {
         if (req.getItineraryLabel() != null) {
             order.setItineraryLabel(blankToNull(req.getItineraryLabel()));
         }
+    }
+
+    @Autowired(required = false)
+    void setItineraryRepository(ItineraryRepository itineraryRepository) {
+        this.itineraryRepository = itineraryRepository;
+    }
+
+    /**
+     * Đơn thiếu tuyến/lộ trình (FE không gửi) → suy theo mã lộ trình "{điểm VP gửi}-{điểm VP nhận}" (vd PT-HD).
+     * Không khớp / lộ trình tắt thì để trống như cũ.
+     */
+    void fillItineraryIfMissing(ShipmentOrder order) {
+        if (itineraryRepository == null || (!isBlank(order.getRouteLabel()) && !isBlank(order.getItineraryLabel()))) {
+            return;
+        }
+        Office from = order.getFromOffice();
+        Office to = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
+        String fromPt = from != null ? blankToNull(from.getItineraryPoint()) : null;
+        String toPt = to != null ? blankToNull(to.getItineraryPoint()) : null;
+        if (fromPt == null || toPt == null) {
+            return;
+        }
+        itineraryRepository
+            .findOneByCode(fromPt.toUpperCase() + "-" + toPt.toUpperCase())
+            .filter(it -> !Boolean.FALSE.equals(it.getActive()))
+            .ifPresent(it -> {
+                if (isBlank(order.getItineraryLabel())) {
+                    order.setItineraryLabel(blankToNull(it.getName()));
+                }
+                if (isBlank(order.getRouteLabel()) && it.getBranch() != null) {
+                    order.setRouteLabel(blankToNull(it.getBranch().getName()));
+                }
+            });
     }
 
     private static String blankToNull(String s) {
