@@ -51,4 +51,11 @@ public interface OrderPaymentRepository extends JpaRepository<OrderPayment, Long
         "select orderPayment.order.id, orderPayment.paymentKind, orderPayment.note, coalesce(sum(orderPayment.amount), 0) from OrderPayment orderPayment where orderPayment.order.id in :orderIds group by orderPayment.order.id, orderPayment.paymentKind, orderPayment.note"
     )
     List<Object[]> sumGroupedByOrderIds(@Param("orderIds") Collection<Long> orderIds);
+
+    /** Hàng: [orderId, max(paymentAt)] của tiền khách trả (bỏ dòng RECEIPT* nộp quỹ). */
+    @Query(
+        "select p.order.id, max(p.paymentAt) from OrderPayment p where p.order.id in :orderIds and p.paymentAt is not null" +
+        " and upper(trim(coalesce(p.note, ''))) not like 'RECEIPT%' group by p.order.id"
+    )
+    List<Object[]> latestCustomerPaymentAtByOrderIds(@Param("orderIds") Collection<Long> orderIds);
 }

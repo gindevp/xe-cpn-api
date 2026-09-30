@@ -41,4 +41,19 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long>, JpaSpec
     long countByReceiptCodeStartingWith(String prefix);
 
     Optional<Receipt> findOneByReceiptCode(String receiptCode);
+
+    /** Danh sách phiếu thu không đọc cột ảnh chứng từ (LONGTEXT ~50–100KB/phiếu) — chỉ trả cờ có ảnh. */
+    @Query(
+        value = "select new com.mycompany.myapp.repository.ReceiptListRow(r.id, r.receiptCode, r.payerName, r.payerCode, r.totalAmount," +
+        " r.createdAt, r.createdByUsername, o.code, r.confirmedAt, r.confirmedByUsername," +
+        " case when r.confirmProofImage is null then false else true end)" +
+        " from Receipt r left join r.office o" +
+        " where (:officeCode is null or o.code = :officeCode) and (:createdBy is null or r.createdByUsername = :createdBy)",
+        countQuery = "select count(r) from Receipt r left join r.office o" +
+        " where (:officeCode is null or o.code = :officeCode) and (:createdBy is null or r.createdByUsername = :createdBy)"
+    )
+    Page<ReceiptListRow> findListRows(@Param("officeCode") String officeCode, @Param("createdBy") String createdBy, Pageable pageable);
+
+    @Query("select r.confirmProofImage from Receipt r where r.receiptCode = :code")
+    Optional<String> findProofImageByCode(@Param("code") String code);
 }

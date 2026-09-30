@@ -39,4 +39,13 @@ public interface OrderEventRepository extends JpaRepository<OrderEvent, Long> {
     Optional<OrderEvent> findOneWithToOneRelationships(@Param("id") Long id);
 
     List<OrderEvent> findByOrder_IdOrderByEventAtAsc(Long orderId);
+
+    /** Hàng: [orderId, max(eventAt)] của các sự kiện thuộc {@code actions}. */
+    @Query(
+        "select e.order.id, max(e.eventAt) from OrderEvent e where e.order.id in :orderIds and upper(e.action) in :actions group by e.order.id"
+    )
+    List<Object[]> latestEventAtByOrderIds(
+        @Param("orderIds") java.util.Collection<Long> orderIds,
+        @Param("actions") java.util.Collection<String> actions
+    );
 }

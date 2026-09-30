@@ -20,6 +20,7 @@ import com.mycompany.myapp.repository.DayClosureRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
+import com.mycompany.myapp.repository.ReceiptListRow;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ReceiptRepository;
 import com.mycompany.myapp.repository.ReceiptWaiverRepository;
@@ -45,7 +46,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -60,6 +63,14 @@ public class FinanceFacadeService {
     private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final String AUDIT_RECEIPT = "Receipt";
     private static final String AUDIT_DUE = "ReceiptDue";
+    private static final Set<String> CUSTOMER_PAID_EVENT_ACTIONS = Set.of(
+        "POD",
+        "POD_QUAY",
+        "POD_HOME",
+        "DELIVERED",
+        "WAREHOUSE_RECEIVE",
+        "WH_IN"
+    );
 
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final ReceiptRepository receiptRepository;
@@ -461,16 +472,94 @@ public class FinanceFacadeService {
         orderPaymentRepository.save(payment);
     }
 
+    /**
+     * Không trả ảnh chứng từ (xem {@link #receiptProofImage}) và nạp dòng/đơn/thời điểm thu theo lô — tránh vài nghìn query
+     * + vài chục MB mỗi lần mở danh sách khi phiếu thu nhiều lên.
+     */
     @Transactional(readOnly = true)
     public Page<ReceiptDTO> listReceipts(String officeCode, String createdBy, Pageable pageable) {
-        Specification<Receipt> spec = Specification.where(null);
-        if (officeCode != null && !officeCode.isBlank()) {
-            spec = spec.and((root, q, cb) -> cb.equal(root.get("office").get("code"), officeCode.trim().toUpperCase()));
+        Pageable paging = pageable.getSort().isSorted()
+            ? pageable
+            : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "id"));
+        Page<ReceiptListRow> rows = receiptRepository.findListRows(
+            officeCode == null || officeCode.isBlank() ? null : officeCode.trim().toUpperCase(),
+            createdBy == null || createdBy.isBlank() ? null : createdBy.trim(),
+            paging
+        );
+        List<Long> receiptIds = rows.getContent().stream().map(ReceiptListRow::id).toList();
+        Map<Long, List<ReceiptOrderLine>> linesByReceipt = new HashMap<>();
+        Set<Long> orderIds = new HashSet<>();
+        if (!receiptIds.isEmpty()) {
+            for (ReceiptOrderLine l : receiptOrderLineRepository.findByReceiptIdsWithOrder(receiptIds)) {
+                linesByReceipt.computeIfAbsent(l.getReceipt().getId(), k -> new ArrayList<>()).add(l);
+                if (l.getOrder() != null && l.getOrder().getId() != null) {
+                    orderIds.add(l.getOrder().getId());
+                }
+            }
         }
-        if (createdBy != null && !createdBy.isBlank()) {
-            spec = spec.and((root, q, cb) -> cb.equal(root.get("createdByUsername"), createdBy.trim()));
+        Map<Long, Instant> paidAt = customerPaidAtByOrderIds(orderIds);
+        return rows.map(row -> {
+            List<ReceiptOrderLine> lines = linesByReceipt.getOrDefault(row.id(), List.of());
+            List<Map<String, Object>> lineViews = new ArrayList<>();
+            Instant customerPaidAt = null;
+            for (ReceiptOrderLine l : lines) {
+                Map<String, Object> m = new HashMap<>();
+                m.put("orderCode", l.getOrder() != null ? l.getOrder().getOrderCode() : null);
+                m.put("amountCollected", l.getAmountCollected());
+                lineViews.add(m);
+                Instant paid = l.getOrder() != null ? paidAt.get(l.getOrder().getId()) : null;
+                if (paid != null && (customerPaidAt == null || paid.isAfter(customerPaidAt))) {
+                    customerPaidAt = paid;
+                }
+            }
+            return new ReceiptDTO(
+                row.id(),
+                row.receiptCode(),
+                row.payerName(),
+                row.payerCode(),
+                row.totalAmount(),
+                row.createdAt(),
+                row.createdByUsername(),
+                row.officeCode(),
+                lineViews,
+                row.confirmedAt(),
+                row.confirmedByUsername(),
+                customerPaidAt != null ? customerPaidAt : row.createdAt(),
+                null,
+                Boolean.TRUE.equals(row.hasConfirmProof())
+            );
+        });
+    }
+
+    @Transactional(readOnly = true)
+    public String receiptProofImage(String receiptCode) {
+        if (receiptCode == null || receiptCode.isBlank()) {
+            throw new BadRequestAlertException("receiptCode is required", ENTITY, "receiptCodeRequired");
         }
-        return receiptRepository.findAll(spec, pageable).map(r -> toReceiptDto(r, receiptOrderLineRepository.findByReceipt_Id(r.getId())));
+        return receiptRepository.findProofImageByCode(receiptCode.trim()).orElse(null);
+    }
+
+    /** Cùng quy tắc {@link #resolveCustomerPaidAtForOrder} nhưng cho cả lô đơn (2 query). */
+    private Map<Long, Instant> customerPaidAtByOrderIds(Set<Long> orderIds) {
+        Map<Long, Instant> out = new HashMap<>();
+        if (orderIds.isEmpty()) {
+            return out;
+        }
+        for (Object[] row : orderPaymentRepository.latestCustomerPaymentAtByOrderIds(orderIds)) {
+            if (row[0] != null && row[1] != null) {
+                out.put((Long) row[0], (Instant) row[1]);
+            }
+        }
+        Set<Long> missing = new HashSet<>(orderIds);
+        missing.removeAll(out.keySet());
+        if (!missing.isEmpty()) {
+            for (Object[] row : orderEventRepository.latestEventAtByOrderIds(missing, CUSTOMER_PAID_EVENT_ACTIONS)) {
+                if (row[0] != null && row[1] != null) {
+                    out.put((Long) row[0], (Instant) row[1]);
+                }
+            }
+        }
+        return out;
     }
 
     public ReceiptDTO confirmReceipt(String receiptCode, ConfirmReceiptRequest body) {
@@ -814,7 +903,8 @@ public class FinanceFacadeService {
             r.getConfirmedAt(),
             r.getConfirmedByUsername(),
             customerPaidAt,
-            r.getConfirmProofImage()
+            r.getConfirmProofImage(),
+            r.getConfirmProofImage() != null && !r.getConfirmProofImage().isBlank()
         );
     }
 
@@ -1028,8 +1118,9 @@ public class FinanceFacadeService {
         String confirmedByUsername,
         /** Thời điểm nhận tiền khách (payment/POD), fallback createdAt. */
         Instant customerPaidAt,
-        /** Ảnh chứng từ khi xác nhận thu (data-URL). */
-        String confirmProofImage
+        /** Ảnh chứng từ khi xác nhận thu (data-URL). Danh sách để null — lấy qua GET /api/receipts/{code}/proof-image. */
+        String confirmProofImage,
+        boolean hasConfirmProof
     ) {}
 
     public record DayClosureDTO(

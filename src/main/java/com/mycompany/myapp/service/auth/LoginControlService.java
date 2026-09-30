@@ -189,6 +189,9 @@ public class LoginControlService {
             s.setLastSeenAt(now);
             sessionRepository.save(s);
         }
+        if (activeCache.size() > 5_000) {
+            activeCache.entrySet().removeIf(e -> nowMs - e.getValue().at() >= CACHE_MS);
+        }
         activeCache.put(sid, new CacheHit(active, nowMs));
         return active;
     }

@@ -45,6 +45,9 @@ public interface ReceiptOrderLineRepository extends JpaRepository<ReceiptOrderLi
 
     List<ReceiptOrderLine> findByReceipt_Id(Long receiptId);
 
+    @Query("select l from ReceiptOrderLine l left join fetch l.order where l.receipt.id in :receiptIds")
+    List<ReceiptOrderLine> findByReceiptIdsWithOrder(@Param("receiptIds") Collection<Long> receiptIds);
+
     boolean existsByOrder_Id(Long orderId);
 
     /** Hàng: [orderId, sum(amountCollected)]. */

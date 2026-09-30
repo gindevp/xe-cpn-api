@@ -48,6 +48,12 @@ public class FinanceFacadeResource {
             .body(new ListPage(page.getContent(), page.getNumber(), page.getSize(), page.getTotalElements()));
     }
 
+    @GetMapping("/api/receipts/{receiptCode}/proof-image")
+    public Map<String, String> proofImage(@PathVariable String receiptCode) {
+        String image = financeFacadeService.receiptProofImage(receiptCode);
+        return image == null ? Map.of() : Map.of("image", image);
+    }
+
     @PostMapping("/api/receipts")
     @ResponseStatus(HttpStatus.CREATED)
     public ReceiptDTO create(@RequestBody CreateReceiptRequest request) {
