@@ -73,6 +73,14 @@ public class FinanceFacadeResource {
         return financeFacadeService.unconfirmReceipt(receiptCode);
     }
 
+    public record CancelReceiptRequest(String reason) {}
+
+    @PostMapping("/api/receipts/{receiptCode}/cancel")
+    public Map<String, Boolean> cancel(@PathVariable String receiptCode, @RequestBody(required = false) CancelReceiptRequest body) {
+        financeFacadeService.cancelReceipt(receiptCode, body == null ? null : body.reason());
+        return Map.of("ok", true);
+    }
+
     @PostMapping("/api/receipts/waive")
     public FinanceFacadeService.WaiveResult waive(@RequestBody FinanceFacadeService.WaiveRequest request) {
         return financeFacadeService.waiveDues(request);

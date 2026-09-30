@@ -626,6 +626,75 @@ public class FinanceFacadeService {
         return toReceiptDto(receipt, receiptOrderLineRepository.findByReceipt_Id(receipt.getId()));
     }
 
+    /**
+     * Admin hủy phiếu thu (bắt buộc lý do): gỡ các khoản RECEIPT* phiếu đã ghi vào đơn (cùng thời điểm + người tạo phiếu),
+     * trừ lại paidAmount phần cước, xoá dòng + phiếu. Đơn quay lại "Đơn cần nộp".
+     */
+    public void cancelReceipt(String receiptCode, String rawReason) {
+        requireAdmin();
+        if (receiptCode == null || receiptCode.isBlank()) {
+            throw new BadRequestAlertException("receiptCode is required", ENTITY, "receiptCodeRequired");
+        }
+        String reason = rawReason == null ? "" : rawReason.trim();
+        if (reason.isEmpty()) {
+            throw new BadRequestAlertException("Reason is required", ENTITY, "receiptCancelReasonRequired");
+        }
+        if (reason.length() > 255) {
+            reason = reason.substring(0, 255);
+        }
+        Receipt receipt = receiptRepository
+            .findOneByReceiptCode(receiptCode.trim())
+            .orElseThrow(() -> new BadRequestAlertException("Receipt not found", ENTITY, "receiptNotFound"));
+        List<ReceiptOrderLine> lines = receiptOrderLineRepository.findByReceipt_Id(receipt.getId());
+        Instant createdAt = receipt.getCreatedAt();
+        String creator = receipt.getCreatedByUsername();
+        for (ReceiptOrderLine line : lines) {
+            ShipmentOrder order = line.getOrder();
+            if (order == null || order.getId() == null) {
+                continue;
+            }
+            dayClosureGuard.assertCollectionMutable(order);
+            BigDecimal fareRemoved = BigDecimal.ZERO;
+            for (OrderPayment p : orderPaymentRepository.findByOrder_IdOrderByPaymentAtDesc(order.getId())) {
+                if (!isPaymentOfReceipt(p, createdAt, creator)) {
+                    continue;
+                }
+                if (p.getPaymentKind() == PaymentKind.SAU) {
+                    fareRemoved = fareRemoved.add(OrderMoney.nz(p.getAmount()));
+                }
+                orderPaymentRepository.delete(p);
+            }
+            if (fareRemoved.signum() > 0) {
+                order.setPaidAmount(OrderMoney.nz(order.getPaidAmount()).subtract(fareRemoved).max(BigDecimal.ZERO));
+                shipmentOrderRepository.save(order);
+            }
+        }
+        String detail =
+            "Người nộp: " +
+            receipt.getPayerName() +
+            " · " +
+            lines.size() +
+            " đơn · " +
+            money(receipt.getTotalAmount()) +
+            (receipt.getConfirmedAt() != null ? " · đã xác nhận bởi " + receipt.getConfirmedByUsername() : "") +
+            " · " +
+            orderCodes(lines) +
+            " · lý do: " +
+            reason;
+        receiptOrderLineRepository.deleteAll(lines);
+        receiptRepository.delete(receipt);
+        auditRecorder.record("RECEIPT_CANCEL", AUDIT_RECEIPT, receiptCode.trim(), detail);
+    }
+
+    private static boolean isPaymentOfReceipt(OrderPayment p, Instant receiptCreatedAt, String creator) {
+        String note = p.getNote() == null ? "" : p.getNote().trim().toUpperCase();
+        if (!note.startsWith("RECEIPT") || p.getPaymentAt() == null || receiptCreatedAt == null) {
+            return false;
+        }
+        long diffMs = Math.abs(p.getPaymentAt().toEpochMilli() - receiptCreatedAt.toEpochMilli());
+        return diffMs < 1000 && (creator == null || creator.equalsIgnoreCase(p.getCollectorUsername()));
+    }
+
     /** Admin hủy nộp: bỏ khoản còn phải nộp của đơn khỏi danh sách "Đơn cần nộp" (bắt buộc lý do). */
     public WaiveResult waiveDues(WaiveRequest req) {
         requireAdmin();

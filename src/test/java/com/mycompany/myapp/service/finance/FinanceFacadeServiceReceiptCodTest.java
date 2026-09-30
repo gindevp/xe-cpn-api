@@ -39,6 +39,7 @@ import com.mycompany.myapp.service.finance.FinanceFacadeService.WaiveItem;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.WaiveRequest;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
@@ -272,6 +273,69 @@ class FinanceFacadeServiceReceiptCodTest {
         );
 
         service.assertNoHeldMoney("GP-COD-001");
+    }
+
+    private static OrderPayment payment(PaymentKind kind, String amount, String note, Instant at, String collector) {
+        OrderPayment p = new OrderPayment();
+        p.setPaymentKind(kind);
+        p.setAmount(new BigDecimal(amount));
+        p.setNote(note);
+        p.setPaymentAt(at);
+        p.setCollectorUsername(collector);
+        return p;
+    }
+
+    @Test
+    void cancelReceipt_rejectsNonAdmin() {
+        when(staffAccessService.isSystemAdmin()).thenReturn(false);
+
+        assertThatThrownBy(() -> service.cancelReceipt("PT-1", "sai")).isInstanceOf(ResponseStatusException.class);
+        verify(receiptRepository, never()).delete(any(Receipt.class));
+    }
+
+    @Test
+    void cancelReceipt_requiresReason() {
+        when(staffAccessService.isSystemAdmin()).thenReturn(true);
+
+        assertThatThrownBy(() -> service.cancelReceipt("PT-1", " "))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("receiptCancelReasonRequired");
+    }
+
+    @Test
+    void cancelReceipt_reversesOnlyReceiptPaymentsAndAudits() {
+        when(staffAccessService.isSystemAdmin()).thenReturn(true);
+        Instant at = Instant.parse("2025-05-01T03:00:00Z");
+        Receipt receipt = new Receipt();
+        receipt.setId(5L);
+        receipt.setReceiptCode("PT-1");
+        receipt.setPayerName("NV A");
+        receipt.setTotalAmount(new BigDecimal("80000"));
+        receipt.setCreatedAt(at);
+        receipt.setCreatedByUsername("dp1");
+        ReceiptOrderLine line = new ReceiptOrderLine();
+        line.setOrder(order);
+        line.setReceipt(receipt);
+        line.setAmountCollected(new BigDecimal("80000"));
+        order.setPaidAmount(new BigDecimal("40000"));
+        OrderPayment fare = payment(PaymentKind.SAU, "30000", "RECEIPT", at, "dp1");
+        OrderPayment cod = payment(PaymentKind.COD, "50000", "RECEIPT_COD", at, "dp1");
+        OrderPayment prepaid = payment(PaymentKind.SAU, "10000", null, at.minusSeconds(3600), "dp1");
+        when(receiptRepository.findOneByReceiptCode("PT-1")).thenReturn(Optional.of(receipt));
+        when(receiptOrderLineRepository.findByReceipt_Id(5L)).thenReturn(List.of(line));
+        when(orderPaymentRepository.findByOrder_IdOrderByPaymentAtDesc(1L)).thenReturn(List.of(fare, cod, prepaid));
+
+        service.cancelReceipt("PT-1", "Lập nhầm");
+
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("10000");
+        verify(orderPaymentRepository).delete(fare);
+        verify(orderPaymentRepository).delete(cod);
+        verify(orderPaymentRepository, never()).delete(prepaid);
+        verify(dayClosureGuard).assertCollectionMutable(order);
+        verify(receiptOrderLineRepository).deleteAll(List.of(line));
+        verify(receiptRepository).delete(receipt);
+        verify(auditRecorder).record(eq("RECEIPT_CANCEL"), eq("Receipt"), eq("PT-1"), org.mockito.ArgumentMatchers.contains("Lập nhầm"));
     }
 
     @Test

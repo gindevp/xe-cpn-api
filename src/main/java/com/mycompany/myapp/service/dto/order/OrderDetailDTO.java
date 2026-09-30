@@ -265,6 +265,25 @@ public class OrderDetailDTO extends OrderSummaryDTO {
         private String action;
         private String detail;
         private String by;
+        /** Chỉ điền cho màn nội bộ (không trả cho tra cứu công khai). */
+        private String byStaffCode;
+        private String byName;
+
+        public String getByStaffCode() {
+            return byStaffCode;
+        }
+
+        public void setByStaffCode(String byStaffCode) {
+            this.byStaffCode = byStaffCode;
+        }
+
+        public String getByName() {
+            return byName;
+        }
+
+        public void setByName(String byName) {
+            this.byName = byName;
+        }
 
         public Instant getAt() {
             return at;

@@ -982,6 +982,13 @@ public class OrderFacadeService {
         this.itineraryRepository = itineraryRepository;
     }
 
+    private com.mycompany.myapp.repository.StaffProfileRepository staffProfileRepository;
+
+    @Autowired(required = false)
+    void setStaffProfileRepository(com.mycompany.myapp.repository.StaffProfileRepository staffProfileRepository) {
+        this.staffProfileRepository = staffProfileRepository;
+    }
+
     /**
      * Đơn thiếu tuyến/lộ trình (FE không gửi) → suy theo mã lộ trình "{điểm VP gửi}-{điểm VP nhận}" (vd PT-HD).
      * Không khớp / lộ trình tắt thì để trống như cũ.
@@ -1137,7 +1144,7 @@ public class OrderFacadeService {
         dto.setReceiverActualName(o.getReceiverActualName());
         dto.setReceiverActualPhone(o.getReceiverActualPhone());
         dto.setFailCount(o.getFailCount());
-        dto.setEvents(mapEvents(o.getId()));
+        dto.setEvents(withActorInfo(mapEvents(o.getId())));
         dto.setPodPhotos(orderPodPhotoRepository.findByOrder_IdOrderBySequenceNoAsc(o.getId()).stream().map(p -> p.getPhotoUrl()).toList());
         dto.setIssues(
             orderIssueRepository.findByOrder_IdOrderByOpenedAtAscIdAsc(o.getId()).stream().map(ExceptionFacadeService::toIssueView).toList()
@@ -1352,6 +1359,30 @@ public class OrderFacadeService {
                 return v;
             })
             .toList();
+    }
+
+    /** Gắn mã NV + họ tên người thao tác (mỗi tài khoản tra một lần). */
+    private List<OrderDetailDTO.OrderEventViewDTO> withActorInfo(List<OrderDetailDTO.OrderEventViewDTO> events) {
+        if (staffProfileRepository == null || events.isEmpty()) {
+            return events;
+        }
+        java.util.Map<String, java.util.Optional<com.mycompany.myapp.domain.StaffProfile>> byLogin = new java.util.HashMap<>();
+        for (OrderDetailDTO.OrderEventViewDTO v : events) {
+            String login = v.getBy() == null ? "" : v.getBy().trim().toLowerCase();
+            if (login.isEmpty()) {
+                continue;
+            }
+            java.util.Optional<com.mycompany.myapp.domain.StaffProfile> p = byLogin.computeIfAbsent(
+                login,
+                staffProfileRepository::findOneByUserLoginIgnoreCase
+            );
+            p.ifPresent(sp -> {
+                v.setByStaffCode(sp.getStaffCode());
+                String name = sp.getDisplayName();
+                v.setByName(name != null && !name.isBlank() && !name.equalsIgnoreCase(sp.getUserLogin()) ? name.trim() : null);
+            });
+        }
+        return events;
     }
 
     /**
