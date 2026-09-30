@@ -132,6 +132,8 @@ cpn:
     # Override: set CPN_AHAMOVE_BASE_URL. Default PROD — PARTNER_NOT_FOUND trên stg thường do key prod.
     base-url: ${CPN_AHAMOVE_BASE_URL:https://partner-api.ahamove.com/v3}
     insecure-ssl: ${CPN_AHAMOVE_INSECURE_SSL:true}
+  hhvn:
+    insecure-ssl: ${CPN_HHVN_INSECURE_SSL:true}
   goong:
     base-url: ${CPN_GOONG_BASE_URL:https://rsapi.goong.io}
   osm:

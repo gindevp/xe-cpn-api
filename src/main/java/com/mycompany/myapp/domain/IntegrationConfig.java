@@ -1,6 +1,7 @@
 package com.mycompany.myapp.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import java.io.Serializable;
@@ -76,6 +77,26 @@ public class IntegrationConfig implements Serializable {
     @Size(max = 255)
     @Column(name = "webhook_secret", length = 255)
     private String webhookSecret;
+
+    /** Auto Call HHVN Tech — bật/tắt gửi cuộc gọi tự động. */
+    @Column(name = "autocall_enabled", nullable = false)
+    private Boolean autocallEnabled;
+
+    @Size(max = 255)
+    @Column(name = "autocall_base_url", length = 255)
+    private String autocallBaseUrl;
+
+    /** xk_test_… (sandbox) | xk_live_… — không trả về FE. */
+    @Size(max = 255)
+    @Column(name = "autocall_api_key", length = 255)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String autocallApiKey;
+
+    /** HMAC secret xác minh webhook call.finished — không trả về FE. */
+    @Size(max = 255)
+    @Column(name = "autocall_webhook_secret", length = 255)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String autocallWebhookSecret;
 
     @Column(name = "updated_at")
     private Instant updatedAt;
@@ -265,6 +286,80 @@ public class IntegrationConfig implements Serializable {
         this.webhookSecret = webhookSecret;
     }
 
+    public Boolean getAutocallEnabled() {
+        return this.autocallEnabled;
+    }
+
+    public void setAutocallEnabled(Boolean autocallEnabled) {
+        this.autocallEnabled = autocallEnabled;
+    }
+
+    public String getAutocallBaseUrl() {
+        return this.autocallBaseUrl;
+    }
+
+    public void setAutocallBaseUrl(String autocallBaseUrl) {
+        this.autocallBaseUrl = autocallBaseUrl;
+    }
+
+    public String getAutocallApiKey() {
+        return this.autocallApiKey;
+    }
+
+    public void setAutocallApiKey(String autocallApiKey) {
+        this.autocallApiKey = autocallApiKey;
+    }
+
+    public String getAutocallWebhookSecret() {
+        return this.autocallWebhookSecret;
+    }
+
+    public void setAutocallWebhookSecret(String autocallWebhookSecret) {
+        this.autocallWebhookSecret = autocallWebhookSecret;
+    }
+
+    /** Không khởi tạo field = false: body PUT thiếu field phải giữ null để merge không tắt Auto Call. */
+    @PrePersist
+    @PreUpdate
+    void defaultAutocallEnabled() {
+        if (autocallEnabled == null) {
+            autocallEnabled = false;
+        }
+    }
+
+    @JsonProperty(value = "autocallApiKeyConfigured", access = JsonProperty.Access.READ_ONLY)
+    public boolean isAutocallApiKeyConfigured() {
+        return autocallApiKey != null && !autocallApiKey.isBlank();
+    }
+
+    /** SANDBOX | LIVE | UNKNOWN theo tiền tố key; null khi chưa có key. */
+    @JsonProperty(value = "autocallApiKeyMode", access = JsonProperty.Access.READ_ONLY)
+    public String getAutocallApiKeyMode() {
+        if (!isAutocallApiKeyConfigured()) {
+            return null;
+        }
+        if (autocallApiKey.startsWith("xk_test_")) {
+            return "SANDBOX";
+        }
+        if (autocallApiKey.startsWith("xk_live_")) {
+            return "LIVE";
+        }
+        return "UNKNOWN";
+    }
+
+    @JsonProperty(value = "autocallApiKeySuffix", access = JsonProperty.Access.READ_ONLY)
+    public String getAutocallApiKeySuffix() {
+        if (!isAutocallApiKeyConfigured() || autocallApiKey.length() <= 4) {
+            return null;
+        }
+        return autocallApiKey.substring(autocallApiKey.length() - 4);
+    }
+
+    @JsonProperty(value = "autocallWebhookSecretConfigured", access = JsonProperty.Access.READ_ONLY)
+    public boolean isAutocallWebhookSecretConfigured() {
+        return autocallWebhookSecret != null && !autocallWebhookSecret.isBlank();
+    }
+
     public Instant getUpdatedAt() {
         return this.updatedAt;
     }
@@ -314,6 +409,10 @@ public class IntegrationConfig implements Serializable {
             ", telegramChatId='" + getTelegramChatId() + "'" +
             ", webhookUrl='" + getWebhookUrl() + "'" +
             ", webhookSecret='" + getWebhookSecret() + "'" +
+            ", autocallEnabled='" + getAutocallEnabled() + "'" +
+            ", autocallBaseUrl='" + getAutocallBaseUrl() + "'" +
+            ", autocallApiKey='" + (isAutocallApiKeyConfigured() ? "***" : null) + "'" +
+            ", autocallWebhookSecret='" + (isAutocallWebhookSecretConfigured() ? "***" : null) + "'" +
             ", updatedAt='" + getUpdatedAt() + "'" +
             "}";
     }

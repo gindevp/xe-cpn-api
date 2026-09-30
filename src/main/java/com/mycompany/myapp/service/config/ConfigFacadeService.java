@@ -8,6 +8,7 @@ import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.partner.AhamoveAuthClient;
 import com.mycompany.myapp.service.partner.AhamoveAuthClient.AhamoveAuthException;
 import com.mycompany.myapp.service.partner.AhamoveTokenService;
+import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
@@ -104,6 +105,7 @@ public class ConfigFacadeService {
         if (incoming.getTelegramChatId() != null) current.setTelegramChatId(incoming.getTelegramChatId());
         if (incoming.getWebhookUrl() != null) current.setWebhookUrl(incoming.getWebhookUrl());
         if (incoming.getWebhookSecret() != null) current.setWebhookSecret(incoming.getWebhookSecret());
+        mergeAutoCall(current, incoming);
 
         if (current.getMapProvider() == null || current.getMapProvider().isBlank()) {
             current.setMapProvider("OSM");
@@ -216,6 +218,26 @@ public class ConfigFacadeService {
         out.put("testedBy", SecurityUtils.getCurrentUserLogin().orElse("system"));
         out.put("testedAt", Instant.now().toString());
         return out;
+    }
+
+    /** Auto Call: key/secret rỗng → giữ giá trị đã lưu; autocallEnabled là Boolean nên null = không đổi. */
+    static void mergeAutoCall(IntegrationConfig current, IntegrationConfig incoming) {
+        if (incoming.getAutocallEnabled() != null) {
+            current.setAutocallEnabled(incoming.getAutocallEnabled());
+        }
+        if (notBlank(incoming.getAutocallBaseUrl())) {
+            current.setAutocallBaseUrl(HhvnAutoCallClient.normalizeBaseUrl(incoming.getAutocallBaseUrl()));
+        }
+        String key = AhamoveAuthClient.sanitizeApiKey(incoming.getAutocallApiKey());
+        if (key != null) {
+            current.setAutocallApiKey(key);
+        }
+        if (notBlank(incoming.getAutocallWebhookSecret())) {
+            current.setAutocallWebhookSecret(incoming.getAutocallWebhookSecret().trim());
+        }
+        if (current.getAutocallEnabled() == null) {
+            current.setAutocallEnabled(false);
+        }
     }
 
     private static String rootMessage(Throwable e) {

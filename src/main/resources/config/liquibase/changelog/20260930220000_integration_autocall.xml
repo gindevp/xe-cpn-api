@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260930220000-1" author="cpn">
+        <comment>
+            Auto Call (HHVN Tech): bật/tắt, base URL, API key (xk_test_ / xk_live_), webhook secret.
+        </comment>
+        <addColumn tableName="integration_config">
+            <column name="autocall_enabled" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="autocall_base_url" type="varchar(255)"/>
+            <column name="autocall_api_key" type="varchar(255)"/>
+            <column name="autocall_webhook_secret" type="varchar(255)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>
