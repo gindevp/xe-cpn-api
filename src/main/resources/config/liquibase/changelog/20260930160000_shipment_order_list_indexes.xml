@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260930160000-1" author="cpn">
+        <comment>Index cho danh sách đơn phân trang phía server: lọc theo trạng thái / ngày tạo / ngày cập nhật.</comment>
+        <createIndex tableName="shipment_order" indexName="idx_shipment_order_status_updated">
+            <column name="status"/>
+            <column name="updated_at"/>
+        </createIndex>
+        <createIndex tableName="shipment_order" indexName="idx_shipment_order_created_at">
+            <column name="created_at"/>
+        </createIndex>
+        <createIndex tableName="shipment_order" indexName="idx_shipment_order_updated_at">
+            <column name="updated_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

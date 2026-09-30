@@ -39,13 +39,19 @@ public class FinanceFacadeResource {
     public ResponseEntity<ListPage> list(
         @RequestParam(required = false) String officeCode,
         @RequestParam(required = false) String createdBy,
+        @RequestParam(required = false) String code,
+        @RequestParam(required = false) String payer,
+        @RequestParam(required = false) String creator,
+        @RequestParam(required = false) String day,
         Pageable pageable
     ) {
-        Page<ReceiptDTO> page = financeFacadeService.listReceipts(officeCode, createdBy, pageable);
+        var filter = new FinanceFacadeService.ReceiptListFilter(code, payer, creator, day);
+        Page<ReceiptDTO> page = financeFacadeService.listReceipts(officeCode, createdBy, filter, pageable);
+        java.math.BigDecimal sum = financeFacadeService.sumReceipts(officeCode, createdBy, filter);
         HttpHeaders headers = PaginationUtil.generatePaginationHttpHeaders(ServletUriComponentsBuilder.fromCurrentRequest(), page);
         return ResponseEntity.ok()
             .headers(headers)
-            .body(new ListPage(page.getContent(), page.getNumber(), page.getSize(), page.getTotalElements()));
+            .body(new ListPage(page.getContent(), page.getNumber(), page.getSize(), page.getTotalElements(), sum));
     }
 
     @GetMapping("/api/receipts/{receiptCode}/proof-image")
@@ -133,5 +139,5 @@ public class FinanceFacadeResource {
         }
     }
 
-    public record ListPage(List<ReceiptDTO> content, int page, int size, long totalElements) {}
+    public record ListPage(List<ReceiptDTO> content, int page, int size, long totalElements, java.math.BigDecimal totalAmount) {}
 }

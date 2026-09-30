@@ -478,12 +478,66 @@ public class FinanceFacadeService {
      */
     @Transactional(readOnly = true)
     public Page<ReceiptDTO> listReceipts(String officeCode, String createdBy, Pageable pageable) {
+        return listReceipts(officeCode, createdBy, ReceiptListFilter.NONE, pageable);
+    }
+
+    /** Lọc danh sách phiếu thu phía server; {@code day} = ngày lập phiếu (yyyy-MM-dd, giờ VN). */
+    public record ReceiptListFilter(String code, String payer, String creator, String day) {
+        public static final ReceiptListFilter NONE = new ReceiptListFilter(null, null, null, null);
+    }
+
+    private static String likeParam(String v) {
+        return v == null || v.isBlank() ? null : "%" + v.trim().toLowerCase() + "%";
+    }
+
+    private static Instant[] receiptDayRange(ReceiptListFilter f) {
+        if (f.day() == null || f.day().isBlank()) {
+            return new Instant[] { null, null };
+        }
+        java.time.LocalDate d = java.time.LocalDate.parse(f.day().trim());
+        java.time.ZoneId vn = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+        return new Instant[] { d.atStartOfDay(vn).toInstant(), d.plusDays(1).atStartOfDay(vn).toInstant() };
+    }
+
+    private static String officeParam(String officeCode) {
+        return officeCode == null || officeCode.isBlank() ? null : officeCode.trim().toUpperCase();
+    }
+
+    private static String createdByParam(String createdBy) {
+        return createdBy == null || createdBy.isBlank() ? null : createdBy.trim();
+    }
+
+    /** Tổng tiền mọi phiếu khớp bộ lọc (không chỉ trang hiện tại). */
+    @Transactional(readOnly = true)
+    public BigDecimal sumReceipts(String officeCode, String createdBy, ReceiptListFilter filter) {
+        ReceiptListFilter f = filter == null ? ReceiptListFilter.NONE : filter;
+        Instant[] range = receiptDayRange(f);
+        return receiptRepository.sumListTotal(
+            officeParam(officeCode),
+            createdByParam(createdBy),
+            likeParam(f.code()),
+            likeParam(f.payer()),
+            likeParam(f.creator()),
+            range[0],
+            range[1]
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ReceiptDTO> listReceipts(String officeCode, String createdBy, ReceiptListFilter filter, Pageable pageable) {
         Pageable paging = pageable.getSort().isSorted()
             ? pageable
             : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "id"));
+        ReceiptListFilter f = filter == null ? ReceiptListFilter.NONE : filter;
+        Instant[] range = receiptDayRange(f);
         Page<ReceiptListRow> rows = receiptRepository.findListRows(
-            officeCode == null || officeCode.isBlank() ? null : officeCode.trim().toUpperCase(),
-            createdBy == null || createdBy.isBlank() ? null : createdBy.trim(),
+            officeParam(officeCode),
+            createdByParam(createdBy),
+            likeParam(f.code()),
+            likeParam(f.payer()),
+            likeParam(f.creator()),
+            range[0],
+            range[1],
             paging
         );
         List<Long> receiptIds = rows.getContent().stream().map(ReceiptListRow::id).toList();

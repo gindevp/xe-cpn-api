@@ -101,6 +101,13 @@ public class OrderFacadeResource {
         @RequestParam(required = false) String routeLabel,
         @RequestParam(required = false) String itineraryLabel,
         @RequestParam(required = false) List<String> codes,
+        @RequestParam(required = false) String officeCode,
+        @RequestParam(required = false) List<OrderStatus> statuses,
+        @RequestParam(required = false) Integer openOrUpdatedWithinDays,
+        @RequestParam(required = false) String updatedFrom,
+        @RequestParam(required = false) String updatedTo,
+        @RequestParam(required = false) String successOfficeCode,
+        @RequestParam(required = false) Boolean homeDelivery,
         Pageable pageable
     ) {
         LOG.debug("REST request to get orders facade list");
@@ -116,6 +123,15 @@ public class OrderFacadeResource {
             routeLabel,
             itineraryLabel,
             codes,
+            new OrderFacadeService.OrderListExtra(
+                officeCode,
+                statuses,
+                openOrUpdatedWithinDays,
+                updatedFrom,
+                updatedTo,
+                successOfficeCode,
+                homeDelivery
+            ),
             pageable
         );
         HttpHeaders headers = PaginationUtil.generatePaginationHttpHeaders(ServletUriComponentsBuilder.fromCurrentRequest(), page);

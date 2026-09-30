@@ -160,7 +160,107 @@ public class OrderFacadeService {
         java.util.Collection<String> codes,
         Pageable pageable
     ) {
+        return list(
+            status,
+            fromOfficeCode,
+            toOfficeCode,
+            receiverOfficeCode,
+            keyword,
+            paymentTerm,
+            createdFrom,
+            createdTo,
+            routeLabel,
+            itineraryLabel,
+            codes,
+            OrderListExtra.NONE,
+            pageable
+        );
+    }
+
+    /**
+     * Bộ lọc thêm cho danh sách: {@code anyOfficeCode} = VP gửi / đến / nhận; {@code statuses} = một trong các trạng thái;
+     * {@code openOrUpdatedWithinDays} = đơn chưa kết thúc hoặc cập nhật trong N ngày gần nhất (tập làm việc của màn vận hành);
+     * {@code updatedFrom/updatedTo} = khoảng ngày cập nhật (yyyy-MM-dd, giờ VN);
+     * {@code successOfficeCode} = VP thao tác thành công (DELIVERED → VP nhận, RETURNED → VP gửi);
+     * {@code homeDelivery} = giao tận nơi.
+     */
+    public record OrderListExtra(
+        String anyOfficeCode,
+        java.util.Collection<OrderStatus> statuses,
+        Integer openOrUpdatedWithinDays,
+        String updatedFrom,
+        String updatedTo,
+        String successOfficeCode,
+        Boolean homeDelivery
+    ) {
+        public static final OrderListExtra NONE = new OrderListExtra(null, null, null, null, null, null, null);
+    }
+
+    private static final List<OrderStatus> TERMINAL_STATUSES = List.of(OrderStatus.DELIVERED, OrderStatus.CANCELLED, OrderStatus.RETURNED);
+
+    @Transactional(readOnly = true)
+    public Page<OrderSummaryDTO> list(
+        OrderStatus status,
+        String fromOfficeCode,
+        String toOfficeCode,
+        String receiverOfficeCode,
+        String keyword,
+        PaymentTerm paymentTerm,
+        String createdFrom,
+        String createdTo,
+        String routeLabel,
+        String itineraryLabel,
+        java.util.Collection<String> codes,
+        OrderListExtra extra,
+        Pageable pageable
+    ) {
         Specification<ShipmentOrder> spec = Specification.where(null);
+        OrderListExtra ex = extra == null ? OrderListExtra.NONE : extra;
+        if (ex.anyOfficeCode() != null && !ex.anyOfficeCode().isBlank()) {
+            String any = ex.anyOfficeCode().trim().toUpperCase();
+            spec = spec.and((root, q, cb) ->
+                cb.or(
+                    cb.equal(root.get("fromOffice").get("code"), any),
+                    cb.equal(root.get("toOffice").get("code"), any),
+                    cb.equal(receiverOfficePath(root, cb), any)
+                )
+            );
+        }
+        if (ex.statuses() != null && !ex.statuses().isEmpty()) {
+            List<OrderStatus> wanted = ex.statuses().stream().filter(java.util.Objects::nonNull).distinct().toList();
+            spec = spec.and((root, q, cb) -> root.get("status").in(wanted));
+        }
+        if (ex.openOrUpdatedWithinDays() != null && ex.openOrUpdatedWithinDays() >= 0) {
+            Instant since = Instant.now().minus(java.time.Duration.ofDays(ex.openOrUpdatedWithinDays()));
+            spec = spec.and((root, q, cb) ->
+                cb.or(cb.not(root.get("status").in(TERMINAL_STATUSES)), cb.greaterThanOrEqualTo(root.get("updatedAt"), since))
+            );
+        }
+        Instant updatedStart = parseDayStart(ex.updatedFrom());
+        Instant updatedEndExclusive = parseDayEndExclusive(ex.updatedTo());
+        if (updatedStart != null) {
+            spec = spec.and((root, q, cb) -> cb.greaterThanOrEqualTo(root.get("updatedAt"), updatedStart));
+        }
+        if (updatedEndExclusive != null) {
+            spec = spec.and((root, q, cb) -> cb.lessThan(root.get("updatedAt"), updatedEndExclusive));
+        }
+        if (ex.successOfficeCode() != null && !ex.successOfficeCode().isBlank()) {
+            String so = ex.successOfficeCode().trim().toUpperCase();
+            spec = spec.and((root, q, cb) ->
+                cb.or(
+                    cb.and(cb.equal(root.get("status"), OrderStatus.DELIVERED), cb.equal(receiverOfficePath(root, cb), so)),
+                    cb.and(cb.equal(root.get("status"), OrderStatus.RETURNED), cb.equal(root.get("fromOffice").get("code"), so))
+                )
+            );
+        }
+        if (ex.homeDelivery() != null) {
+            boolean home = ex.homeDelivery();
+            spec = spec.and((root, q, cb) ->
+                home
+                    ? cb.isTrue(root.get("homeDelivery"))
+                    : cb.or(cb.isNull(root.get("homeDelivery")), cb.isFalse(root.get("homeDelivery")))
+            );
+        }
         if (codes != null && !codes.isEmpty()) {
             List<String> wanted = codes.stream().filter(c -> c != null && !c.isBlank()).map(String::trim).distinct().limit(500).toList();
             if (wanted.isEmpty()) {
@@ -485,6 +585,12 @@ public class OrderFacadeService {
         // Leave warehouse pipeline — but RETURNING keeps forwardStage (pipeline hoàn dùng chung tab kho).
         if (to == OrderStatus.DELIVERED || to == OrderStatus.CANCELLED || to == OrderStatus.RETURNED) {
             order.setForwardStage(null);
+        } else {
+            // Stage đi cùng trạng thái đặt ngay tại đây: gọi forward-stage song song dễ bị lần lưu này ghi đè.
+            ForwardStage synced = forwardStageFor(to, order.getForwardStage());
+            if (synced != null) {
+                order.setForwardStage(synced);
+            }
         }
         shipmentOrderRepository.save(order);
         String action = isBlank(req.getAction()) ? "TRANSITION_" + to.name() : req.getAction();
@@ -493,6 +599,16 @@ public class OrderFacadeService {
             eventPublisher.publishEvent(new OrderDeliveredEvent(order.getOrderCode()));
         }
         return new OrderTransitionResponse(true, to, order.getOrderCode());
+    }
+
+    /** Tab pipeline bắt buộc theo trạng thái mới; null = giữ nguyên. */
+    static ForwardStage forwardStageFor(OrderStatus to, ForwardStage current) {
+        return switch (to) {
+            case OUT_FOR_DELIVERY -> ForwardStage.DELIVERING;
+            case FAILED_DELIVERY -> current == ForwardStage.FAILED || current == ForwardStage.REDELIVER_WAIT ? null : ForwardStage.FAILED;
+            case AT_DEST -> ForwardStage.DEST_WH_IN;
+            default -> null;
+        };
     }
 
     public OrderTransitionResponse restore(String code) {
