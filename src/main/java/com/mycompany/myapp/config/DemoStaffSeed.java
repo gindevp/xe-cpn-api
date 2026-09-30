@@ -20,6 +20,8 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,7 +40,7 @@ public class DemoStaffSeed implements ApplicationRunner {
     private static final String DEMO_PASSWORD = "123";
     private static final String DEFAULT_HOME_OFFICE = "GP";
 
-    private record DemoStaff(String login, RoleCode role, String officeCode, boolean scopeAll, String displayName) {}
+    record DemoStaff(String login, RoleCode role, String officeCode, boolean scopeAll, String displayName) {}
 
     /** Only three job titles remain: Admin, Điều phối, Kế toán. Office scope is per account. */
     private static final List<DemoStaff> DEMO = List.of(
@@ -53,24 +55,30 @@ public class DemoStaffSeed implements ApplicationRunner {
         new DemoStaff("bl", RoleCode.DH, DEFAULT_HOME_OFFICE, true, "Điều phối giám sát")
     );
 
+    /** Ngoài {@code dev} (Railway {@code prod,demo}) chỉ đảm bảo admin — không sinh lại tài khoản demo đã bị xoá. */
+    private static final Set<String> NON_DEV_LOGINS = Set.of("admin");
+
     private final UserRepository userRepository;
     private final AuthorityRepository authorityRepository;
     private final OfficeRepository officeRepository;
     private final StaffProfileRepository staffProfileRepository;
     private final PasswordEncoder passwordEncoder;
+    private final Environment environment;
 
     public DemoStaffSeed(
         UserRepository userRepository,
         AuthorityRepository authorityRepository,
         OfficeRepository officeRepository,
         StaffProfileRepository staffProfileRepository,
-        PasswordEncoder passwordEncoder
+        PasswordEncoder passwordEncoder,
+        Environment environment
     ) {
         this.userRepository = userRepository;
         this.authorityRepository = authorityRepository;
         this.officeRepository = officeRepository;
         this.staffProfileRepository = staffProfileRepository;
         this.passwordEncoder = passwordEncoder;
+        this.environment = environment;
     }
 
     @Override
@@ -86,18 +94,23 @@ public class DemoStaffSeed implements ApplicationRunner {
                 .orElseThrow(() -> new IllegalStateException("ROLE_USER missing"));
             Authority adminAuthority = authorityRepository.findById(AuthoritiesConstants.ADMIN).orElse(null);
 
+            List<DemoStaff> seeds = seedsFor(environment.acceptsProfiles(Profiles.of("dev")));
             int profiles = 0;
-            for (DemoStaff demo : DEMO) {
+            for (DemoStaff demo : seeds) {
                 ensureUser(demo, userAuthority, adminAuthority);
                 if (ensureStaffProfile(demo)) {
                     profiles++;
                 }
             }
-            LOG.info("Demo staff seed ready ({} users, {} new profiles, password '{}')", DEMO.size(), profiles, DEMO_PASSWORD);
+            LOG.info("Demo staff seed ready ({} users, {} new profiles)", seeds.size(), profiles);
         } catch (Exception e) {
             // Railway must stay up even if demo seed cannot attach profiles (missing GP, etc.)
             LOG.error("DemoStaffSeed failed (non-fatal, app continues): {}", e.getMessage(), e);
         }
+    }
+
+    static List<DemoStaff> seedsFor(boolean dev) {
+        return dev ? DEMO : DEMO.stream().filter(d -> NON_DEV_LOGINS.contains(d.login())).toList();
     }
 
     private void ensureUser(DemoStaff demo, Authority userAuthority, Authority adminAuthority) {
