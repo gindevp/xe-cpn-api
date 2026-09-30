@@ -379,10 +379,8 @@ public class OrderFacadeService {
         if (req.getCodFeeAmount() != null) {
             order.setCodFeeAmount(req.getCodFeeAmount());
         }
-        if (req.getPaidAmount() != null && req.getPaidAmount().compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal paid = req.getPaidAmount().min(fareTotal);
-            order.setPaidAmount(paid);
-        }
+        // Endpoint công khai: không tin paidAmount từ client — tiền chỉ ghi qua order_payment do nhân viên thu.
+        order.setPaidAmount(BigDecimal.ZERO);
         order.setNote(req.getNote());
         order.setFromOffice(from);
         order.setToOffice(to);

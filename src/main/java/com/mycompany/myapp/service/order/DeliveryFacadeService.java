@@ -68,6 +68,7 @@ public class DeliveryFacadeService {
         if (order.getStatus() == OrderStatus.DELIVERED) {
             throw new BadRequestAlertException("Already delivered (E-POD-057)", ENTITY, "alreadyDelivered");
         }
+        assertArrivedForPod(order);
         if (req.getPhotos() == null || req.getPhotos().isEmpty()) {
             throw new BadRequestAlertException("At least 1 POD photo required", ENTITY, "podPhotoRequired");
         }
@@ -258,6 +259,28 @@ public class DeliveryFacadeService {
         return orderFacadeService.getByCode(order.getOrderCode());
     }
 
+    /** CONFIRMED/WAITING = hàng còn ở VP gửi: chỉ giao tại chỗ khi VP gửi cũng là VP nhận. */
+    static void assertArrivedForPod(ShipmentOrder order) {
+        OrderStatus status = order.getStatus();
+        if ((status == OrderStatus.CONFIRMED || status == OrderStatus.WAITING) && !sameOriginAndDestination(order)) {
+            throw new BadRequestAlertException(
+                "Order has not arrived at destination office (status " + status + ")",
+                ENTITY,
+                "podNotArrived"
+            );
+        }
+    }
+
+    private static boolean sameOriginAndDestination(ShipmentOrder order) {
+        Long from = order.getFromOffice() != null ? order.getFromOffice().getId() : null;
+        if (from == null) {
+            return false;
+        }
+        Long to = order.getToOffice() != null ? order.getToOffice().getId() : null;
+        Long finalTo = order.getFinalToOffice() != null ? order.getFinalToOffice().getId() : null;
+        return from.equals(finalTo != null ? finalTo : to);
+    }
+
     private void ensureStatusThenDeliver(ShipmentOrder order, String action, String detail) {
         OrderStatus status = order.getStatus();
         if (status == OrderStatus.DELIVERED || status == OrderStatus.RETURNED) {
@@ -289,6 +312,7 @@ public class DeliveryFacadeService {
         ) {
             throw new BadRequestAlertException("Cannot POD from status " + status, ENTITY, "podInvalidStatus");
         }
+        assertArrivedForPod(order);
         OrderTransitionRequest tr = new OrderTransitionRequest();
         tr.setToStatus(OrderStatus.DELIVERED);
         tr.setAction(action);
