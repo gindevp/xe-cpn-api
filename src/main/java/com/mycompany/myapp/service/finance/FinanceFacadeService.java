@@ -165,17 +165,30 @@ public class FinanceFacadeService {
         Map<Long, ReceiptSettlement.Totals> totals = loadSettlementTotals(ids);
         Map<Long, BigDecimal[]> waived = loadWaived(ids);
         List<CandidateDTO> out = new ArrayList<>();
+        Map<String, String> ownerNames = new HashMap<>();
         for (ShipmentOrder o : orders) {
             BigDecimal[] outs = outstanding(o, totals.getOrDefault(o.getId(), ReceiptSettlement.Totals.ZERO), waived.get(o.getId()));
             String fromCode = o.getFromOffice() != null ? o.getFromOffice().getCode() : null;
             if (outs[0].signum() > 0 && (scoped == null || scoped.equals(fromCode))) {
-                out.add(toCandidate(o, outs[0], ReceiptSettlement.SENDER, resolveSenderOwner(o)));
+                String owner = resolveSenderOwner(o);
+                out.add(toCandidate(o, outs[0], ReceiptSettlement.SENDER, owner, ownerName(ownerNames, owner)));
             }
             if (outs[1].signum() > 0 && (scoped == null || scoped.equals(fromCode) || atReceiverOffice(o, scoped))) {
-                out.add(toCandidate(o, outs[1], ReceiptSettlement.DELIVERY, resolveDeliveryActor(o)));
+                String owner = resolveDeliveryActor(o);
+                out.add(toCandidate(o, outs[1], ReceiptSettlement.DELIVERY, owner, ownerName(ownerNames, owner)));
             }
         }
         return out;
+    }
+
+    private String ownerName(Map<String, String> cache, String login) {
+        if (login == null || login.isBlank()) {
+            return null;
+        }
+        return cache.computeIfAbsent(login.toLowerCase(), k -> {
+            String name = displayNameOf(login);
+            return name == null || name.isBlank() || name.trim().equalsIgnoreCase(login.trim()) ? "" : name.trim();
+        });
     }
 
     /**
@@ -271,7 +284,7 @@ public class FinanceFacadeService {
         return v.signum() < 0 ? BigDecimal.ZERO : v;
     }
 
-    private CandidateDTO toCandidate(ShipmentOrder o, BigDecimal amount, String portion, String owner) {
+    private CandidateDTO toCandidate(ShipmentOrder o, BigDecimal amount, String portion, String owner, String ownerName) {
         return new CandidateDTO(
             o.getOrderCode(),
             o.getReceiverName(),
@@ -282,6 +295,7 @@ public class FinanceFacadeService {
             o.getStatus().name(),
             o.getFromOffice() != null ? o.getFromOffice().getCode() : null,
             owner,
+            ownerName == null || ownerName.isEmpty() ? null : ownerName,
             portion,
             resolveCollectedAt(o, portion)
         );
@@ -1264,6 +1278,8 @@ public class FinanceFacadeService {
         String status,
         String fromOfficeCode,
         String debtOwnerUsername,
+        /** Tên hiển thị của người chịu nợ (hồ sơ nhân viên), null nếu chưa có. */
+        String debtOwnerName,
         /** SENDER | DELIVERY */
         String portion,
         /** Thời điểm nhận tiền khách (payment/POD/WH), ISO instant. */
