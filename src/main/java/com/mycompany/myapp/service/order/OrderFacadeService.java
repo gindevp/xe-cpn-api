@@ -983,6 +983,7 @@ public class OrderFacadeService {
         }
         shipmentOrderRepository.save(order);
         appendEvent(order, "WAREHOUSE_RECEIVE", "Nhập kho gửi", currentActor());
+        collectSenderFareOnWarehouseIn(order);
         return getByCode(order.getOrderCode());
     }
 
@@ -1103,6 +1104,54 @@ public class OrderFacadeService {
     @Autowired(required = false)
     void setStaffProfileRepository(com.mycompany.myapp.repository.StaffProfileRepository staffProfileRepository) {
         this.staffProfileRepository = staffProfileRepository;
+    }
+
+    private com.mycompany.myapp.repository.OrderPaymentRepository orderPaymentRepository;
+
+    @Autowired(required = false)
+    void setOrderPaymentRepository(com.mycompany.myapp.repository.OrderPaymentRepository orderPaymentRepository) {
+        this.orderPaymentRepository = orderPaymentRepository;
+    }
+
+    static final String NOTE_SENDER_PREPAID = "Thu đầu gửi (người gửi thanh toán)";
+
+    /**
+     * Đơn người gửi trả: VP gửi xác nhận nhập kho nghĩa là đã thu cước của người gửi → ghi khoản thu đầu gửi
+     * (người thu = người nhập kho) cho phần cước còn thiếu, để shipper không thu lại người nhận.
+     */
+    public void collectSenderFareOnWarehouseIn(ShipmentOrder order) {
+        if (orderPaymentRepository == null || order.getPaymentTerm() != PaymentTerm.GUI_TRA) {
+            return;
+        }
+        if (order.getStatus() != OrderStatus.CONFIRMED && order.getStatus() != OrderStatus.WAITING) {
+            return;
+        }
+        BigDecimal due = OrderMoney.due(order);
+        if (due.signum() <= 0) {
+            return;
+        }
+        try {
+            dayClosureGuard.assertCollectionMutable(order);
+        } catch (RuntimeException closed) {
+            org.slf4j.LoggerFactory.getLogger(OrderFacadeService.class).warn(
+                "Skip sender prepaid for {}: collection day closed",
+                order.getOrderCode()
+            );
+            return;
+        }
+        String actor = currentActor();
+        com.mycompany.myapp.domain.OrderPayment payment = new com.mycompany.myapp.domain.OrderPayment();
+        payment.setPaymentAt(Instant.now());
+        payment.setAmount(due);
+        payment.setMethod(com.mycompany.myapp.domain.enumeration.PaymentMethod.TM);
+        payment.setPaymentKind(com.mycompany.myapp.domain.enumeration.PaymentKind.TRUOC);
+        payment.setNote(NOTE_SENDER_PREPAID);
+        payment.setCollectorUsername(actor);
+        payment.setOrder(order);
+        orderPaymentRepository.save(payment);
+        order.setPaidAmount(OrderMoney.nz(order.getPaidAmount()).add(due));
+        shipmentOrderRepository.save(order);
+        appendEvent(order, "PAYMENT", NOTE_SENDER_PREPAID + " · " + due.toPlainString() + "đ", actor);
     }
 
     /**

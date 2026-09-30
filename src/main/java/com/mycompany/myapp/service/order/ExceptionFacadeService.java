@@ -636,6 +636,9 @@ public class ExceptionFacadeService {
             order.setPickedUpAt(now);
         }
         shipmentOrderRepository.save(order);
+        if (stage == ForwardStage.WH_IN) {
+            orderFacadeService.collectSenderFareOnWarehouseIn(order);
+        }
         return orderFacadeService.getByCode(order.getOrderCode());
     }
 
