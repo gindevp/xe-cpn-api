@@ -70,6 +70,8 @@ public class SecurityConfiguration {
                     // Web/app hỏi trạng thái bảo trì trước khi vào (không cần token)
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/maintenance")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/session-policy")).permitAll()
+                    // Webhook Auto Call HHVN: xác thực bằng chữ ký HMAC trong AutoCallResource
+                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/hhvn/webhook")).permitAll()
                     .requestMatchers(mvc.pattern("/api/admin/**")).hasAuthority(AuthoritiesConstants.ADMIN)
                     // Generated domain CRUD must not bypass facade money/status/day-close guards (TASK-007)
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/shipment-orders")).hasAuthority(AuthoritiesConstants.ADMIN)

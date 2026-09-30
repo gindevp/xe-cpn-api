@@ -4,11 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +54,67 @@ public class HhvnAutoCallClient {
             HttpRequest.BodyPublishers.ofByteArray(body),
             "multipart/form-data; boundary=" + boundary
         );
+    }
+
+    /** POST /calls với 1 số. Gửi lại cùng refId an toàn — HHVN trả callId cũ, không gọi lần 2. */
+    public Result createCall(String baseUrl, String apiKey, String type, String phone, String refId, Map<String, String> metadata) {
+        Map<String, Object> call = new LinkedHashMap<>();
+        call.put("phone", phone);
+        call.put("refId", refId);
+        if (metadata != null && !metadata.isEmpty()) {
+            call.put("metadata", metadata);
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("type", type);
+        body.put("calls", List.of(call));
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(body);
+        } catch (Exception e) {
+            return new Result(false, 0, "SERIALIZE_ERROR", e.getMessage(), null);
+        }
+        return send(
+            baseUrl,
+            apiKey,
+            "POST",
+            "/calls",
+            HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8),
+            "application/json"
+        );
+    }
+
+    public Result getCall(String baseUrl, String apiKey, String callId) {
+        String path = "/calls/" + URLEncoder.encode(callId, StandardCharsets.UTF_8);
+        return send(baseUrl, apiKey, "GET", path, HttpRequest.BodyPublishers.noBody(), null);
+    }
+
+    /** GET /calls?refId= — tra theo mã tham chiếu phía CPN. */
+    public Result getCallByRefId(String baseUrl, String apiKey, String refId) {
+        return listCalls(baseUrl, apiKey, Map.of("refId", refId));
+    }
+
+    /** GET /calls — danh sách đối soát (from/to bắt buộc, tối đa 31 ngày; limit ≤ 200). */
+    public Result listCalls(String baseUrl, String apiKey, Map<String, String> query) {
+        StringBuilder path = new StringBuilder("/calls");
+        char sep = '?';
+        for (Map.Entry<String, String> e : query.entrySet()) {
+            if (e.getValue() == null || e.getValue().isBlank()) {
+                continue;
+            }
+            path
+                .append(sep)
+                .append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8))
+                .append('=')
+                .append(URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8));
+            sep = '&';
+        }
+        return send(baseUrl, apiKey, "GET", path.toString(), HttpRequest.BodyPublishers.noBody(), null);
+    }
+
+    /** POST /calls/{callId}/cancel — chỉ huỷ được số đang queued / retrying. */
+    public Result cancelCall(String baseUrl, String apiKey, String callId) {
+        String path = "/calls/" + URLEncoder.encode(callId, StandardCharsets.UTF_8) + "/cancel";
+        return send(baseUrl, apiKey, "POST", path, HttpRequest.BodyPublishers.noBody(), null);
     }
 
     public Result deleteAudio(String baseUrl, String apiKey, String type) {

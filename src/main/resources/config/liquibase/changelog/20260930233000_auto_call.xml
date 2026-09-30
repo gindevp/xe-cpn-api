@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260930233000-1" author="cpn">
+        <comment>Auto Call HHVN Tech: mỗi lần đơn nhập kho giao (hoặc quay về kho sau giao thất bại) = 1 cuộc gọi giao cho người nhận.</comment>
+        <createTable tableName="auto_call">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="order_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="call_type" type="varchar(10)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="ref_id" type="varchar(64)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_auto_call__ref_id"/>
+            </column>
+            <column name="call_id" type="varchar(64)"/>
+            <column name="request_id" type="varchar(64)"/>
+            <column name="phone" type="varchar(20)"/>
+            <column name="trigger_action" type="varchar(50)"/>
+            <column name="sandbox" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="result" type="varchar(20)"/>
+            <column name="attempt_count" type="integer"/>
+            <column name="first_call_at" type="${datetimeType}"/>
+            <column name="answered_at" type="${datetimeType}"/>
+            <column name="finished_at" type="${datetimeType}"/>
+            <column name="duration_sec" type="integer"/>
+            <column name="recording_url" type="varchar(500)"/>
+            <column name="error_code" type="varchar(50)"/>
+            <column name="error_message" type="varchar(255)"/>
+            <column name="created_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="${datetimeType}"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="auto_call" baseColumnNames="order_id"
+                                 constraintName="fk_auto_call__order_id"
+                                 referencedTableName="shipment_order" referencedColumnNames="id"/>
+        <createIndex tableName="auto_call" indexName="ix_auto_call__order">
+            <column name="order_id"/>
+        </createIndex>
+        <createIndex tableName="auto_call" indexName="ix_auto_call__call_id">
+            <column name="call_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

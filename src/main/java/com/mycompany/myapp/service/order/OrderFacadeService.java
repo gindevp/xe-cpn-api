@@ -598,6 +598,9 @@ public class OrderFacadeService {
         if (to == OrderStatus.DELIVERED) {
             eventPublisher.publishEvent(new OrderDeliveredEvent(order.getOrderCode()));
         }
+        if (to == OrderStatus.AT_DEST) {
+            onArrivedAtDest(order, action);
+        }
         return new OrderTransitionResponse(true, to, order.getOrderCode());
     }
 
@@ -1010,6 +1013,7 @@ public class OrderFacadeService {
         if (last) {
             order.setStatus(OrderStatus.AT_DEST);
             appendEvent(order, "LEG_ARRIVE_DEST", "Chặng cuối đã đến", currentActor());
+            onArrivedAtDest(order, "LEG_ARRIVE_DEST");
         } else {
             OrderLeg next = legs.get(current.getLegIndex() + 1);
             order.setFromOffice(next.getFromOffice());
@@ -1112,6 +1116,19 @@ public class OrderFacadeService {
     @Autowired(required = false)
     void setOrderPaymentRepository(com.mycompany.myapp.repository.OrderPaymentRepository orderPaymentRepository) {
         this.orderPaymentRepository = orderPaymentRepository;
+    }
+
+    private com.mycompany.myapp.service.autocall.AutoCallService autoCallService;
+
+    @Autowired(required = false)
+    void setAutoCallService(com.mycompany.myapp.service.autocall.AutoCallService autoCallService) {
+        this.autoCallService = autoCallService;
+    }
+
+    private void onArrivedAtDest(ShipmentOrder order, String action) {
+        if (autoCallService != null) {
+            autoCallService.onArrivedAtDest(order, action);
+        }
     }
 
     static final String NOTE_SENDER_PREPAID = "Thu đầu gửi (người gửi thanh toán)";

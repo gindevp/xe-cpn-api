@@ -102,5 +102,6 @@
     <include file="config/liquibase/changelog/20260930160000_shipment_order_list_indexes.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260930200000_shipment_order_on_credit.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260930220000_integration_autocall.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260930233000_auto_call.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
