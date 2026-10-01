@@ -84,7 +84,7 @@ class AutoCallConsoleServiceTest {
         when(client.listCalls(any(), eq("xk_test_1234"), anyMap())).thenReturn(new Result(true, 200, null, null, body));
         when(autoCallRepository.findOrderCodesByRefIds(any())).thenReturn(List.of(ref("CPN-GIAO-A-1-x", "A")));
 
-        Map<String, Object> out = service.listCalls("2026-09-01", "2026-09-30", "GIAO", "", 2, 500);
+        Map<String, Object> out = service.listCalls("2026-09-01", "2026-09-30", "GIAO", "", 1, 500);
 
         ArgumentCaptor<Map<String, String>> q = ArgumentCaptor.forClass(Map.class);
         verify(client).listCalls(any(), any(), q.capture());
@@ -92,12 +92,46 @@ class AutoCallConsoleServiceTest {
             .containsEntry("from", "2026-09-01T00:00:00+07:00")
             .containsEntry("to", "2026-09-30T23:59:59+07:00")
             .containsEntry("type", "giao")
-            .containsEntry("page", "2")
+            .containsEntry("page", "1")
             .containsEntry("limit", "200");
         assertThat(q.getValue().get("status")).isNull();
         List<JsonNode> data = (List<JsonNode>) out.get("data");
         assertThat(data).extracting(n -> n.path("orderCode").asText(null)).containsExactly("A", "B", null);
         assertThat(out.get("ok")).isEqualTo(true);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void listCalls_fetchesAllHhvnPages_sortsNewestFirst_thenPaginates() throws Exception {
+        stubKey("xk_test_1234");
+        StringBuilder page1 = new StringBuilder("{\"success\":true,\"data\":[");
+        for (int i = 0; i < 200; i++) {
+            if (i > 0) page1.append(',');
+            page1.append("{\"callId\":\"old_").append(i).append("\",\"createdAt\":\"2026-09-01T08:00:00+07:00\"}");
+        }
+        page1.append("],\"pagination\":{\"page\":1,\"limit\":200,\"total\":202,\"totalPages\":2}}");
+        JsonNode p1 = JSON.readTree(page1.toString());
+        JsonNode p2 = JSON.readTree(
+            "{\"success\":true,\"data\":[" +
+            "{\"callId\":\"mid\",\"createdAt\":\"2026-09-20T01:00:00Z\"}," +
+            "{\"callId\":\"newest\",\"createdAt\":\"2026-09-30T10:00:00+07:00\"}]," +
+            "\"pagination\":{\"page\":2,\"limit\":200,\"total\":202,\"totalPages\":2}}"
+        );
+        when(client.listCalls(any(), any(), anyMap())).thenAnswer(inv -> {
+            Map<String, String> q = inv.getArgument(2);
+            return new Result(true, 200, null, null, "1".equals(q.get("page")) ? p1 : p2);
+        });
+
+        Map<String, Object> first = service.listCalls("2026-09-01", "2026-09-30", null, null, 1, 20);
+        List<JsonNode> data = (List<JsonNode>) first.get("data");
+        assertThat(data).hasSize(20);
+        assertThat(data.get(0).path("callId").asText()).isEqualTo("newest");
+        assertThat(data.get(1).path("callId").asText()).isEqualTo("mid");
+        assertThat(((JsonNode) first.get("pagination")).path("total").asInt()).isEqualTo(202);
+        assertThat(((JsonNode) first.get("pagination")).path("totalPages").asInt()).isEqualTo(11);
+
+        Map<String, Object> last = service.listCalls("2026-09-01", "2026-09-30", null, null, 11, 20);
+        assertThat((List<JsonNode>) last.get("data")).hasSize(2);
     }
 
     @Test

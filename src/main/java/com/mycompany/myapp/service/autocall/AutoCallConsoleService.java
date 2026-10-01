@@ -2,6 +2,7 @@ package com.mycompany.myapp.service.autocall;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.repository.AutoCallRepository;
@@ -17,11 +18,13 @@ import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,6 +43,9 @@ public class AutoCallConsoleService {
 
     static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     static final int MAX_RANGE_DAYS = 31;
+    static final int HHVN_PAGE_LIMIT = 200;
+    /** HHVN giới hạn 60 request/phút — tối đa 2000 cuộc gọi mỗi lần tải danh sách. */
+    static final int MAX_FETCH_PAGES = 10;
     static final Set<String> CALL_TYPES = Set.of("giao", "hoan");
     static final Set<String> CALL_STATUSES = Set.of("queued", "calling", "retrying", "completed", "failed", "cancelled");
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
@@ -83,25 +89,68 @@ public class AutoCallConsoleService {
         query.put("to", LocalDateTime.of(toDate, LocalTime.of(23, 59, 59)).atZone(VN).format(ISO));
         query.put("type", optionalOf(type, CALL_TYPES, "type phải là giao hoặc hoan"));
         query.put("status", optionalOf(status, CALL_STATUSES, "Trạng thái không hợp lệ"));
-        query.put("page", String.valueOf(page == null || page < 1 ? 1 : page));
-        query.put("limit", String.valueOf(limit == null ? 50 : Math.max(1, Math.min(200, limit))));
+        query.put("limit", String.valueOf(HHVN_PAGE_LIMIT));
+        int pg = page == null || page < 1 ? 1 : page;
+        int lim = limit == null ? 50 : Math.max(1, Math.min(HHVN_PAGE_LIMIT, limit));
 
         IntegrationConfig cfg = requireConfigured();
-        Result r = client.listCalls(cfg.getAutocallBaseUrl(), cfg.getAutocallApiKey(), query);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("from", fromDate.toString());
         out.put("to", toDate.toString());
-        if (!putError(out, r)) {
-            return out;
+        // HHVN không có tham số sắp xếp — lấy cả khoảng ngày rồi tự xếp mới → cũ trước khi chia trang.
+        List<JsonNode> all = new ArrayList<>();
+        boolean truncated = false;
+        for (int p = 1;; p++) {
+            query.put("page", String.valueOf(p));
+            Result r = client.listCalls(cfg.getAutocallBaseUrl(), cfg.getAutocallApiKey(), new LinkedHashMap<>(query));
+            if (!putError(out, r)) {
+                return out;
+            }
+            JsonNode data = r.body() != null ? r.body().path("data") : null;
+            int got = 0;
+            if (data != null && data.isArray()) {
+                data.forEach(all::add);
+                got = data.size();
+            }
+            int totalPages = r.body().path("pagination").path("totalPages").asInt(1);
+            if (p >= totalPages || got < HHVN_PAGE_LIMIT) {
+                break;
+            }
+            if (p >= MAX_FETCH_PAGES) {
+                truncated = true;
+                break;
+            }
         }
-        JsonNode data = r.body() != null ? r.body().path("data") : null;
-        List<JsonNode> calls = new ArrayList<>();
-        if (data != null && data.isArray()) {
-            data.forEach(calls::add);
+        all.sort(Comparator.<JsonNode>comparingLong(AutoCallConsoleService::createdAtMillis).reversed());
+        int start = Math.min(all.size(), (pg - 1) * lim);
+        int end = Math.min(all.size(), start + lim);
+        out.put("data", withOrderCodes(all.subList(start, end)));
+        ObjectNode pagination = JsonNodeFactory.instance.objectNode();
+        pagination.put("page", pg);
+        pagination.put("limit", lim);
+        pagination.put("total", all.size());
+        pagination.put("totalPages", Math.max(1, (all.size() + lim - 1) / lim));
+        out.put("pagination", pagination);
+        if (truncated) {
+            out.put("truncated", true);
         }
-        out.put("data", withOrderCodes(calls));
-        out.put("pagination", r.body().path("pagination"));
         return out;
+    }
+
+    static long createdAtMillis(JsonNode call) {
+        String s = call.path("createdAt").asText("");
+        if (s.isBlank()) {
+            return Long.MIN_VALUE;
+        }
+        try {
+            return OffsetDateTime.parse(s).toInstant().toEpochMilli();
+        } catch (DateTimeParseException e) {
+            try {
+                return LocalDateTime.parse(s).atZone(VN).toInstant().toEpochMilli();
+            } catch (DateTimeParseException e2) {
+                return Long.MIN_VALUE;
+            }
+        }
     }
 
     /** Tra 1 cuộc gọi theo callId ({@code call_…}) hoặc refId. */
