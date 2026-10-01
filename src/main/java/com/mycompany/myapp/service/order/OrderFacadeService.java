@@ -1173,6 +1173,74 @@ public class OrderFacadeService {
      * Đổi hình thức thanh toán. Điều phối (VP gửi/nhận của đơn) chỉ đổi khi đơn chưa thu đồng nào; admin đổi được cả
      * khi đã ghi thu (khoản thu được đảo bằng payment âm). Đã lên phiếu thu / đã giao / hoàn / huỷ thì không ai đổi.
      */
+    /**
+     * Đổi VP nhận khi hàng đang nằm ở kho VP nhận (nhập kho giao / giao thất bại / chờ giao lại) vì hàng đã được chuyển
+     * tay sang VP khác. Giữ trạng thái, lộ trình và cước; chỉ admin hoặc điều phối của VP đang giữ hàng.
+     */
+    public OrderDetailDTO rerouteDestination(String code, com.mycompany.myapp.service.dto.order.RerouteDestinationRequest req) {
+        ShipmentOrder order = requireByCode(code);
+        dayClosureGuard.assertOrderMutable(order);
+        String reason = req == null || req.reason() == null ? "" : req.reason().trim();
+        if (reason.length() < 3) {
+            throw new BadRequestAlertException("Nhập lý do đổi VP nhận", ENTITY, "rerouteReasonRequired");
+        }
+        String targetCode = req.officeCode() == null ? "" : req.officeCode().trim();
+        if (targetCode.isEmpty()) {
+            throw new BadRequestAlertException("Chọn VP nhận mới", ENTITY, "rerouteOfficeRequired");
+        }
+        Office current = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
+
+        if (!staffAccessService.isSystemAdmin()) {
+            var profile = staffAccessService
+                .current()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ admin / điều phối được đổi VP nhận"));
+            if (profile.getRoleCode() != com.mycompany.myapp.domain.enumeration.RoleCode.AD) {
+                if (profile.getRoleCode() != com.mycompany.myapp.domain.enumeration.RoleCode.DH) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ admin / điều phối được đổi VP nhận");
+                }
+                String scoped = staffAccessService.scopedOfficeCode().orElse(null);
+                if (scoped != null && (current == null || !scoped.equalsIgnoreCase(current.getCode()))) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ điều phối VP đang giữ hàng được đổi VP nhận");
+                }
+            }
+        }
+
+        if (!rerouteAllowed(order)) {
+            throw new BadRequestAlertException(
+                "Chỉ đổi VP nhận khi hàng đang ở kho VP nhận (nhập kho giao / giao thất bại / chờ giao lại)",
+                ENTITY,
+                "rerouteStatus"
+            );
+        }
+        Office target = requireOffice(targetCode);
+        if (Boolean.FALSE.equals(target.getActive())) {
+            throw new BadRequestAlertException("VP nhận mới đã ngừng hoạt động", ENTITY, "rerouteOfficeInactive");
+        }
+        if (current != null && current.getId() != null && current.getId().equals(target.getId())) {
+            throw new BadRequestAlertException("VP nhận mới trùng VP hiện tại", ENTITY, "rerouteSameOffice");
+        }
+
+        order.setToOffice(target);
+        order.setFinalToOffice(target);
+        order.setHubOffice(null);
+        order.setPartnerCode(null);
+        order.setPartnerFeeAmount(null);
+        shipmentOrderRepository.save(order);
+        String detail =
+            "Đổi VP nhận " + (current == null ? "—" : current.getName()) + " → " + target.getName() + " (hàng chuyển tay) · " + reason;
+        appendEvent(order, "DEST_REROUTE", detail.length() > 255 ? detail.substring(0, 255) : detail, currentActor());
+        return getByCode(order.getOrderCode());
+    }
+
+    /** Hàng đang nằm ở kho VP nhận, chưa giao cho shipper. */
+    static boolean rerouteAllowed(ShipmentOrder order) {
+        OrderStatus st = order.getStatus();
+        if (st != OrderStatus.AT_DEST && st != OrderStatus.FAILED_DELIVERY) {
+            return false;
+        }
+        return order.getForwardStage() != ForwardStage.DELIVERING;
+    }
+
     public OrderDetailDTO changePaymentTerm(String code, com.mycompany.myapp.service.dto.order.ChangePaymentTermRequest req) {
         ShipmentOrder order = requireByCode(code);
         String reason = req == null || req.reason() == null ? "" : req.reason().trim();

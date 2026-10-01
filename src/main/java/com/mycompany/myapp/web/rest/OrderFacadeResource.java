@@ -207,6 +207,14 @@ public class OrderFacadeResource {
         return orderFacadeService.changePaymentTerm(orderCode, request);
     }
 
+    @PostMapping("/{orderCode}/reroute-destination")
+    public OrderDetailDTO rerouteDestination(
+        @PathVariable String orderCode,
+        @RequestBody(required = false) com.mycompany.myapp.service.dto.order.RerouteDestinationRequest request
+    ) {
+        return orderFacadeService.rerouteDestination(orderCode, request);
+    }
+
     @PostMapping("/{orderCode}/events")
     public OrderDetailDTO logOrderEvent(@PathVariable String orderCode, @Valid @RequestBody LogOrderEventRequest request) {
         return orderFacadeService.logEvent(orderCode, request);
