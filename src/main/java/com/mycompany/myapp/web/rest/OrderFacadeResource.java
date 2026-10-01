@@ -196,6 +196,14 @@ public class OrderFacadeResource {
         return orderFacadeService.patch(orderCode, request != null ? request : new PatchOrderRequest());
     }
 
+    @PostMapping("/{orderCode}/payment-term")
+    public OrderDetailDTO changePaymentTerm(
+        @PathVariable String orderCode,
+        @RequestBody(required = false) com.mycompany.myapp.service.dto.order.ChangePaymentTermRequest request
+    ) {
+        return orderFacadeService.changePaymentTerm(orderCode, request);
+    }
+
     @PostMapping("/{orderCode}/events")
     public OrderDetailDTO logOrderEvent(@PathVariable String orderCode, @Valid @RequestBody LogOrderEventRequest request) {
         return orderFacadeService.logEvent(orderCode, request);

@@ -1138,6 +1138,8 @@ public class FinanceFacadeService {
         if (order.getId() != null) {
             for (OrderPayment p : orderPaymentRepository.findByOrder_IdOrderByPaymentAtDesc(order.getId())) {
                 boolean senderSide =
+                    p.getAmount() != null &&
+                    p.getAmount().signum() > 0 &&
                     (p.getPaymentKind() == PaymentKind.TRUOC || p.getPaymentKind() == PaymentKind.SAU) &&
                     !ReceiptSettlement.isDeliverySidePayment(p.getPaymentKind(), p.getNote()) &&
                     !ReceiptSettlement.NOTE_RECEIPT_SENDER.equals(p.getNote());

@@ -1132,6 +1132,158 @@ public class OrderFacadeService {
     }
 
     static final String NOTE_SENDER_PREPAID = "Thu đầu gửi (người gửi thanh toán)";
+    static final String NOTE_PAYMENT_TERM_REVERSAL = "Đảo khoản thu do đổi hình thức thanh toán";
+
+    private com.mycompany.myapp.repository.ReceiptOrderLineRepository receiptOrderLineRepository;
+
+    @Autowired(required = false)
+    void setReceiptOrderLineRepository(com.mycompany.myapp.repository.ReceiptOrderLineRepository receiptOrderLineRepository) {
+        this.receiptOrderLineRepository = receiptOrderLineRepository;
+    }
+
+    private static String paymentMethodLabel(PaymentTerm term, boolean onCredit) {
+        if (onCredit) {
+            return "Công nợ";
+        }
+        return term == PaymentTerm.GUI_TRA ? "Người gửi trả" : "Người nhận trả";
+    }
+
+    /** Đã qua nhập kho gửi: người gửi không còn ở quầy để thu cước. */
+    static boolean senderWarehouseDone(ShipmentOrder order) {
+        if (order.getPickedUpAt() != null || order.getForwardStage() != null) {
+            return true;
+        }
+        OrderStatus st = order.getStatus();
+        return (
+            st == OrderStatus.IN_TRANSIT ||
+            st == OrderStatus.AT_DEST ||
+            st == OrderStatus.OUT_FOR_DELIVERY ||
+            st == OrderStatus.FAILED_DELIVERY
+        );
+    }
+
+    /**
+     * Đổi hình thức thanh toán. Điều phối (VP gửi/nhận của đơn) chỉ đổi khi đơn chưa thu đồng nào; admin đổi được cả
+     * khi đã ghi thu (khoản thu được đảo bằng payment âm). Đã lên phiếu thu / đã giao / hoàn / huỷ thì không ai đổi.
+     */
+    public OrderDetailDTO changePaymentTerm(String code, com.mycompany.myapp.service.dto.order.ChangePaymentTermRequest req) {
+        ShipmentOrder order = requireByCode(code);
+        String reason = req == null || req.reason() == null ? "" : req.reason().trim();
+        if (reason.length() < 3) {
+            throw new BadRequestAlertException("Nhập lý do đổi hình thức thanh toán", ENTITY, "paymentTermReasonRequired");
+        }
+        String method = req.method() == null ? "" : req.method().trim().toUpperCase();
+        PaymentTerm target;
+        boolean targetCredit;
+        switch (method) {
+            case "GUI_TRA" -> {
+                target = PaymentTerm.GUI_TRA;
+                targetCredit = false;
+            }
+            case "NHAN_TRA" -> {
+                target = PaymentTerm.NHAN_TRA;
+                targetCredit = false;
+            }
+            case "CONG_NO" -> {
+                target = PaymentTerm.GUI_TRA;
+                targetCredit = true;
+            }
+            default -> throw new BadRequestAlertException("Hình thức thanh toán không hợp lệ", ENTITY, "paymentTermInvalid");
+        }
+
+        boolean admin = staffAccessService.isSystemAdmin();
+        if (!admin) {
+            var profile = staffAccessService
+                .current()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ admin / điều phối được đổi"));
+            if (profile.getRoleCode() == com.mycompany.myapp.domain.enumeration.RoleCode.AD) {
+                admin = true;
+            } else if (profile.getRoleCode() != com.mycompany.myapp.domain.enumeration.RoleCode.DH) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ admin / điều phối được đổi hình thức thanh toán");
+            } else {
+                String scoped = staffAccessService.scopedOfficeCode().orElse(null);
+                Office receiver = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
+                boolean inScope =
+                    scoped == null ||
+                    (order.getFromOffice() != null && scoped.equalsIgnoreCase(order.getFromOffice().getCode())) ||
+                    (receiver != null && scoped.equalsIgnoreCase(receiver.getCode()));
+                if (!inScope) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Đơn không thuộc VP của bạn");
+                }
+            }
+        }
+
+        OrderStatus st = order.getStatus();
+        if (st == OrderStatus.DELIVERED || st == OrderStatus.RETURNING || st == OrderStatus.RETURNED || st == OrderStatus.CANCELLED) {
+            throw new BadRequestAlertException(
+                "Đơn đã giao / hoàn / huỷ — không đổi được hình thức thanh toán",
+                ENTITY,
+                "paymentTermLocked"
+            );
+        }
+        if (receiptOrderLineRepository != null && order.getId() != null && receiptOrderLineRepository.existsByOrder_Id(order.getId())) {
+            throw new BadRequestAlertException(
+                "Đơn đã lên phiếu thu — huỷ phiếu thu trước khi đổi hình thức thanh toán",
+                ENTITY,
+                "paymentTermReceipted"
+            );
+        }
+
+        PaymentTerm currentTerm = order.getPaymentTerm();
+        boolean currentCredit = Boolean.TRUE.equals(order.getOnCredit());
+        if (currentTerm == target && currentCredit == targetCredit) {
+            throw new BadRequestAlertException("Đơn đang ở hình thức này rồi", ENTITY, "paymentTermUnchanged");
+        }
+        if (target == PaymentTerm.GUI_TRA && !targetCredit && senderWarehouseDone(order)) {
+            throw new BadRequestAlertException(
+                "Đơn đã nhập kho gửi — chỉ đổi được sang Người nhận trả hoặc Công nợ",
+                ENTITY,
+                "paymentTermSenderGone"
+            );
+        }
+
+        BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
+        boolean reverse = paid.signum() > 0 && !(target == PaymentTerm.GUI_TRA && !targetCredit);
+        if (paid.signum() > 0 && !admin) {
+            throw new BadRequestAlertException(
+                "Đơn đã thu " + paid.toPlainString() + "đ — chỉ admin đổi được hình thức thanh toán",
+                ENTITY,
+                "paymentTermCollected"
+            );
+        }
+
+        dayClosureGuard.assertOrderMutable(order);
+        String actor = currentActor();
+        if (reverse) {
+            dayClosureGuard.assertCollectionMutable(order);
+            if (orderPaymentRepository != null) {
+                com.mycompany.myapp.domain.OrderPayment payment = new com.mycompany.myapp.domain.OrderPayment();
+                payment.setPaymentAt(Instant.now());
+                payment.setAmount(paid.negate());
+                payment.setMethod(com.mycompany.myapp.domain.enumeration.PaymentMethod.TM);
+                payment.setPaymentKind(com.mycompany.myapp.domain.enumeration.PaymentKind.TRUOC);
+                payment.setNote(NOTE_PAYMENT_TERM_REVERSAL);
+                payment.setCollectorUsername(actor);
+                payment.setOrder(order);
+                orderPaymentRepository.save(payment);
+            }
+            order.setPaidAmount(BigDecimal.ZERO);
+        }
+
+        String from = paymentMethodLabel(currentTerm, currentCredit);
+        String to = paymentMethodLabel(target, targetCredit);
+        order.setPaymentTerm(target);
+        order.setOnCredit(targetCredit);
+        shipmentOrderRepository.save(order);
+
+        StringBuilder detail = new StringBuilder("Đổi hình thức thanh toán: ").append(from).append(" → ").append(to);
+        if (reverse) {
+            detail.append(" · Đảo khoản đã thu ").append(paid.toPlainString()).append("đ");
+        }
+        detail.append(" · Lý do: ").append(reason);
+        appendEvent(order, "PAYMENT_TERM_CHANGE", detail.toString(), actor);
+        return getByCode(order.getOrderCode());
+    }
 
     /** Đơn khách tự tạo phải được VP gửi xác nhận nhập kho trước khi xếp xe / quét lên xe. */
     public void assertSenderWarehouseReceived(ShipmentOrder order) {
