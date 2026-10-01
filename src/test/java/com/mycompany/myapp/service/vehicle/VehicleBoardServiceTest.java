@@ -289,6 +289,19 @@ class VehicleBoardServiceTest {
     }
 
     @Test
+    void officeItinerariesCoverEveryPointOfMultiPointOffice() {
+        yb.setItineraryPoint("BC,HD");
+        when(itineraryRepository.findFiltered(null, true)).thenReturn(
+            List.of(itinerary("BC-ND", "BC - NĐ"), itinerary("VT-HD", "VT - HĐ"), itinerary("GA-TB", "GA - TB"))
+        );
+        loginAt(yb);
+
+        assertThat(service.officeItineraries())
+            .extracting(VehicleBoardDtos.ItineraryOption::code)
+            .containsExactlyInAnyOrder("BC-ND", "VT-HD");
+    }
+
+    @Test
     void dayTripsRejectsItineraryNotThroughOffice() {
         yb.setItineraryPoint("YB");
         when(availableTripSearchService.resolveItinerary("GA-TB")).thenReturn(itinerary("GA-TB", "GA - TB"));

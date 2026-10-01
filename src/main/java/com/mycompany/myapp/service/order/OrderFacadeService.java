@@ -1,5 +1,6 @@
 package com.mycompany.myapp.service.order;
 
+import com.mycompany.myapp.domain.Itinerary;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.OrderLeg;
@@ -19,6 +20,7 @@ import com.mycompany.myapp.repository.OrderPodPhotoRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
+import com.mycompany.myapp.service.OfficeItineraryPoints;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.CreateDraftOrderRequest;
 import com.mycompany.myapp.service.dto.order.CreateDraftOrderResponse;
@@ -40,6 +42,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -1343,6 +1346,7 @@ public class OrderFacadeService {
 
     /**
      * Đơn thiếu tuyến/lộ trình (FE không gửi) → suy theo mã lộ trình "{điểm VP gửi}-{điểm VP nhận}" (vd PT-HD).
+     * VP kiêm nhiều điểm thì thử theo thứ tự ưu tiên, lấy lộ trình đang bật đầu tiên.
      * Không khớp / lộ trình tắt thì để trống như cũ.
      */
     void fillItineraryIfMissing(ShipmentOrder order) {
@@ -1351,22 +1355,28 @@ public class OrderFacadeService {
         }
         Office from = order.getFromOffice();
         Office to = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
-        String fromPt = from != null ? blankToNull(from.getItineraryPoint()) : null;
-        String toPt = to != null ? blankToNull(to.getItineraryPoint()) : null;
-        if (fromPt == null || toPt == null) {
-            return;
+        resolveItinerary(from, to).ifPresent(it -> {
+            if (isBlank(order.getItineraryLabel())) {
+                order.setItineraryLabel(blankToNull(it.getName()));
+            }
+            if (isBlank(order.getRouteLabel()) && it.getBranch() != null) {
+                order.setRouteLabel(blankToNull(it.getBranch().getName()));
+            }
+        });
+    }
+
+    private Optional<Itinerary> resolveItinerary(Office from, Office to) {
+        for (String fromPt : OfficeItineraryPoints.pointsOf(from)) {
+            for (String toPt : OfficeItineraryPoints.pointsOf(to)) {
+                Optional<Itinerary> hit = itineraryRepository
+                    .findOneByCode(fromPt + "-" + toPt)
+                    .filter(it -> !Boolean.FALSE.equals(it.getActive()));
+                if (hit.isPresent()) {
+                    return hit;
+                }
+            }
         }
-        itineraryRepository
-            .findOneByCode(fromPt.toUpperCase() + "-" + toPt.toUpperCase())
-            .filter(it -> !Boolean.FALSE.equals(it.getActive()))
-            .ifPresent(it -> {
-                if (isBlank(order.getItineraryLabel())) {
-                    order.setItineraryLabel(blankToNull(it.getName()));
-                }
-                if (isBlank(order.getRouteLabel()) && it.getBranch() != null) {
-                    order.setRouteLabel(blankToNull(it.getBranch().getName()));
-                }
-            });
+        return Optional.empty();
     }
 
     private static String blankToNull(String s) {

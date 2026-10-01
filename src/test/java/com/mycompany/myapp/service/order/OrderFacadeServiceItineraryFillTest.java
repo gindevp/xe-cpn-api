@@ -85,4 +85,30 @@ class OrderFacadeServiceItineraryFillTest {
         assertThat(inactive.getItineraryLabel()).isNull();
         assertThat(missing.getRouteLabel()).isNull();
     }
+
+    @Test
+    void multiPointOfficeFallsBackToNextPointWhenFirstHasNoActiveItinerary() {
+        when(itineraryRepository.findOneByCode("BC-VT")).thenReturn(Optional.of(itinerary("BC - VT", "Việt Trì", false)));
+        when(itineraryRepository.findOneByCode("HD-VT")).thenReturn(Optional.of(itinerary("HĐ - VT", "Việt Trì", true)));
+        when(itineraryRepository.findOneByCode("YB-HD")).thenReturn(Optional.of(itinerary("YB - HĐ", "Yên Bái", true)));
+        ShipmentOrder toVt = order("BC,HD", "VT");
+        ShipmentOrder fromYb = order("YB", "BC,HD");
+
+        service.fillItineraryIfMissing(toVt);
+        service.fillItineraryIfMissing(fromYb);
+
+        assertThat(toVt.getItineraryLabel()).isEqualTo("HĐ - VT");
+        assertThat(fromYb.getItineraryLabel()).isEqualTo("YB - HĐ");
+    }
+
+    @Test
+    void multiPointOfficePrefersFirstPointWhenBothActive() {
+        when(itineraryRepository.findOneByCode("BC-ND")).thenReturn(Optional.of(itinerary("BC - NĐ", "Nam Định", true)));
+        when(itineraryRepository.findOneByCode("HD-ND")).thenReturn(Optional.of(itinerary("HĐ - NĐ", "Nam Định", true)));
+        ShipmentOrder o = order("BC,HD", "ND");
+
+        service.fillItineraryIfMissing(o);
+
+        assertThat(o.getItineraryLabel()).isEqualTo("BC - NĐ");
+    }
 }

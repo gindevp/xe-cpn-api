@@ -14,6 +14,7 @@ import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
 import com.mycompany.myapp.security.ScreenKey;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
+import com.mycompany.myapp.service.OfficeItineraryPoints;
 import com.mycompany.myapp.service.dto.trip.AvailableTripDTO;
 import com.mycompany.myapp.service.dto.vehicle.VehicleBoardDtos;
 import com.mycompany.myapp.service.partner.AvailableTripSearchService;
@@ -28,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -106,10 +108,10 @@ public class VehicleBoardService {
         }
 
         String crmWarning = null;
-        String point = foldPoint(office.getItineraryPoint());
-        if (point != null && vthkClient.isEnabled()) {
+        Set<String> points = officePoints(office);
+        if (!points.isEmpty() && vthkClient.isEnabled()) {
             try {
-                appendCrm(candidates, point, today);
+                appendCrm(candidates, points, today);
             } catch (RuntimeException e) {
                 LOG.warn("Vehicle board CRM lookup failed for office {}: {}", office.getCode(), e.getMessage());
                 crmWarning = "Không tải được xe Limousine từ CRM";
@@ -142,8 +144,8 @@ public class VehicleBoardService {
     @Transactional(readOnly = true)
     public List<VehicleBoardDtos.ItineraryOption> officeItineraries() {
         Office office = homeOffice();
-        String point = foldPoint(office.getItineraryPoint());
-        if (point == null) {
+        Set<String> points = officePoints(office);
+        if (points.isEmpty()) {
             throw new BadRequestAlertException(
                 "Văn phòng " + office.getName() + " chưa cấu hình điểm lộ trình",
                 ENTITY,
@@ -153,7 +155,7 @@ public class VehicleBoardService {
         List<VehicleBoardDtos.ItineraryOption> out = new ArrayList<>();
         for (Itinerary it : itineraryRepository.findFiltered(null, true)) {
             String[] ends = itineraryEnds(it.getCode());
-            if (ends != null && (point.equals(ends[0]) || point.equals(ends[1]))) {
+            if (ends != null && (points.contains(ends[0]) || points.contains(ends[1]))) {
                 out.add(new VehicleBoardDtos.ItineraryOption(it.getCode(), firstNonBlank(it.getName(), it.getCode())));
             }
         }
@@ -169,9 +171,9 @@ public class VehicleBoardService {
         }
         Office office = homeOffice();
         Itinerary itinerary = availableTripSearchService.resolveItinerary(itineraryCodeOrName.trim());
-        String point = foldPoint(office.getItineraryPoint());
+        Set<String> points = officePoints(office);
         String[] ends = itineraryEnds(itinerary.getCode());
-        if (point != null && (ends == null || !(point.equals(ends[0]) || point.equals(ends[1])))) {
+        if (!points.isEmpty() && (ends == null || !(points.contains(ends[0]) || points.contains(ends[1])))) {
             throw new BadRequestAlertException("Lộ trình không đi qua văn phòng của bạn", ENTITY, "itineraryNotRelated");
         }
         LocalDate today = LocalDate.now(VN);
@@ -351,7 +353,7 @@ public class VehicleBoardService {
         return new VehicleBoardDtos.Report(items);
     }
 
-    private void appendCrm(List<Candidate> candidates, String point, LocalDate today) {
+    private void appendCrm(List<Candidate> candidates, Set<String> points, LocalDate today) {
         Set<String> tripPlates = new HashSet<>();
         for (Candidate c : candidates) {
             if (c.plate() != null) {
@@ -366,10 +368,10 @@ public class VehicleBoardService {
             }
             EventType type;
             LocalDate fromDay;
-            if (point.equals(ends[0])) {
+            if (points.contains(ends[0])) {
                 type = EventType.DEPART;
                 fromDay = today;
-            } else if (point.equals(ends[1])) {
+            } else if (points.contains(ends[1])) {
                 type = EventType.ARRIVE;
                 fromDay = today.minusDays(1);
             } else {
@@ -468,6 +470,18 @@ public class VehicleBoardService {
         String from = foldPoint(parts[0]);
         String to = foldPoint(parts[1]);
         return from == null || to == null ? null : new String[] { from, to };
+    }
+
+    /** Các điểm lộ trình VP kiêm (đã fold), rỗng nếu chưa cấu hình. */
+    static Set<String> officePoints(Office office) {
+        Set<String> out = new LinkedHashSet<>();
+        for (String p : OfficeItineraryPoints.pointsOf(office)) {
+            String f = foldPoint(p);
+            if (f != null) {
+                out.add(f);
+            }
+        }
+        return out;
     }
 
     static String foldPoint(String raw) {
