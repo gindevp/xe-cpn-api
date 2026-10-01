@@ -3,14 +3,19 @@ package com.mycompany.myapp.service.invoice;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
+import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
+import com.mycompany.myapp.service.day.DayClosureGuard;
+import com.mycompany.myapp.service.dto.order.IssueInvoiceRequest;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,18 +44,26 @@ public class MeInvoiceIssueService {
     public static final String STATUS_FAILED = "FAILED";
     public static final String STATUS_SKIPPED = "SKIPPED";
 
+    private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+
     private final ShipmentOrderRepository shipmentOrderRepository;
+    private final OrderEventRepository orderEventRepository;
+    private final DayClosureGuard dayClosureGuard;
     private final MisaMeInvoiceClient client;
     private final ObjectMapper objectMapper;
     private final boolean issueOnlyWhenRequested;
 
     public MeInvoiceIssueService(
         ShipmentOrderRepository shipmentOrderRepository,
+        OrderEventRepository orderEventRepository,
+        DayClosureGuard dayClosureGuard,
         MisaMeInvoiceClient client,
         ObjectMapper objectMapper,
         @Value("${cpn.misa.issue-only-when-requested:true}") boolean issueOnlyWhenRequested
     ) {
         this.shipmentOrderRepository = shipmentOrderRepository;
+        this.orderEventRepository = orderEventRepository;
+        this.dayClosureGuard = dayClosureGuard;
         this.client = client;
         this.objectMapper = objectMapper;
         this.issueOnlyWhenRequested = issueOnlyWhenRequested;
@@ -76,6 +89,87 @@ public class MeInvoiceIssueService {
             .findOneByOrderCodeOrDraftCode(orderCode)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderCode));
         issueForOrder(order);
+    }
+
+    /**
+     * Xuất HĐĐT thủ công từ màn Giao thành công: lưu thông tin người mua (bắt buộc MST + tên + địa chỉ + email)
+     * rồi gọi MISA ngay. Lỗi nghiệp vụ → 400; lỗi MISA → invoiceStatus=FAILED + invoiceError (gọi lại được).
+     */
+    @Transactional
+    public ShipmentOrder issueManual(String orderCode, IssueInvoiceRequest request, String actor) {
+        if (!client.isEnabled()) {
+            throw new BadRequestAlertException("Chưa bật kết nối MISA — không xuất được hoá đơn", ENTITY, "misaDisabled");
+        }
+        ShipmentOrder order = shipmentOrderRepository
+            .findOneByOrderCodeOrDraftCode(orderCode.trim())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderCode));
+        if (order.getStatus() != OrderStatus.DELIVERED) {
+            throw new BadRequestAlertException("Chỉ xuất hoá đơn cho đơn đã giao thành công", ENTITY, "notDelivered");
+        }
+        if (isAlreadyIssued(order)) {
+            String no = blankToEmpty(order.getInvoiceNo());
+            throw new BadRequestAlertException(
+                "Đơn đã xuất hoá đơn" + (no.isEmpty() ? "" : " số " + no) + " — không xuất lại",
+                ENTITY,
+                "alreadyIssued"
+            );
+        }
+        dayClosureGuard.assertOrderMutable(order);
+
+        IssueInvoiceRequest req = request != null ? request : new IssueInvoiceRequest();
+        String taxCode = VietnamTaxCode.compact(firstNonBlank(req.getTaxCode(), order.getInvoiceTaxCode()));
+        String companyName = firstNonBlank(req.getCompanyName(), order.getInvoiceCompanyName());
+        String address = firstNonBlank(req.getAddress(), order.getInvoiceCompanyAddress());
+        String email = firstNonBlank(req.getEmail(), order.getInvoiceEmail());
+        if (taxCode.isEmpty()) {
+            throw new BadRequestAlertException("Mã số thuế người mua là bắt buộc", ENTITY, "invoiceTaxRequired");
+        }
+        if (!VietnamTaxCode.isValid(taxCode)) {
+            throw new BadRequestAlertException("Mã số thuế không hợp lệ (sai định dạng hoặc checksum)", ENTITY, "invoiceTaxInvalid");
+        }
+        if (companyName == null) {
+            throw new BadRequestAlertException("Tên công ty là bắt buộc", ENTITY, "invoiceCompanyRequired");
+        }
+        if (address == null) {
+            throw new BadRequestAlertException("Địa chỉ công ty là bắt buộc", ENTITY, "invoiceAddressRequired");
+        }
+        if (email == null || !EMAIL.matcher(email).matches()) {
+            throw new BadRequestAlertException("Email nhận hoá đơn không hợp lệ", ENTITY, "invoiceEmailInvalid");
+        }
+        if (companyName.length() > 200 || address.length() > 255 || email.length() > 120) {
+            throw new BadRequestAlertException("Thông tin hoá đơn quá dài", ENTITY, "invoiceFieldTooLong");
+        }
+
+        order.setInvoiceRequested(true);
+        order.setInvoiceTaxCode(VietnamTaxCode.normalize(taxCode));
+        order.setInvoiceCompanyName(companyName);
+        order.setInvoiceCompanyAddress(address);
+        order.setInvoiceEmail(email);
+        shipmentOrderRepository.save(order);
+
+        issueForOrder(order);
+
+        String st = order.getInvoiceStatus();
+        String detail = STATUS_ISSUED.equals(st) || STATUS_DUPLICATE.equals(st)
+            ? "Xuất HĐĐT MISA" +
+            (order.getInvoiceNo() != null ? " số " + order.getInvoiceNo() : "") +
+            " · MST " +
+            order.getInvoiceTaxCode() +
+            " · gửi " +
+            email
+            : "Xuất HĐĐT MISA lỗi: " + blankToEmpty(order.getInvoiceError());
+        appendEvent(order, "INVOICE_ISSUE", detail, actor);
+        return order;
+    }
+
+    private void appendEvent(ShipmentOrder order, String action, String detail, String actor) {
+        OrderEvent event = new OrderEvent();
+        event.setEventAt(Instant.now());
+        event.setAction(action);
+        event.setDetail(detail.length() > 255 ? detail.substring(0, 255) : detail);
+        event.setActorUsername(actor == null ? "system" : actor);
+        event.setOrder(order);
+        orderEventRepository.save(event);
     }
 
     @Transactional

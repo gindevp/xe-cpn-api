@@ -53,6 +53,11 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             staffAccessService.requireScreenWrite(ScreenKey.POD_QUAY, ScreenKey.GIAO_TAN_NHA);
             return;
         }
+        // Xuất HĐĐT MISA thủ công: màn Giao thành công
+        if (path.matches(".*/api/orders/[^/]+/invoice/issue/?$")) {
+            staffAccessService.requireScreenWrite(ScreenKey.GIAO_THANH_CONG);
+            return;
+        }
         // Master CRUD
         if (
             path.startsWith("/api/offices") ||

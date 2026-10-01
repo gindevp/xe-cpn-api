@@ -5,6 +5,7 @@ import com.mycompany.myapp.domain.enumeration.IssueType;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.domain.enumeration.ReturnStage;
+import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.dto.order.AddPaymentRequest;
 import com.mycompany.myapp.service.dto.order.AssignShipperRequest;
 import com.mycompany.myapp.service.dto.order.CreateDraftOrderRequest;
@@ -12,6 +13,7 @@ import com.mycompany.myapp.service.dto.order.CreateDraftOrderResponse;
 import com.mycompany.myapp.service.dto.order.CreateOrderRequest;
 import com.mycompany.myapp.service.dto.order.FailDeliveryRequest;
 import com.mycompany.myapp.service.dto.order.FailDeliveryResponse;
+import com.mycompany.myapp.service.dto.order.IssueInvoiceRequest;
 import com.mycompany.myapp.service.dto.order.LogOrderEventRequest;
 import com.mycompany.myapp.service.dto.order.MarkCodExportedRequest;
 import com.mycompany.myapp.service.dto.order.OpenIssueRequest;
@@ -270,10 +272,10 @@ public class OrderFacadeResource {
         return deliveryFacadeService.pod(orderCode, request);
     }
 
-    /** Phát hành HĐĐT MISA thủ công — chỉ khi đơn DELIVERED. */
+    /** Phát hành HĐĐT MISA thủ công (màn Giao thành công) — chỉ khi đơn DELIVERED, MISA gửi HĐ về email. */
     @PostMapping("/{orderCode}/invoice/issue")
-    public OrderSummaryDTO issueInvoice(@PathVariable String orderCode) {
-        meInvoiceIssueService.issueForOrderCode(orderCode);
+    public OrderSummaryDTO issueInvoice(@PathVariable String orderCode, @RequestBody(required = false) IssueInvoiceRequest request) {
+        meInvoiceIssueService.issueManual(orderCode, request, SecurityUtils.getCurrentUserLogin().orElse("system"));
         return orderFacadeService.getByCode(orderCode);
     }
 
