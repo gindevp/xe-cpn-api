@@ -31,6 +31,7 @@ import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.audit.AuditRecorder;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.order.OrderMoney;
+import com.mycompany.myapp.service.order.OrderStatusTransitions;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import jakarta.persistence.criteria.JoinType;
 import java.math.BigDecimal;
@@ -239,20 +240,82 @@ public class FinanceFacadeService {
         if (order == null || order.getId() == null) {
             return;
         }
+        BigDecimal[] held = heldOutstanding(order);
+        BigDecimal total = held[0].add(held[1]);
+        if (total.signum() > 0) {
+            throw new BadRequestAlertException(
+                "Đơn " + order.getOrderCode() + " còn " + money(total) + " đã thu chưa nộp — lập phiếu thu hoặc hủy nộp trước khi hủy đơn",
+                ENTITY,
+                "cancelHasHeldMoney"
+            );
+        }
+    }
+
+    /**
+     * Trước khi hủy đơn: admin thì tự hủy nộp khoản đã thu chưa nộp (coi như đã hoàn tiền khách);
+     * vai trò khác vẫn bị chặn như {@link #assertNoHeldMoney}.
+     */
+    public void settleHeldMoneyForCancel(String orderCode, String cancelReason) {
+        if (!staffAccessService.isSystemAdmin()) {
+            assertNoHeldMoney(orderCode);
+            return;
+        }
+        ShipmentOrder order = shipmentOrderRepository.findOneByOrderCodeOrDraftCode(orderCode.trim()).orElse(null);
+        if (order == null || order.getId() == null || !OrderStatusTransitions.canTransition(order.getStatus(), OrderStatus.CANCELLED)) {
+            return;
+        }
+        BigDecimal[] held = heldOutstanding(order);
+        if (held[0].add(held[1]).signum() <= 0) {
+            return;
+        }
+        dayClosureGuard.assertCollectionMutable(order);
+        String detail = cancelReason == null ? "" : cancelReason.trim();
+        String reason = detail.isEmpty() ? "Huỷ đơn" : "Huỷ đơn · " + detail;
+        if (reason.length() > 255) {
+            reason = reason.substring(0, 255);
+        }
+        Instant now = Instant.now();
+        String actor = actor();
+        for (int i = 0; i < 2; i++) {
+            BigDecimal amount = held[i];
+            if (amount.signum() <= 0) {
+                continue;
+            }
+            String portion = i == 0 ? ReceiptSettlement.SENDER : ReceiptSettlement.DELIVERY;
+            String owner = i == 0 ? resolveSenderOwner(order) : resolveDeliveryActor(order);
+            ReceiptWaiver w = new ReceiptWaiver();
+            w.setOrder(order);
+            w.setPortion(portion);
+            w.setAmount(amount);
+            w.setOwnerUsername(owner);
+            w.setReason(reason);
+            w.setWaivedAt(now);
+            w.setWaivedByUsername(actor);
+            receiptWaiverRepository.save(w);
+            auditRecorder.record(
+                "RECEIPT_DUE_WAIVE",
+                AUDIT_DUE,
+                order.getOrderCode(),
+                (i == 0 ? "Phần VP gửi" : "Phần giao") +
+                " · " +
+                money(amount) +
+                " · người nộp: " +
+                (owner == null ? "—" : owner) +
+                " · lý do: " +
+                reason
+            );
+        }
+    }
+
+    /** [phần VP gửi, phần giao] tiền đã thu nhưng còn phải nộp (chưa lập phiếu, chưa hủy nộp). */
+    private BigDecimal[] heldOutstanding(ShipmentOrder order) {
         ReceiptSettlement.Totals totals = loadSettlementTotals(List.of(order.getId())).getOrDefault(
             order.getId(),
             ReceiptSettlement.Totals.ZERO
         );
         ReceiptSettlement.Split s = ReceiptSettlement.split(order, totals);
         BigDecimal[] outs = outstanding(order, totals, loadWaived(List.of(order.getId())).get(order.getId()));
-        BigDecimal held = s.senderHeldOut().min(outs[0]).add(s.deliveryHeldOut().min(outs[1]));
-        if (held.signum() > 0) {
-            throw new BadRequestAlertException(
-                "Đơn " + order.getOrderCode() + " còn " + money(held) + " đã thu chưa nộp — lập phiếu thu hoặc hủy nộp trước khi hủy đơn",
-                ENTITY,
-                "cancelHasHeldMoney"
-            );
-        }
+        return new BigDecimal[] { s.senderHeldOut().min(outs[0]), s.deliveryHeldOut().min(outs[1]) };
     }
 
     /** Còn phải nộp [phần VP gửi, phần giao] sau khi trừ khoản admin đã hủy nộp. */

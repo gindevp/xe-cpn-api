@@ -275,6 +275,44 @@ class FinanceFacadeServiceReceiptCodTest {
         service.assertNoHeldMoney("GP-COD-001");
     }
 
+    @Test
+    void settleHeldMoneyForCancel_adminWaivesHeldMoney() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        when(staffAccessService.isSystemAdmin()).thenReturn(true);
+
+        service.settleHeldMoneyForCancel("GP-COD-001", "Khách không gửi nữa");
+
+        ArgumentCaptor<ReceiptWaiver> cap = ArgumentCaptor.forClass(ReceiptWaiver.class);
+        verify(receiptWaiverRepository).save(cap.capture());
+        assertThat(cap.getValue().getPortion()).isEqualTo(ReceiptSettlement.SENDER);
+        assertThat(cap.getValue().getAmount()).isEqualByComparingTo("10000");
+        assertThat(cap.getValue().getReason()).isEqualTo("Huỷ đơn · Khách không gửi nữa");
+        verify(auditRecorder).record(eq("RECEIPT_DUE_WAIVE"), eq("ReceiptDue"), eq("GP-COD-001"), anyString());
+    }
+
+    @Test
+    void settleHeldMoneyForCancel_nonAdminStillBlocked() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        when(staffAccessService.isSystemAdmin()).thenReturn(false);
+
+        assertThatThrownBy(() -> service.settleHeldMoneyForCancel("GP-COD-001", "x"))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("cancelHasHeldMoney");
+        verify(receiptWaiverRepository, never()).save(any());
+    }
+
+    @Test
+    void settleHeldMoneyForCancel_adminNoopWhenNothingHeld() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setPaidAmount(BigDecimal.ZERO);
+        when(staffAccessService.isSystemAdmin()).thenReturn(true);
+
+        service.settleHeldMoneyForCancel("GP-COD-001", "x");
+
+        verify(receiptWaiverRepository, never()).save(any());
+    }
+
     private static OrderPayment payment(PaymentKind kind, String amount, String note, Instant at, String collector) {
         OrderPayment p = new OrderPayment();
         p.setPaymentKind(kind);

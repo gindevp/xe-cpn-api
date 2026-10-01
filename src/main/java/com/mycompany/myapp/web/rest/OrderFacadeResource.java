@@ -48,6 +48,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import tech.jhipster.web.util.PaginationUtil;
@@ -225,9 +226,10 @@ public class OrderFacadeResource {
     }
 
     @PostMapping("/{orderCode}/transition")
+    @Transactional
     public OrderTransitionResponse transition(@PathVariable String orderCode, @Valid @RequestBody OrderTransitionRequest request) {
         if (request.getToStatus() == OrderStatus.CANCELLED) {
-            financeFacadeService.assertNoHeldMoney(orderCode);
+            financeFacadeService.settleHeldMoneyForCancel(orderCode, request.getDetail());
         }
         return orderFacadeService.transition(orderCode, request);
     }
