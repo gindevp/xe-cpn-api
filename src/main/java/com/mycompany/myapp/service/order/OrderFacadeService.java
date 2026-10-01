@@ -777,6 +777,7 @@ public class OrderFacadeService {
         if (req == null) {
             return getByCode(order.getOrderCode());
         }
+        String endpointsBefore = itineraryEndpointsKey(order);
         if (req.getSenderName() != null) {
             order.setSenderName(req.getSenderName());
         }
@@ -913,6 +914,9 @@ public class OrderFacadeService {
         }
         if (req.getItineraryLabel() != null) {
             order.setItineraryLabel(blankToNull(req.getItineraryLabel()));
+        }
+        if (req.getRouteLabel() == null && req.getItineraryLabel() == null && !endpointsBefore.equals(itineraryEndpointsKey(order))) {
+            refillItinerary(order);
         }
         shipmentOrderRepository.save(order);
         if (!Boolean.TRUE.equals(req.getSkipHistory())) {
@@ -1363,6 +1367,23 @@ public class OrderFacadeService {
                 order.setRouteLabel(blankToNull(it.getBranch().getName()));
             }
         });
+    }
+
+    /** VP gửi / VP nhận cuối quyết định lộ trình — đổi một trong hai thì lộ trình cũ không còn đúng. */
+    private static String itineraryEndpointsKey(ShipmentOrder order) {
+        Office from = order.getFromOffice();
+        Office to = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
+        return (from != null ? from.getId() : null) + "->" + (to != null ? to.getId() : null);
+    }
+
+    /** Đổi VP mà client không gửi lộ trình mới: suy lại; không có lộ trình đang bật thì để trống thay vì giữ lộ sai. */
+    void refillItinerary(ShipmentOrder order) {
+        if (itineraryRepository == null) {
+            return;
+        }
+        order.setRouteLabel(null);
+        order.setItineraryLabel(null);
+        fillItineraryIfMissing(order);
     }
 
     private Optional<Itinerary> resolveItinerary(Office from, Office to) {

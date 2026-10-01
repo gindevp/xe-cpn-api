@@ -102,6 +102,31 @@ class OrderFacadeServiceItineraryFillTest {
     }
 
     @Test
+    void refillReplacesStaleItineraryAfterReceiverOfficeChange() {
+        when(itineraryRepository.findOneByCode("TB-GA")).thenReturn(Optional.of(itinerary("TB - GA", "Thái Bình", true)));
+        ShipmentOrder o = order("TB", "GA");
+        o.setRouteLabel("Thái Bình");
+        o.setItineraryLabel("TB - BC");
+
+        service.refillItinerary(o);
+
+        assertThat(o.getItineraryLabel()).isEqualTo("TB - GA");
+        assertThat(o.getRouteLabel()).isEqualTo("Thái Bình");
+    }
+
+    @Test
+    void refillClearsItineraryWhenNoActiveItineraryForNewOffices() {
+        ShipmentOrder o = order("TB", "XX");
+        o.setRouteLabel("Thái Bình");
+        o.setItineraryLabel("TB - BC");
+
+        service.refillItinerary(o);
+
+        assertThat(o.getItineraryLabel()).isNull();
+        assertThat(o.getRouteLabel()).isNull();
+    }
+
+    @Test
     void multiPointOfficePrefersFirstPointWhenBothActive() {
         when(itineraryRepository.findOneByCode("BC-ND")).thenReturn(Optional.of(itinerary("BC - NĐ", "Nam Định", true)));
         when(itineraryRepository.findOneByCode("HD-ND")).thenReturn(Optional.of(itinerary("HĐ - NĐ", "Nam Định", true)));
