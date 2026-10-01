@@ -29,11 +29,13 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Kiểm soát đăng nhập: web DH/KT phải dùng IP đã duyệt, app (mọi tài khoản trừ admin) phải dùng thiết bị đã duyệt.
  * Mỗi tài khoản giữ tối đa 1 phiên web + 1 phiên app — đăng nhập nơi mới thì phiên cũ bị thu hồi.
+ * Riêng Admin / Điều phối được mở nhiều phiên web cùng lúc (app vẫn 1 phiên).
  */
 @Service
 public class LoginControlService {
 
     private static final Set<RoleCode> IP_CONTROLLED_ROLES = Set.of(RoleCode.DH, RoleCode.KT);
+    private static final Set<RoleCode> MULTI_WEB_ROLES = Set.of(RoleCode.AD, RoleCode.DH);
     private static final long CACHE_MS = 10_000;
     private static final Duration TOUCH_EVERY = Duration.ofSeconds(60);
 
@@ -120,8 +122,11 @@ public class LoginControlService {
             }
         }
 
-        for (UserSession old : sessionRepository.findByUserLoginIgnoreCaseAndChannelAndRevokedAtIsNull(login, channel)) {
-            revoke(old, "system", "Đăng nhập nơi khác", now);
+        boolean multiWeb = UserSession.WEB.equals(channel) && (admin || roleOf(login).map(MULTI_WEB_ROLES::contains).orElse(false));
+        if (!multiWeb) {
+            for (UserSession old : sessionRepository.findByUserLoginIgnoreCaseAndChannelAndRevokedAtIsNull(login, channel)) {
+                revoke(old, "system", "Đăng nhập nơi khác", now);
+            }
         }
         UserSession s = new UserSession();
         s.setSid(UUID.randomUUID().toString());

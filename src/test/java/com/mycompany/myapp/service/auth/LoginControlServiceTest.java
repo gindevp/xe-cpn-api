@@ -89,21 +89,59 @@ class LoginControlServiceTest {
     }
 
     @Test
-    void dispatcherFromApprovedIp_opensSessionAndKicksOldOne() {
+    void dispatcherFromApprovedIp_opensSessionAndKeepsOtherWebSessions() {
         role("dh1", RoleCode.DH);
         LoginTrust t = new LoginTrust();
         t.setStatus(LoginTrust.APPROVED);
         when(trustRepository.findOneByUserLoginIgnoreCaseAndKindAndTrustValue("dh1", LoginTrust.KIND_IP, "1.2.3.4")).thenReturn(
             Optional.of(t)
         );
-        UserSession old = new UserSession();
-        old.setSid("old");
-        when(sessionRepository.findByUserLoginIgnoreCaseAndChannelAndRevokedAtIsNull("dh1", UserSession.WEB)).thenReturn(List.of(old));
 
         LoginDecision d = service.decide(user("dh1", "ROLE_USER"), web("1.2.3.4"), exp);
 
         assertThat(d.allowed()).isTrue();
         assertThat(d.sid()).isNotBlank();
+        verify(sessionRepository, never()).findByUserLoginIgnoreCaseAndChannelAndRevokedAtIsNull("dh1", UserSession.WEB);
+    }
+
+    @Test
+    void adminRoleOnWeb_keepsOtherWebSessions() {
+        role("dh", RoleCode.AD);
+
+        LoginDecision d = service.decide(user("dh", "ROLE_USER"), web("5.6.7.8"), exp);
+
+        assertThat(d.allowed()).isTrue();
+        verify(sessionRepository, never()).findByUserLoginIgnoreCaseAndChannelAndRevokedAtIsNull(any(), any());
+    }
+
+    @Test
+    void adminOnApp_stillKicksOldAppSession() {
+        UserSession old = new UserSession();
+        old.setSid("old");
+        when(sessionRepository.findByUserLoginIgnoreCaseAndChannelAndRevokedAtIsNull("admin", UserSession.APP)).thenReturn(List.of(old));
+
+        LoginDecision d = service.decide(user("admin", "ROLE_ADMIN"), new LoginRequestInfo("APP", "9.9.9.9", "dev-x", null, null), exp);
+
+        assertThat(d.allowed()).isTrue();
+        assertThat(old.getRevokedAt()).isNotNull();
+        assertThat(old.getRevokeReason()).isEqualTo("Đăng nhập nơi khác");
+    }
+
+    @Test
+    void accountantOnWeb_stillKicksOldWebSession() {
+        role("kt1", RoleCode.KT);
+        LoginTrust t = new LoginTrust();
+        t.setStatus(LoginTrust.APPROVED);
+        when(trustRepository.findOneByUserLoginIgnoreCaseAndKindAndTrustValue("kt1", LoginTrust.KIND_IP, "1.2.3.4")).thenReturn(
+            Optional.of(t)
+        );
+        UserSession old = new UserSession();
+        old.setSid("old");
+        when(sessionRepository.findByUserLoginIgnoreCaseAndChannelAndRevokedAtIsNull("kt1", UserSession.WEB)).thenReturn(List.of(old));
+
+        LoginDecision d = service.decide(user("kt1", "ROLE_USER"), web("1.2.3.4"), exp);
+
+        assertThat(d.allowed()).isTrue();
         assertThat(old.getRevokedAt()).isNotNull();
         assertThat(old.getRevokeReason()).isEqualTo("Đăng nhập nơi khác");
     }
