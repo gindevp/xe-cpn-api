@@ -106,12 +106,17 @@ public class OfficeService {
     }
 
     /**
-     * Delete the office by id.
+     * "Xoá" VP = ngừng hoạt động (active=false): đơn, nhân viên, tuyến, chuyến cũ còn tham chiếu nên không xoá cứng được.
      *
      * @param id the id of the entity.
      */
     public void delete(Long id) {
-        LOG.debug("Request to delete Office : {}", id);
-        officeRepository.deleteById(id);
+        LOG.debug("Request to deactivate Office : {}", id);
+        officeRepository
+            .findById(id)
+            .ifPresent(office -> {
+                office.setActive(false);
+                officeRepository.save(office);
+            });
     }
 }
