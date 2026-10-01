@@ -170,6 +170,49 @@ class MeInvoiceIssueServiceTest {
     }
 
     @Test
+    void saveInfo_inTransitOrder_savesWithoutDayClosureOrPublish() {
+        order.setStatus(OrderStatus.IN_TRANSIT);
+        doThrow(new BadRequestAlertException("closed", "dayClosure", "dayClosed")).when(dayClosureGuard).assertOrderMutable(order);
+
+        service.saveInfo(
+            "VT0001ABCD",
+            new MeInvoiceIssueService.InvoiceInfoRequest(true, " 0100233488 ", " Cty ABC ", "1 Ly Thuong Kiet", "ketoan@abc.vn"),
+            "u"
+        );
+
+        assertThat(order.getInvoiceRequested()).isTrue();
+        assertThat(order.getInvoiceTaxCode()).isEqualTo("0100233488");
+        assertThat(order.getInvoiceCompanyName()).isEqualTo("Cty ABC");
+        verify(client, never()).publish(any());
+        ArgumentCaptor<OrderEvent> ev = ArgumentCaptor.forClass(OrderEvent.class);
+        verify(eventRepo).save(ev.capture());
+        assertThat(ev.getValue().getAction()).isEqualTo("INVOICE_INFO");
+    }
+
+    @Test
+    void saveInfo_notRequested_clearsFields() {
+        order.setInvoiceRequested(true);
+        order.setInvoiceTaxCode("0100233488");
+
+        service.saveInfo("VT0001ABCD", new MeInvoiceIssueService.InvoiceInfoRequest(false, null, null, null, null), "u");
+
+        assertThat(order.getInvoiceRequested()).isFalse();
+        assertThat(order.getInvoiceTaxCode()).isNull();
+    }
+
+    @Test
+    void saveInfo_alreadyIssued_rejects() {
+        order.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
+        order.setInvoiceTaxCode("0103179782");
+
+        assertThatThrownBy(() ->
+            service.saveInfo("VT0001ABCD", new MeInvoiceIssueService.InvoiceInfoRequest(true, "0100233488", "A", "B", "a@b.vn"), "u")
+        ).isInstanceOf(BadRequestAlertException.class);
+        assertThat(order.getInvoiceTaxCode()).isEqualTo("0103179782");
+        verify(orderRepo, never()).save(any());
+    }
+
+    @Test
     void issueManual_unknownOrder_404() {
         when(orderRepo.findOneByOrderCodeOrDraftCode("NOPE")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.issueManual("NOPE", validReq(), "u")).isInstanceOfSatisfying(ResponseStatusException.class, e ->

@@ -287,6 +287,16 @@ public class OrderFacadeResource {
         return orderFacadeService.getByCode(orderCode);
     }
 
+    /** Lưu / bỏ thông tin xuất hoá đơn ở mọi trạng thái; đơn đã xuất HĐ thành công thì khoá. */
+    @PutMapping("/{orderCode}/invoice/info")
+    public OrderSummaryDTO saveInvoiceInfo(
+        @PathVariable String orderCode,
+        @RequestBody(required = false) MeInvoiceIssueService.InvoiceInfoRequest request
+    ) {
+        meInvoiceIssueService.saveInfo(orderCode, request, SecurityUtils.getCurrentUserLogin().orElse("system"));
+        return orderFacadeService.getByCode(orderCode);
+    }
+
     /** Link xem HĐ (TTL ~5 phút theo MISA). */
     @PostMapping("/{orderCode}/invoice/view")
     public Map<String, String> invoiceView(@PathVariable String orderCode) {

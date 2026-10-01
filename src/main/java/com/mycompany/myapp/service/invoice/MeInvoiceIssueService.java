@@ -117,10 +117,74 @@ public class MeInvoiceIssueService {
         dayClosureGuard.assertOrderMutable(order);
 
         IssueInvoiceRequest req = request != null ? request : new IssueInvoiceRequest();
-        String taxCode = VietnamTaxCode.compact(firstNonBlank(req.getTaxCode(), order.getInvoiceTaxCode()));
-        String companyName = firstNonBlank(req.getCompanyName(), order.getInvoiceCompanyName());
-        String address = firstNonBlank(req.getAddress(), order.getInvoiceCompanyAddress());
-        String email = firstNonBlank(req.getEmail(), order.getInvoiceEmail());
+        applyBuyer(
+            order,
+            firstNonBlank(req.getTaxCode(), order.getInvoiceTaxCode()),
+            firstNonBlank(req.getCompanyName(), order.getInvoiceCompanyName()),
+            firstNonBlank(req.getAddress(), order.getInvoiceCompanyAddress()),
+            firstNonBlank(req.getEmail(), order.getInvoiceEmail())
+        );
+        shipmentOrderRepository.save(order);
+
+        issueForOrder(order);
+
+        String st = order.getInvoiceStatus();
+        String detail = STATUS_ISSUED.equals(st) || STATUS_DUPLICATE.equals(st)
+            ? "Xuất HĐĐT MISA" +
+            (order.getInvoiceNo() != null ? " số " + order.getInvoiceNo() : "") +
+            " · MST " +
+            order.getInvoiceTaxCode() +
+            " · gửi " +
+            order.getInvoiceEmail()
+            : "Xuất HĐĐT MISA lỗi: " + blankToEmpty(order.getInvoiceError());
+        appendEvent(order, "INVOICE_ISSUE", detail, actor);
+        return order;
+    }
+
+    /**
+     * Lưu / bỏ thông tin xuất hoá đơn ở mọi trạng thái đơn (không qua chốt ngày vì không đụng tiền). Đơn đã xuất HĐ
+     * thành công thì khoá. Đơn chưa giao có thông tin sẽ tự xuất khi giao thành công.
+     */
+    @Transactional
+    public ShipmentOrder saveInfo(String orderCode, InvoiceInfoRequest request, String actor) {
+        ShipmentOrder order = shipmentOrderRepository
+            .findOneByOrderCodeOrDraftCode(orderCode.trim())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderCode));
+        if (isAlreadyIssued(order)) {
+            String no = blankToEmpty(order.getInvoiceNo());
+            throw new BadRequestAlertException(
+                "Đơn đã xuất hoá đơn" + (no.isEmpty() ? "" : " số " + no) + " — không sửa thông tin hoá đơn",
+                ENTITY,
+                "alreadyIssued"
+            );
+        }
+        InvoiceInfoRequest req = request != null ? request : new InvoiceInfoRequest(true, null, null, null, null);
+        String detail;
+        if (Boolean.FALSE.equals(req.requested())) {
+            order.setInvoiceRequested(false);
+            order.setInvoiceTaxCode(null);
+            order.setInvoiceCompanyName(null);
+            order.setInvoiceCompanyAddress(null);
+            order.setInvoiceEmail(null);
+            detail = "Bỏ yêu cầu xuất hoá đơn";
+        } else {
+            applyBuyer(
+                order,
+                firstNonBlank(req.taxCode()),
+                firstNonBlank(req.companyName()),
+                firstNonBlank(req.address()),
+                firstNonBlank(req.email())
+            );
+            detail = "Cập nhật thông tin hoá đơn · MST " + order.getInvoiceTaxCode() + " · " + order.getInvoiceCompanyName();
+        }
+        shipmentOrderRepository.save(order);
+        appendEvent(order, "INVOICE_INFO", detail, actor);
+        return order;
+    }
+
+    /** Kiểm tra + ghi thông tin người mua (MST, tên, địa chỉ, email đều bắt buộc). */
+    private static void applyBuyer(ShipmentOrder order, String rawTaxCode, String companyName, String address, String email) {
+        String taxCode = VietnamTaxCode.compact(rawTaxCode);
         if (taxCode.isEmpty()) {
             throw new BadRequestAlertException("Mã số thuế người mua là bắt buộc", ENTITY, "invoiceTaxRequired");
         }
@@ -139,28 +203,15 @@ public class MeInvoiceIssueService {
         if (companyName.length() > 200 || address.length() > 255 || email.length() > 120) {
             throw new BadRequestAlertException("Thông tin hoá đơn quá dài", ENTITY, "invoiceFieldTooLong");
         }
-
         order.setInvoiceRequested(true);
         order.setInvoiceTaxCode(VietnamTaxCode.normalize(taxCode));
         order.setInvoiceCompanyName(companyName);
         order.setInvoiceCompanyAddress(address);
         order.setInvoiceEmail(email);
-        shipmentOrderRepository.save(order);
-
-        issueForOrder(order);
-
-        String st = order.getInvoiceStatus();
-        String detail = STATUS_ISSUED.equals(st) || STATUS_DUPLICATE.equals(st)
-            ? "Xuất HĐĐT MISA" +
-            (order.getInvoiceNo() != null ? " số " + order.getInvoiceNo() : "") +
-            " · MST " +
-            order.getInvoiceTaxCode() +
-            " · gửi " +
-            email
-            : "Xuất HĐĐT MISA lỗi: " + blankToEmpty(order.getInvoiceError());
-        appendEvent(order, "INVOICE_ISSUE", detail, actor);
-        return order;
     }
+
+    /** Thông tin hoá đơn gửi từ popup đơn; requested=false = bỏ yêu cầu xuất. */
+    public record InvoiceInfoRequest(Boolean requested, String taxCode, String companyName, String address, String email) {}
 
     private void appendEvent(ShipmentOrder order, String action, String detail, String actor) {
         OrderEvent event = new OrderEvent();

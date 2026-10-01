@@ -1496,6 +1496,9 @@ public class OrderFacadeService {
         String address,
         boolean patch
     ) {
+        if ("ISSUED".equals(order.getInvoiceStatus()) || "DUPLICATE".equals(order.getInvoiceStatus())) {
+            return;
+        }
         if (!patch) {
             boolean want = Boolean.TRUE.equals(requested);
             order.setInvoiceRequested(want);
