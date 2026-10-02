@@ -99,6 +99,57 @@ public class AutoCall implements Serializable {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    /** 0 = cuộc gọi đầu; n = lần gọi lại thứ n do CPN tự tạo. */
+    @NotNull
+    @Column(name = "retry_no", nullable = false)
+    private Integer retryNo = 0;
+
+    /** Ngày thứ mấy của chuỗi gọi lại (0 = ngày đầu). */
+    @NotNull
+    @Column(name = "retry_day", nullable = false)
+    private Integer retryDay = 0;
+
+    /** Thứ tự trong ngày của chuỗi (0 = lần gọi đầu của ngày). */
+    @NotNull
+    @Column(name = "retry_day_seq", nullable = false)
+    private Integer retryDaySeq = 0;
+
+    /** Hẹn giờ CPN tạo cuộc gọi lại kế tiếp; null = không gọi lại. */
+    @Column(name = "next_retry_at")
+    private Instant nextRetryAt;
+
+    public Integer getRetryNo() {
+        return retryNo;
+    }
+
+    public void setRetryNo(Integer retryNo) {
+        this.retryNo = retryNo;
+    }
+
+    public Integer getRetryDay() {
+        return retryDay;
+    }
+
+    public void setRetryDay(Integer retryDay) {
+        this.retryDay = retryDay;
+    }
+
+    public Integer getRetryDaySeq() {
+        return retryDaySeq;
+    }
+
+    public void setRetryDaySeq(Integer retryDaySeq) {
+        this.retryDaySeq = retryDaySeq;
+    }
+
+    public Instant getNextRetryAt() {
+        return nextRetryAt;
+    }
+
+    public void setNextRetryAt(Instant nextRetryAt) {
+        this.nextRetryAt = nextRetryAt;
+    }
+
     public Long getId() {
         return id;
     }

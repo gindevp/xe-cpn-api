@@ -5,6 +5,7 @@ import com.mycompany.myapp.domain.AutoCall;
 import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.AutoCallRepository;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
@@ -16,8 +17,14 @@ import jakarta.annotation.PreDestroy;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,8 +38,10 @@ import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -53,6 +62,16 @@ public class AutoCallService {
     public static final Set<String> GIAO_TRIGGERS = Set.of("SCAN_IN", "LEG_ARRIVE_DEST", "FAIL_MAX", "FAIL_48H");
     static final Set<String> FINAL_STATUSES = Set.of("COMPLETED", "FAILED", "CANCELLED");
     static final long WEBHOOK_MAX_SKEW_SECONDS = 300;
+    /** Đơn ở các trạng thái này không gọi lại nữa. */
+    static final Set<OrderStatus> RETRY_STOP_STATUSES = Set.of(
+        OrderStatus.DELIVERED,
+        OrderStatus.CANCELLED,
+        OrderStatus.RETURNING,
+        OrderStatus.RETURNED
+    );
+    static final String TRIGGER_RETRY = "RETRY";
+    static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final DateTimeFormatter RETRY_AT_FMT = DateTimeFormatter.ofPattern("HH:mm dd/MM").withZone(VN);
     private static final String ACTOR = "auto-call";
     private static final Logger LOG = LoggerFactory.getLogger(AutoCallService.class);
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -102,6 +121,7 @@ public class AutoCallService {
         if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled()) || !cfg.isAutocallApiKeyConfigured()) {
             return;
         }
+        autoCallRepository.clearRetriesForOrder(order.getId());
         AutoCall call = new AutoCall();
         call.setOrder(order);
         call.setCallType(TYPE_GIAO);
@@ -196,6 +216,7 @@ public class AutoCallService {
             call.setStatus(st != null ? st.toUpperCase(Locale.ROOT) : "QUEUED");
             call.setErrorCode(null);
             call.setErrorMessage(null);
+            call.setNextRetryAt(null);
             call.setUpdatedAt(Instant.now());
             autoCallRepository.save(call);
             return;
@@ -242,8 +263,186 @@ public class AutoCallService {
         autoCallRepository.save(call);
         if (status != null && FINAL_STATUSES.contains(status) && !status.equals(prevStatus)) {
             appendEvent(call.getOrder(), "AUTO_CALL_RESULT", sandboxPrefix(call) + resultText(call));
+            scheduleRetry(call);
         }
         return true;
+    }
+
+    // ---- gọi lại do CPN cấu hình ----
+
+    enum RetryReason {
+        NO_ANSWER,
+        CARRIER_ERROR,
+        SEND_ERROR,
+    }
+
+    record RetrySlot(Instant at, int day, int daySeq) {}
+
+    static RetryReason retryReason(AutoCall call) {
+        if ("ERROR".equals(call.getStatus())) return RetryReason.SEND_ERROR;
+        if (!"FAILED".equals(call.getStatus())) return null;
+        return "error".equals(call.getResult()) ? RetryReason.CARRIER_ERROR : RetryReason.NO_ANSWER;
+    }
+
+    static boolean retryAllowed(IntegrationConfig cfg, RetryReason reason) {
+        if (cfg == null || reason == null || !Boolean.TRUE.equals(cfg.getAutocallRetryEnabled())) return false;
+        return switch (reason) {
+            case NO_ANSWER -> !Boolean.FALSE.equals(cfg.getAutocallRetryNoAnswer());
+            case CARRIER_ERROR -> !Boolean.FALSE.equals(cfg.getAutocallRetryCarrierError());
+            case SEND_ERROR -> !Boolean.FALSE.equals(cfg.getAutocallRetrySendError());
+        };
+    }
+
+    static LocalTime parseHhmm(String s, LocalTime fallback) {
+        try {
+            return s == null || s.isBlank() ? fallback : LocalTime.parse(s.trim());
+        } catch (Exception e) {
+            return fallback;
+        }
+    }
+
+    /**
+     * Lượt gọi lại kế tiếp sau {@code prev}: cùng ngày nếu còn lượt và còn trong khung giờ,
+     * không thì sang đầu khung giờ ngày hôm sau (nếu bật). Null = hết lượt.
+     */
+    static RetrySlot nextRetrySlot(IntegrationConfig cfg, AutoCall prev, Instant now) {
+        int max = cfg.getAutocallRetryMax() != null ? cfg.getAutocallRetryMax() : 2;
+        int interval = cfg.getAutocallRetryIntervalMin() != null ? cfg.getAutocallRetryIntervalMin() : 30;
+        int maxDays = cfg.getAutocallRetryMaxDays() != null ? cfg.getAutocallRetryMaxDays() : 1;
+        LocalTime from = parseHhmm(cfg.getAutocallCallFrom(), LocalTime.of(8, 0));
+        LocalTime to = parseHhmm(cfg.getAutocallCallTo(), LocalTime.of(20, 0));
+        int day = prev.getRetryDay() != null ? prev.getRetryDay() : 0;
+        int daySeq = prev.getRetryDaySeq() != null ? prev.getRetryDaySeq() : 0;
+        LocalDate prevDate = (prev.getCreatedAt() != null ? prev.getCreatedAt() : now).atZone(VN).toLocalDate();
+
+        ZonedDateTime cand = now.plus(Duration.ofMinutes(interval)).atZone(VN);
+        if (daySeq < max && cand.toLocalDate().equals(prevDate)) {
+            if (cand.toLocalTime().isBefore(from)) {
+                cand = prevDate.atTime(from).atZone(VN);
+            }
+            if (!cand.toLocalTime().isAfter(to)) {
+                return new RetrySlot(cand.toInstant(), day, daySeq + 1);
+            }
+        }
+        if (Boolean.TRUE.equals(cfg.getAutocallRetryNextDay()) && day < maxDays) {
+            Instant at = prevDate.plusDays(1).atTime(from).atZone(VN).toInstant();
+            return new RetrySlot(at.isBefore(now) ? now : at, day + 1, 0);
+        }
+        return null;
+    }
+
+    private void scheduleRetry(AutoCall call) {
+        if (call.getNextRetryAt() != null) return;
+        IntegrationConfig cfg = currentConfig();
+        if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled())) return;
+        if (!retryAllowed(cfg, retryReason(call))) return;
+        ShipmentOrder order = call.getOrder();
+        if (order == null || RETRY_STOP_STATUSES.contains(order.getStatus())) return;
+        RetrySlot slot = nextRetrySlot(cfg, call, Instant.now());
+        if (slot == null) {
+            appendEvent(order, "AUTO_CALL_RETRY", sandboxPrefix(call) + "Hết lượt gọi lại theo cấu hình");
+            return;
+        }
+        call.setNextRetryAt(slot.at());
+        autoCallRepository.save(call);
+        appendEvent(
+            order,
+            "AUTO_CALL_RETRY",
+            sandboxPrefix(call) + "Hẹn gọi lại lần " + (nz(call.getRetryNo()) + 1) + " lúc " + RETRY_AT_FMT.format(slot.at())
+        );
+    }
+
+    /** Mỗi phút: bỏ lịch của đơn đã giao/huỷ/hoàn, rồi tạo cuộc gọi lại cho các lịch đã đến giờ. */
+    @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void processDueRetries() {
+        try {
+            transactionTemplate.executeWithoutResult(s -> autoCallRepository.clearRetriesForOrderStatuses(RETRY_STOP_STATUSES));
+            for (Long id : autoCallRepository.findDueRetryIds(Instant.now())) {
+                Long newId = transactionTemplate.execute(s -> fireRetry(id, Instant.now()));
+                if (newId != null) {
+                    sendInNewTransaction(newId);
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("Auto Call retry sweep failed: {}", e.getMessage());
+        }
+    }
+
+    /** Tạo cuộc gọi lại (refId mới) từ cuộc gọi {@code prevId} đã đến giờ hẹn; trả id cuộc gọi mới cần gửi. */
+    Long fireRetry(Long prevId, Instant now) {
+        AutoCall prev = autoCallRepository.findById(prevId).orElse(null);
+        if (prev == null || prev.getNextRetryAt() == null || prev.getNextRetryAt().isAfter(now)) {
+            return null;
+        }
+        prev.setNextRetryAt(null);
+        if ("ERROR".equals(prev.getStatus())) {
+            prev.setStatus("FAILED");
+            prev.setResult("send_error");
+        }
+        prev.setUpdatedAt(now);
+        autoCallRepository.save(prev);
+
+        IntegrationConfig cfg = currentConfig();
+        if (
+            cfg == null ||
+            !Boolean.TRUE.equals(cfg.getAutocallEnabled()) ||
+            !Boolean.TRUE.equals(cfg.getAutocallRetryEnabled()) ||
+            !cfg.isAutocallApiKeyConfigured()
+        ) {
+            return null;
+        }
+        ShipmentOrder order = prev.getOrder();
+        if (order == null || RETRY_STOP_STATUSES.contains(order.getStatus())) {
+            return null;
+        }
+        if (prev.getCreatedAt() != null && autoCallRepository.existsByOrder_IdAndCreatedAtAfter(order.getId(), prev.getCreatedAt())) {
+            return null;
+        }
+        String phone = normalizePhone(order.getReceiverPhone());
+        if (phone == null) {
+            appendEvent(order, "AUTO_CALL_SKIPPED", "Không gọi lại được: SĐT người nhận không hợp lệ");
+            return null;
+        }
+        LocalDate prevDate = (prev.getCreatedAt() != null ? prev.getCreatedAt() : now).atZone(VN).toLocalDate();
+        boolean sameDay = now.atZone(VN).toLocalDate().equals(prevDate);
+
+        AutoCall call = new AutoCall();
+        call.setOrder(order);
+        call.setCallType(prev.getCallType());
+        long seq = autoCallRepository.countByOrder_IdAndCallType(order.getId(), prev.getCallType()) + 1;
+        call.setRefId(buildRefId(order.getOrderCode(), seq));
+        call.setTriggerAction(TRIGGER_RETRY);
+        call.setSandbox(cfg.getAutocallApiKey().startsWith("xk_test_"));
+        call.setCreatedAt(now);
+        call.setPhone(phone);
+        call.setStatus("PENDING");
+        call.setRetryNo(nz(prev.getRetryNo()) + 1);
+        call.setRetryDay(sameDay ? nz(prev.getRetryDay()) : nz(prev.getRetryDay()) + 1);
+        call.setRetryDaySeq(sameDay ? nz(prev.getRetryDaySeq()) + 1 : 0);
+        autoCallRepository.save(call);
+        appendEvent(order, "AUTO_CALL_REQUEST", sandboxPrefix(call) + "Gọi lại lần " + call.getRetryNo() + " → " + phone);
+        return call.getId();
+    }
+
+    /** Nút "Dừng gọi lại" trên đơn. */
+    public List<AutoCallView> stopRetry(String orderCode, Long autoCallId) {
+        ShipmentOrder order = requireOrder(orderCode);
+        AutoCall call = autoCallRepository
+            .findById(autoCallId)
+            .filter(c -> c.getOrder() != null && order.getId().equals(c.getOrder().getId()))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy cuộc gọi"));
+        if (call.getNextRetryAt() != null) {
+            call.setNextRetryAt(null);
+            call.setUpdatedAt(Instant.now());
+            autoCallRepository.save(call);
+            appendEvent(order, "AUTO_CALL_RETRY", "Đã dừng gọi lại");
+        }
+        return list(orderCode);
+    }
+
+    private static int nz(Integer v) {
+        return v == null ? 0 : v;
     }
 
     /** Nút "Cập nhật" trên đơn: gửi lại cuộc gọi lỗi, tra cứu HHVN cho cuộc gọi chưa có kết quả cuối. */
@@ -289,6 +488,7 @@ public class AutoCallService {
             }
             call.setStatus("CANCELLED");
             call.setResult("cancelled");
+            call.setNextRetryAt(null);
             call.setUpdatedAt(Instant.now());
             autoCallRepository.save(call);
             appendEvent(order, "AUTO_CALL_RESULT", sandboxPrefix(call) + resultText(call));
@@ -404,6 +604,9 @@ public class AutoCallService {
         if ("error".equals(call.getResult())) {
             return "Gọi giao: lỗi tổng đài / nhà mạng";
         }
+        if ("send_error".equals(call.getResult())) {
+            return "Gọi giao: gửi sang tổng đài lỗi";
+        }
         return "Gọi giao: khách không nghe máy" + (attempts > 0 ? " sau " + attempts + " lần gọi" : "");
     }
 
@@ -429,6 +632,9 @@ public class AutoCallService {
         call.setUpdatedAt(Instant.now());
         autoCallRepository.save(call);
         appendEvent(call.getOrder(), "AUTO_CALL_ERROR", message != null ? message : code);
+        if (!"API_KEY_MISSING".equals(code)) {
+            scheduleRetry(call);
+        }
     }
 
     private void appendEvent(ShipmentOrder order, String action, String detail) {
@@ -510,7 +716,9 @@ public class AutoCallService {
         String errorMessage,
         Boolean sandbox,
         String triggerAction,
-        Instant createdAt
+        Instant createdAt,
+        Integer retryNo,
+        Instant nextRetryAt
     ) {
         static AutoCallView of(AutoCall c) {
             return new AutoCallView(
@@ -529,7 +737,9 @@ public class AutoCallService {
                 c.getErrorMessage(),
                 c.getSandbox(),
                 c.getTriggerAction(),
-                c.getCreatedAt()
+                c.getCreatedAt(),
+                c.getRetryNo(),
+                c.getNextRetryAt()
             );
         }
     }

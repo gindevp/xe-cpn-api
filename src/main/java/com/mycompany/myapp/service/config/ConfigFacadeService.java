@@ -16,9 +16,11 @@ import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -238,6 +240,49 @@ public class ConfigFacadeService {
         if (current.getAutocallEnabled() == null) {
             current.setAutocallEnabled(false);
         }
+        if (incoming.getAutocallRetryEnabled() != null) current.setAutocallRetryEnabled(incoming.getAutocallRetryEnabled());
+        if (incoming.getAutocallRetryMax() != null) current.setAutocallRetryMax(clamp(incoming.getAutocallRetryMax(), 0, 10));
+        if (incoming.getAutocallRetryIntervalMin() != null) {
+            current.setAutocallRetryIntervalMin(clamp(incoming.getAutocallRetryIntervalMin(), 5, 720));
+        }
+        if (incoming.getAutocallRetryNoAnswer() != null) current.setAutocallRetryNoAnswer(incoming.getAutocallRetryNoAnswer());
+        if (incoming.getAutocallRetryCarrierError() != null) {
+            current.setAutocallRetryCarrierError(incoming.getAutocallRetryCarrierError());
+        }
+        if (incoming.getAutocallRetrySendError() != null) current.setAutocallRetrySendError(incoming.getAutocallRetrySendError());
+        if (incoming.getAutocallRetryNextDay() != null) current.setAutocallRetryNextDay(incoming.getAutocallRetryNextDay());
+        if (incoming.getAutocallRetryMaxDays() != null) {
+            current.setAutocallRetryMaxDays(clamp(incoming.getAutocallRetryMaxDays(), 1, 7));
+        }
+        String from = incoming.getAutocallCallFrom() != null
+            ? normalizeHhmm(incoming.getAutocallCallFrom())
+            : current.getAutocallCallFrom();
+        String to = incoming.getAutocallCallTo() != null ? normalizeHhmm(incoming.getAutocallCallTo()) : current.getAutocallCallTo();
+        if ((incoming.getAutocallCallFrom() != null && from == null) || (incoming.getAutocallCallTo() != null && to == null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Khung giờ gọi phải dạng HH:mm");
+        }
+        if (from != null && to != null && from.compareTo(to) >= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Giờ bắt đầu gọi phải trước giờ kết thúc");
+        }
+        current.setAutocallCallFrom(from);
+        current.setAutocallCallTo(to);
+        if (current.getAutocallRetryEnabled() == null) {
+            current.setAutocallRetryEnabled(false);
+        }
+    }
+
+    private static int clamp(int v, int min, int max) {
+        return Math.max(min, Math.min(max, v));
+    }
+
+    /** "8:00" → "08:00"; null nếu không hợp lệ. */
+    static String normalizeHhmm(String raw) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^\\s*(\\d{1,2}):(\\d{2})\\s*$").matcher(raw);
+        if (!m.matches()) return null;
+        int h = Integer.parseInt(m.group(1));
+        int min = Integer.parseInt(m.group(2));
+        if (h > 23 || min > 59) return null;
+        return String.format("%02d:%02d", h, min);
     }
 
     private static String rootMessage(Throwable e) {

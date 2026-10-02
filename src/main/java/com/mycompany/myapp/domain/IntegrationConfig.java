@@ -98,6 +98,43 @@ public class IntegrationConfig implements Serializable {
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String autocallWebhookSecret;
 
+    /** CPN tự gọi lại khi cuộc gọi không thành công (ngoài lượt gọi lại nội bộ của HHVN). */
+    @Column(name = "autocall_retry_enabled", nullable = false)
+    private Boolean autocallRetryEnabled;
+
+    /** Số lần gọi lại tối đa mỗi ngày (không tính lần gọi đầu của ngày). */
+    @Column(name = "autocall_retry_max")
+    private Integer autocallRetryMax;
+
+    @Column(name = "autocall_retry_interval_min")
+    private Integer autocallRetryIntervalMin;
+
+    @Column(name = "autocall_retry_no_answer")
+    private Boolean autocallRetryNoAnswer;
+
+    @Column(name = "autocall_retry_carrier_error")
+    private Boolean autocallRetryCarrierError;
+
+    @Column(name = "autocall_retry_send_error")
+    private Boolean autocallRetrySendError;
+
+    /** Hết lượt / hết giờ gọi trong ngày mà chưa gọi được → hôm sau gọi lại từ đầu khung giờ. */
+    @Column(name = "autocall_retry_next_day")
+    private Boolean autocallRetryNextDay;
+
+    /** Số ngày gọi tiếp tối đa sau ngày đầu. */
+    @Column(name = "autocall_retry_max_days")
+    private Integer autocallRetryMaxDays;
+
+    /** Khung giờ được gọi lại, HH:mm giờ Việt Nam. */
+    @Size(max = 5)
+    @Column(name = "autocall_call_from", length = 5)
+    private String autocallCallFrom;
+
+    @Size(max = 5)
+    @Column(name = "autocall_call_to", length = 5)
+    private String autocallCallTo;
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 
@@ -318,12 +355,95 @@ public class IntegrationConfig implements Serializable {
         this.autocallWebhookSecret = autocallWebhookSecret;
     }
 
+    public Boolean getAutocallRetryEnabled() {
+        return autocallRetryEnabled;
+    }
+
+    public void setAutocallRetryEnabled(Boolean autocallRetryEnabled) {
+        this.autocallRetryEnabled = autocallRetryEnabled;
+    }
+
+    public Integer getAutocallRetryMax() {
+        return autocallRetryMax;
+    }
+
+    public void setAutocallRetryMax(Integer autocallRetryMax) {
+        this.autocallRetryMax = autocallRetryMax;
+    }
+
+    public Integer getAutocallRetryIntervalMin() {
+        return autocallRetryIntervalMin;
+    }
+
+    public void setAutocallRetryIntervalMin(Integer autocallRetryIntervalMin) {
+        this.autocallRetryIntervalMin = autocallRetryIntervalMin;
+    }
+
+    public Boolean getAutocallRetryNoAnswer() {
+        return autocallRetryNoAnswer;
+    }
+
+    public void setAutocallRetryNoAnswer(Boolean autocallRetryNoAnswer) {
+        this.autocallRetryNoAnswer = autocallRetryNoAnswer;
+    }
+
+    public Boolean getAutocallRetryCarrierError() {
+        return autocallRetryCarrierError;
+    }
+
+    public void setAutocallRetryCarrierError(Boolean autocallRetryCarrierError) {
+        this.autocallRetryCarrierError = autocallRetryCarrierError;
+    }
+
+    public Boolean getAutocallRetrySendError() {
+        return autocallRetrySendError;
+    }
+
+    public void setAutocallRetrySendError(Boolean autocallRetrySendError) {
+        this.autocallRetrySendError = autocallRetrySendError;
+    }
+
+    public Boolean getAutocallRetryNextDay() {
+        return autocallRetryNextDay;
+    }
+
+    public void setAutocallRetryNextDay(Boolean autocallRetryNextDay) {
+        this.autocallRetryNextDay = autocallRetryNextDay;
+    }
+
+    public Integer getAutocallRetryMaxDays() {
+        return autocallRetryMaxDays;
+    }
+
+    public void setAutocallRetryMaxDays(Integer autocallRetryMaxDays) {
+        this.autocallRetryMaxDays = autocallRetryMaxDays;
+    }
+
+    public String getAutocallCallFrom() {
+        return autocallCallFrom;
+    }
+
+    public void setAutocallCallFrom(String autocallCallFrom) {
+        this.autocallCallFrom = autocallCallFrom;
+    }
+
+    public String getAutocallCallTo() {
+        return autocallCallTo;
+    }
+
+    public void setAutocallCallTo(String autocallCallTo) {
+        this.autocallCallTo = autocallCallTo;
+    }
+
     /** Không khởi tạo field = false: body PUT thiếu field phải giữ null để merge không tắt Auto Call. */
     @PrePersist
     @PreUpdate
     void defaultAutocallEnabled() {
         if (autocallEnabled == null) {
             autocallEnabled = false;
+        }
+        if (autocallRetryEnabled == null) {
+            autocallRetryEnabled = false;
         }
     }
 

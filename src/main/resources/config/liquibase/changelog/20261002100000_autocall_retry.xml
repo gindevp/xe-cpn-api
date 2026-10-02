@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261002100000-1" author="cpn">
+        <comment>
+            Auto Call: CPN tự gọi lại khi không nghe máy / lỗi tổng đài / gửi lỗi — số lần, khoảng cách,
+            khung giờ gọi, gọi lại sang ngày hôm sau.
+        </comment>
+        <addColumn tableName="integration_config">
+            <column name="autocall_retry_enabled" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="autocall_retry_max" type="integer" defaultValueNumeric="2"/>
+            <column name="autocall_retry_interval_min" type="integer" defaultValueNumeric="30"/>
+            <column name="autocall_retry_no_answer" type="boolean" defaultValueBoolean="true"/>
+            <column name="autocall_retry_carrier_error" type="boolean" defaultValueBoolean="true"/>
+            <column name="autocall_retry_send_error" type="boolean" defaultValueBoolean="true"/>
+            <column name="autocall_retry_next_day" type="boolean" defaultValueBoolean="false"/>
+            <column name="autocall_retry_max_days" type="integer" defaultValueNumeric="1"/>
+            <column name="autocall_call_from" type="varchar(5)" defaultValue="08:00"/>
+            <column name="autocall_call_to" type="varchar(5)" defaultValue="20:00"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20261002100000-2" author="cpn">
+        <addColumn tableName="auto_call">
+            <column name="retry_no" type="integer" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="retry_day" type="integer" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="retry_day_seq" type="integer" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="next_retry_at" type="${datetimeType}"/>
+        </addColumn>
+        <createIndex tableName="auto_call" indexName="idx_auto_call_next_retry_at">
+            <column name="next_retry_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

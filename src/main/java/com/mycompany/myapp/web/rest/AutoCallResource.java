@@ -43,6 +43,11 @@ public class AutoCallResource {
         return autoCallService.cancel(code, id);
     }
 
+    @PostMapping("/api/orders/{code}/auto-calls/{id}/stop-retry")
+    public List<AutoCallView> stopRetry(@PathVariable("code") String code, @PathVariable("id") Long id) {
+        return autoCallService.stopRetry(code, id);
+    }
+
     @GetMapping("/api/integration-config/autocall/calls")
     public Map<String, Object> listCalls(
         @RequestParam(value = "from", required = false) String from,
