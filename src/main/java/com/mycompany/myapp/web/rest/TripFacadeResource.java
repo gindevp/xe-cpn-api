@@ -88,6 +88,11 @@ public class TripFacadeResource {
         return tripFacadeService.scanIn(null, request);
     }
 
+    @PostMapping("/unload-back")
+    public TripSummaryDTO unloadBack(@Valid @RequestBody ScanInRequest request) {
+        return tripFacadeService.unloadBack(request);
+    }
+
     @PostMapping("/assign-orders")
     public TripSummaryDTO assignOrders(@Valid @RequestBody AssignOrdersToTripRequest request) {
         return tripFacadeService.assignOrders(request);

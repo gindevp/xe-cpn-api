@@ -323,6 +323,87 @@ public class TripFacadeService {
         return toSummary(trip, true);
     }
 
+    /**
+     * VP xếp hàng dỡ đơn đã gán xe / đã ký lên xe về lại kho gửi (quét đủ kiện ở app).
+     * Chặn khi VP nhận đã nhập kho bất kỳ kiện nào — hàng không còn ở kho gửi.
+     */
+    public TripSummaryDTO unloadBack(ScanInRequest req) {
+        ShipmentOrder order = requireOrder(req.getOrderCode());
+        Trip trip = order.getCurrentTrip();
+        if (trip == null) {
+            throw new BadRequestAlertException("Đơn " + order.getOrderCode() + " chưa gán xe", ENTITY, "unloadBackNoTrip");
+        }
+        boolean returning = order.getStatus() == OrderStatus.RETURNING;
+        boolean forwardOk =
+            order.getStatus() == OrderStatus.CONFIRMED ||
+            order.getStatus() == OrderStatus.WAITING ||
+            order.getStatus() == OrderStatus.IN_TRANSIT;
+        ForwardStage stage = order.getForwardStage();
+        boolean stageOk = stage == null || stage == ForwardStage.TRANSFER_PENDING || stage == ForwardStage.TRANSFERRING;
+        if ((!returning && !forwardOk) || !stageOk) {
+            throw new BadRequestAlertException(
+                "Đơn " + order.getOrderCode() + " không ở Đợi trung chuyển giao / Hàng trên xe",
+                ENTITY,
+                "unloadBackStatus"
+            );
+        }
+        if (!returning && hasDestWarehouseIn(order.getNote())) {
+            throw new BadRequestAlertException(
+                "Đơn " + order.getOrderCode() + " đã nhập kho giao một phần — không dỡ về kho gửi được",
+                ENTITY,
+                "unloadBackDestIn"
+            );
+        }
+        String officeCode = req.getOfficeCode() != null ? req.getOfficeCode().trim().toUpperCase() : "";
+        if (!loadOriginOffices(order).contains(officeCode)) {
+            throw new BadRequestAlertException("Chỉ VP xếp hàng lên xe mới được dỡ về kho gửi", ENTITY, "unloadBackOffice");
+        }
+
+        assignmentRepository
+            .findFirstByTrip_IdAndOrder_IdAndAssignmentStatusNot(trip.getId(), order.getId(), AssignmentStatus.REMOVED)
+            .ifPresent(a -> {
+                a.setAssignmentStatus(AssignmentStatus.REMOVED);
+                a.setRemovedAt(Instant.now());
+                assignmentRepository.save(a);
+            });
+        order.setCurrentTrip(null);
+        order.setForwardStage(ForwardStage.WH_IN);
+        if (!returning) {
+            order.setStatus(OrderStatus.CONFIRMED);
+        }
+        order.setNote(stripWarehouseOut(order.getNote()));
+        shipmentOrderRepository.save(order);
+        appendOrderEvent(order, "UNLOAD_BACK", "Chuyến " + trip.getTripCode() + " · VP " + officeCode, currentActor());
+
+        refreshCounts(trip);
+        tripRepository.save(trip);
+        return toSummary(trip, true);
+    }
+
+    private static Set<String> loadOriginOffices(ShipmentOrder order) {
+        Set<String> codes = new LinkedHashSet<>();
+        if (order.getStatus() == OrderStatus.RETURNING) {
+            if (order.getToOffice() != null) codes.add(order.getToOffice().getCode());
+            if (order.getFinalToOffice() != null) codes.add(order.getFinalToOffice().getCode());
+        } else if (order.getFromOffice() != null) {
+            codes.add(order.getFromOffice().getCode());
+        }
+        return codes;
+    }
+
+    private static final java.util.regex.Pattern WHIN_SEQS = java.util.regex.Pattern.compile("\\[WHIN\\]\\s*\\d");
+    private static final java.util.regex.Pattern WHOUT_BLOCK = java.util.regex.Pattern.compile("\\[WHOUT\\][\\d,]*\\[/WHOUT\\]\\n?");
+
+    static boolean hasDestWarehouseIn(String note) {
+        return note != null && WHIN_SEQS.matcher(note).find();
+    }
+
+    static String stripWarehouseOut(String note) {
+        if (note == null) return null;
+        String out = WHOUT_BLOCK.matcher(note).replaceAll("").trim();
+        return out.isEmpty() ? null : out;
+    }
+
     public TripSummaryDTO handover(String tripCode, HandoverRequest req) {
         Trip trip = requireTrip(tripCode);
         Instant now = Instant.now();
