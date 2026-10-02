@@ -2,7 +2,9 @@ package com.mycompany.myapp.service.invoice;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.partner.PartnerHttpClients;
+import com.mycompany.myapp.service.realtime.ServerEventService;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -15,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -30,22 +33,28 @@ public class TaxCodeLookupService {
     private static final Duration TIMEOUT = Duration.ofSeconds(8);
     private static final Duration CACHE_TTL = Duration.ofHours(24);
     private static final int CACHE_MAX = 5000;
+    private static final Duration ALERT_COOLDOWN = Duration.ofMinutes(10);
 
     private record Cached(Instant at, Map<String, Object> value) {}
 
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
+    /** MST → lần cuối đã báo admin, để một MST lỗi tra đi tra lại không bắn popup liên tục. */
+    private final Map<String, Instant> alerted = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
+    private final ObjectProvider<ServerEventService> serverEventService;
     private final String vietQrUrl;
     private final String baseUrl;
     private final HttpClient http;
 
     public TaxCodeLookupService(
         ObjectMapper objectMapper,
+        ObjectProvider<ServerEventService> serverEventService,
         @Value("${cpn.tax-lookup.vietqr-url:https://api.vietqr.io/v2/business}") String vietQrUrl,
         @Value("${cpn.tax-lookup.base-url:https://esgoo.net/api-mst}") String baseUrl,
         @Value("${cpn.tax-lookup.insecure-ssl:false}") boolean insecureSsl
     ) {
         this.objectMapper = objectMapper;
+        this.serverEventService = serverEventService;
         this.vietQrUrl = trimSlash(vietQrUrl);
         this.baseUrl = trimSlash(baseUrl);
         this.http = PartnerHttpClients.build(TIMEOUT, insecureSsl);
@@ -71,8 +80,38 @@ public class TaxCodeLookupService {
                 cache.clear();
             }
             cache.put(taxCode, new Cached(Instant.now(), out));
+        } else if (isUpstreamFailure(out)) {
+            alertAdmins(taxCode, out);
         }
         return out;
+    }
+
+    static boolean isUpstreamFailure(Map<String, Object> result) {
+        Object code = result.get("code");
+        return "UPSTREAM_ERROR".equals(code) || "TIMEOUT".equals(code);
+    }
+
+    private void alertAdmins(String taxCode, Map<String, Object> result) {
+        Instant now = Instant.now();
+        Instant last = alerted.get(taxCode);
+        if (last != null && last.plus(ALERT_COOLDOWN).isAfter(now)) {
+            return;
+        }
+        if (alerted.size() >= CACHE_MAX) {
+            alerted.clear();
+        }
+        alerted.put(taxCode, now);
+        ServerEventService events = serverEventService.getIfAvailable();
+        if (events == null) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("taxCode", taxCode);
+        payload.put("code", result.get("code"));
+        payload.put("message", result.get("message"));
+        payload.put("by", SecurityUtils.getCurrentUserLogin().orElse(null));
+        payload.put("at", now.toString());
+        events.taxLookupError(payload);
     }
 
     Map<String, Object> fetch(String taxCode) {

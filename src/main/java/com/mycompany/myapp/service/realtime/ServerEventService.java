@@ -148,13 +148,22 @@ public class ServerEventService {
 
     /** Event "autocall-error" — chỉ gửi tới subscriber nhận cảnh báo tích hợp, trên luồng SSE (không chặn người gọi). */
     public void autoCallError(Map<String, Object> payload) {
+        integrationAlert("autocall-error", payload);
+    }
+
+    /** Event "tax-lookup-error" — nguồn tra cứu MST lỗi, cùng nhóm người nhận với lỗi Auto Call. */
+    public void taxLookupError(Map<String, Object> payload) {
+        integrationAlert("tax-lookup-error", payload);
+    }
+
+    private void integrationAlert(String event, Map<String, Object> payload) {
         if (executor == null || subscribers.stream().noneMatch(Subscriber::integrationAlerts)) {
             return;
         }
         executor.execute(() -> {
             for (Subscriber s : subscribers) {
                 if (s.integrationAlerts()) {
-                    send(s, "autocall-error", payload);
+                    send(s, event, payload);
                 }
             }
         });

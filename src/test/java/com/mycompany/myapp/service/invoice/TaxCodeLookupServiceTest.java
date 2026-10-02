@@ -1,19 +1,63 @@
 package com.mycompany.myapp.service.invoice;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mycompany.myapp.service.realtime.ServerEventService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 
 class TaxCodeLookupServiceTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String NOWHERE = "http://127.0.0.1:9";
+    private static final ObjectProvider<ServerEventService> NO_EVENTS = new StaticListableBeanFactory()
+        .getBeanProvider(ServerEventService.class);
+
+    private static ObjectProvider<ServerEventService> eventsOf(ServerEventService events) {
+        StaticListableBeanFactory beans = new StaticListableBeanFactory();
+        beans.addBean("serverEventService", events);
+        return beans.getBeanProvider(ServerEventService.class);
+    }
+
+    @Test
+    void lookup_upstreamFailure_alertsAdminsOncePerCooldown() {
+        ServerEventService events = mock(ServerEventService.class);
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, eventsOf(events), NOWHERE, NOWHERE, false) {
+            @Override
+            Map<String, Object> fetch(String taxCode) {
+                return Map.of("ok", false, "code", "UPSTREAM_ERROR", "message", "lỗi");
+            }
+        };
+        service.lookup("0103179782");
+        service.lookup("0103179782");
+        verify(events, times(1)).taxLookupError(argThat(p -> "0103179782".equals(p.get("taxCode"))));
+    }
+
+    @Test
+    void lookup_notFound_doesNotAlert() {
+        ServerEventService events = mock(ServerEventService.class);
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, eventsOf(events), NOWHERE, NOWHERE, false) {
+            @Override
+            Map<String, Object> fetch(String taxCode) {
+                return Map.of("ok", false, "code", "NOT_FOUND");
+            }
+        };
+        service.lookup("0103179782");
+        verify(events, never()).taxLookupError(any());
+    }
 
     @Test
     void parse_success_mapsNameAndAddress() throws Exception {
@@ -81,7 +125,7 @@ class TaxCodeLookupServiceTest {
     @Test
     void fetch_vietQrFails_fallsBackToEsgoo() {
         List<String> sources = new ArrayList<>();
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetchFrom(
                 String source,
@@ -102,7 +146,7 @@ class TaxCodeLookupServiceTest {
     @Test
     void fetch_vietQrOk_skipsEsgoo() {
         List<String> sources = new ArrayList<>();
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetchFrom(
                 String source,
@@ -120,7 +164,7 @@ class TaxCodeLookupServiceTest {
 
     @Test
     void lookup_invalidChecksum_doesNotCallUpstream() {
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 throw new AssertionError("không được gọi nguồn khi MST sai");
@@ -132,7 +176,7 @@ class TaxCodeLookupServiceTest {
     @Test
     void lookup_cachesSuccess_only() {
         int[] calls = { 0 };
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 calls[0]++;
