@@ -341,6 +341,28 @@ class OrderFacadeServicePaymentTermTest {
     }
 
     @Test
+    void admin_atReceiverWarehouse_isBlocked() {
+        asAdmin();
+        order.setStatus(OrderStatus.AT_DEST);
+        order.setForwardStage(ForwardStage.DEST_WH_IN);
+
+        assertThatThrownBy(() -> service.changePaymentTerm("PT3009TERM", req("NHAN_TRA")))
+            .extracting(OrderFacadeServicePaymentTermTest::errorKey)
+            .isEqualTo("paymentTermReceiverSide");
+    }
+
+    @Test
+    void admin_failedDelivery_isBlocked() {
+        asAdmin();
+        order.setStatus(OrderStatus.FAILED_DELIVERY);
+        order.setForwardStage(ForwardStage.REDELIVER_WAIT);
+
+        assertThatThrownBy(() -> service.changePaymentTerm("PT3009TERM", req("CONG_NO")))
+            .extracting(OrderFacadeServicePaymentTermTest::errorKey)
+            .isEqualTo("paymentTermReceiverSide");
+    }
+
+    @Test
     void deliveredOrder_isLocked() {
         asAdmin();
         order.setStatus(OrderStatus.DELIVERED);

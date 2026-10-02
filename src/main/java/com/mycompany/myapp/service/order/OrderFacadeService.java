@@ -1199,6 +1199,21 @@ public class OrderFacadeService {
         return stage == null || stage == ForwardStage.PICKED || stage == ForwardStage.WH_IN;
     }
 
+    /** Từ Nhập kho giao trở đi (đang giao / giao thất bại / chờ giao lại). */
+    static boolean atReceiverSide(ShipmentOrder order) {
+        OrderStatus st = order.getStatus();
+        if (st == OrderStatus.AT_DEST || st == OrderStatus.OUT_FOR_DELIVERY || st == OrderStatus.FAILED_DELIVERY) {
+            return true;
+        }
+        ForwardStage stage = order.getForwardStage();
+        return (
+            stage == ForwardStage.DEST_WH_IN ||
+            stage == ForwardStage.DELIVERING ||
+            stage == ForwardStage.FAILED ||
+            stage == ForwardStage.REDELIVER_WAIT
+        );
+    }
+
     /** Quầy chỉ đổi HTTT ở Chờ lấy hàng (shipper chưa nhận lấy) / Chờ nhận hàng / Nhập kho gửi (chưa gán xe). */
     static boolean counterMayChangePaymentTerm(ShipmentOrder order) {
         boolean notPickedUp = order.getPickedUpAt() == null && order.getForwardStage() == null;
@@ -1358,6 +1373,13 @@ public class OrderFacadeService {
                 "Đơn đã giao / hoàn / huỷ — không đổi được hình thức thanh toán",
                 ENTITY,
                 "paymentTermLocked"
+            );
+        }
+        if (atReceiverSide(order)) {
+            throw new BadRequestAlertException(
+                "Hàng đã về VP nhận — không đổi được hình thức thanh toán",
+                ENTITY,
+                "paymentTermReceiverSide"
             );
         }
         if (receiptOrderLineRepository != null && order.getId() != null && receiptOrderLineRepository.existsByOrder_Id(order.getId())) {
