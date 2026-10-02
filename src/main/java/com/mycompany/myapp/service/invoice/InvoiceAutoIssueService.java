@@ -191,7 +191,9 @@ public class InvoiceAutoIssueService {
 
         List<InvoiceRow> rows = new ArrayList<>();
         for (ShipmentOrder o : shipmentOrderRepository.findInvoiceWarehouseInBetween(start, end, NOT_PAID_STATUSES)) {
-            rows.add(toRow(o, o.getPickedUpAt()));
+            if (!hiddenFromList(o)) {
+                rows.add(toRow(o, o.getPickedUpAt()));
+            }
         }
         Map<Long, Instant> delivered = new LinkedHashMap<>();
         for (Object[] r : orderEventRepository.findInvoiceDeliveredBetween(InvoicePolicy.DELIVERED_ACTIONS, start, end)) {
@@ -199,7 +201,9 @@ public class InvoiceAutoIssueService {
         }
         if (!delivered.isEmpty()) {
             for (ShipmentOrder o : shipmentOrderRepository.findAllWithOfficesByIdIn(delivered.keySet())) {
-                rows.add(toRow(o, delivered.get(o.getId())));
+                if (!hiddenFromList(o)) {
+                    rows.add(toRow(o, delivered.get(o.getId())));
+                }
             }
         }
         String office = scopedOfficeCode.orElse(null);
@@ -208,6 +212,22 @@ public class InvoiceAutoIssueService {
             .filter(r -> office == null || office.equals(r.fromOfficeCode()) || office.equals(r.toOfficeCode()))
             .sorted(Comparator.comparing(InvoiceRow::paidAt, Comparator.nullsLast(Comparator.reverseOrder())))
             .toList();
+    }
+
+    /** Đơn đang hoàn / đã hoàn mà chưa thu đồng nào và chưa có HĐ: không đưa lên màn kế toán. */
+    static boolean hiddenFromList(ShipmentOrder o) {
+        if (o.getStatus() != OrderStatus.RETURNING && o.getStatus() != OrderStatus.RETURNED) {
+            return false;
+        }
+        String st = o.getInvoiceStatus();
+        if (
+            MeInvoiceIssueService.isIssued(o) ||
+            MeInvoiceIssueService.STATUS_MANUAL.equals(st) ||
+            MeInvoiceIssueService.STATUS_PENDING.equals(st)
+        ) {
+            return false;
+        }
+        return o.getPaidAmount() == null || o.getPaidAmount().signum() <= 0;
     }
 
     static InvoiceRow toRow(ShipmentOrder o, Instant paidAt) {

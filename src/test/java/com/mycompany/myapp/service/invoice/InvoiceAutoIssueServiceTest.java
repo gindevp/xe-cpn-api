@@ -117,6 +117,64 @@ class InvoiceAutoIssueServiceTest {
         assertThat(row.invoiceAmount()).isEqualByComparingTo("110000");
     }
 
+    private static ShipmentOrder senderPaysOrder(String code, OrderStatus status, String paid, String invoiceStatus) {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setId((long) code.hashCode());
+        o.setOrderCode(code);
+        o.setStatus(status);
+        o.setPaymentTerm(PaymentTerm.GUI_TRA);
+        o.setFareAmount(new BigDecimal("395000"));
+        o.setPaidAmount(paid == null ? null : new BigDecimal(paid));
+        o.setInvoiceStatus(invoiceStatus);
+        o.setPickedUpAt(Instant.parse("2026-10-02T02:00:00Z"));
+        return o;
+    }
+
+    @Test
+    void list_hidesUnpaidReturningOrders_keepsPaidOrIssuedOnes() {
+        when(orderRepo.findInvoiceWarehouseInBetween(any(), any(), any())).thenReturn(
+            List.of(
+                senderPaysOrder("RET_UNPAID", OrderStatus.RETURNING, "0", null),
+                senderPaysOrder("RET_NULLPAID", OrderStatus.RETURNED, null, null),
+                senderPaysOrder("RET_PAID", OrderStatus.RETURNING, "395000", null),
+                senderPaysOrder("RET_ISSUED", OrderStatus.RETURNING, "0", MeInvoiceIssueService.STATUS_ISSUED),
+                senderPaysOrder("RET_MANUAL", OrderStatus.RETURNED, "0", MeInvoiceIssueService.STATUS_MANUAL),
+                senderPaysOrder("NORMAL_UNPAID", OrderStatus.CONFIRMED, "0", null)
+            )
+        );
+        when(eventRepo.findInvoiceDeliveredBetween(any(), any(), any())).thenReturn(List.of());
+
+        List<String> codes = service
+            .list(java.time.LocalDate.parse("2026-10-02"), java.time.LocalDate.parse("2026-10-02"), java.util.Optional.empty())
+            .stream()
+            .map(InvoiceAutoIssueService.InvoiceRow::orderCode)
+            .toList();
+
+        assertThat(codes).containsExactlyInAnyOrder("RET_PAID", "RET_ISSUED", "RET_MANUAL", "NORMAL_UNPAID");
+    }
+
+    @Test
+    void list_hidesUnpaidReturnedAfterDelivery() {
+        ShipmentOrder returned = senderPaysOrder("DLV_RET", OrderStatus.RETURNED, "0", null);
+        returned.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        ShipmentOrder delivered = senderPaysOrder("DLV_OK", OrderStatus.DELIVERED, "395000", null);
+        delivered.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        Instant at = Instant.parse("2026-10-02T03:00:00Z");
+        when(orderRepo.findInvoiceWarehouseInBetween(any(), any(), any())).thenReturn(List.of());
+        when(eventRepo.findInvoiceDeliveredBetween(any(), any(), any())).thenReturn(
+            List.of(new Object[] { returned.getId(), at }, new Object[] { delivered.getId(), at })
+        );
+        when(orderRepo.findAllWithOfficesByIdIn(any())).thenReturn(List.of(returned, delivered));
+
+        List<String> codes = service
+            .list(java.time.LocalDate.parse("2026-10-02"), java.time.LocalDate.parse("2026-10-02"), java.util.Optional.empty())
+            .stream()
+            .map(InvoiceAutoIssueService.InvoiceRow::orderCode)
+            .toList();
+
+        assertThat(codes).containsExactly("DLV_OK");
+    }
+
     @Test
     void buyerProfile_onlyWhenPhoneIsPayer() {
         ShipmentOrder receiverPays = new ShipmentOrder();
