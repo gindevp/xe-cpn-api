@@ -76,6 +76,7 @@ public class OrderSummaryDTO {
     private String invoiceCompanyAddress;
     private String invoiceRefId;
     private String invoiceStatus;
+    private String invoiceType;
     private String invoiceTransactionId;
     private String invoiceNo;
     private String invoiceSeries;
@@ -574,6 +575,14 @@ public class OrderSummaryDTO {
 
     public void setInvoiceStatus(String invoiceStatus) {
         this.invoiceStatus = invoiceStatus;
+    }
+
+    public String getInvoiceType() {
+        return invoiceType;
+    }
+
+    public void setInvoiceType(String invoiceType) {
+        this.invoiceType = invoiceType;
     }
 
     public String getInvoiceTransactionId() {

@@ -224,10 +224,15 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "invoice_ref_id", length = 80)
     private String invoiceRefId;
 
-    /** PENDING | ISSUED | DUPLICATE | FAILED | SKIPPED */
+    /** PENDING | ISSUED | DUPLICATE | FAILED | SKIPPED | MANUAL (kế toán tích đã xuất cá nhân ngoài hệ thống) */
     @Size(max = 20)
     @Column(name = "invoice_status", length = 20)
     private String invoiceStatus;
+
+    /** COMPANY | PERSONAL — loại HĐ đã xuất / đang xuất. */
+    @Size(max = 20)
+    @Column(name = "invoice_type", length = 20)
+    private String invoiceType;
 
     @Size(max = 80)
     @Column(name = "invoice_transaction_id", length = 80)
@@ -921,6 +926,14 @@ public class ShipmentOrder implements Serializable {
 
     public void setInvoiceStatus(String invoiceStatus) {
         this.invoiceStatus = invoiceStatus;
+    }
+
+    public String getInvoiceType() {
+        return this.invoiceType;
+    }
+
+    public void setInvoiceType(String invoiceType) {
+        this.invoiceType = invoiceType;
     }
 
     public String getInvoiceTransactionId() {

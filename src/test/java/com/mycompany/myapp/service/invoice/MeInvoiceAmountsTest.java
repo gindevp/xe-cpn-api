@@ -82,6 +82,27 @@ class MeInvoiceAmountsTest {
     }
 
     @Test
+    void itemName_oldProvinceOfficesMappedToMergedProvince() {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setOrderCode("ND021001");
+        o.setFromOffice(
+            new Office()
+                .name("104 Song Hào - Nam Định")
+                .address("Số 104, đường Song Hào, Phường Quang Trung, Thành phố Nam Định, Tỉnh Nam Định")
+        );
+        o.setToOffice(new Office().name("18 Vũ Trọng Khánh - Hà Nội").address("18 Vũ Trọng Khánh - HN"));
+        assertThat(MeInvoiceAmounts.itemNameFor(o)).isEqualTo(
+            "Dịch vụ bưu chính chuyển phát hàng hóa từ Ninh Bình đến Hà Nội Bill: ND021001"
+        );
+
+        o.setFromOffice(new Office().name("34 Trần Phú - Thái Bình").address("Số 34, Thành phố Thái Bình, Tỉnh Thái Bình"));
+        o.setToOffice(new Office().name("Văn Phú - Yên Bái").address("Gần Cầu Văn Phú, Xã Văn Phú, Thành phố Yên Bái, Tỉnh Yên Bái"));
+        assertThat(MeInvoiceAmounts.itemNameFor(o)).isEqualTo(
+            "Dịch vụ bưu chính chuyển phát hàng hóa từ Hưng Yên đến Lào Cai Bill: ND021001"
+        );
+    }
+
+    @Test
     void provinceFromAddress_stripsPrefix() {
         assertThat(MeInvoiceAmounts.provinceFromAddress("1 ABC, Phường X, Thành phố Hà Nội")).isEqualTo("Hà Nội");
         assertThat(MeInvoiceAmounts.provinceFromAddress("1 ABC, TP. Hưng Yên")).isEqualTo("Hưng Yên");

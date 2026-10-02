@@ -1703,6 +1703,7 @@ public class OrderFacadeService {
         dto.setInvoiceCompanyAddress(o.getInvoiceCompanyAddress());
         dto.setInvoiceRefId(o.getInvoiceRefId());
         dto.setInvoiceStatus(o.getInvoiceStatus());
+        dto.setInvoiceType(com.mycompany.myapp.service.invoice.InvoicePolicy.typeOf(o));
         dto.setInvoiceTransactionId(o.getInvoiceTransactionId());
         dto.setInvoiceNo(o.getInvoiceNo());
         dto.setInvoiceSeries(o.getInvoiceSeries());

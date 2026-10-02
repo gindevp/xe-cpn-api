@@ -74,4 +74,64 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
     boolean existsByOrderCodeEndingWithIgnoreCase(String suffix);
 
     List<ShipmentOrder> findByCurrentTrip_Id(Long tripId);
+
+    /** Đơn gửi trả chờ tự xuất HĐ: đã nhập kho gửi trong [from, to], chưa có trạng thái HĐ, không công nợ. */
+    @Query(
+        """
+        select o.id from ShipmentOrder o
+        where (o.paymentTerm is null or o.paymentTerm = com.mycompany.myapp.domain.enumeration.PaymentTerm.GUI_TRA)
+        and o.pickedUpAt >= :from and o.pickedUpAt <= :to
+        and o.status not in :excluded
+        and (o.invoiceStatus is null or o.invoiceStatus = 'SKIPPED')
+        and (o.onCredit is null or o.onCredit = false)
+        and coalesce(o.fareAmount, 0) <= coalesce(o.paidAmount, 0)
+        order by o.pickedUpAt asc
+        """
+    )
+    List<Long> findAutoInvoiceWarehouseInIds(
+        @Param("from") java.time.Instant from,
+        @Param("to") java.time.Instant to,
+        @Param("excluded") java.util.Collection<com.mycompany.myapp.domain.enumeration.OrderStatus> excluded,
+        Pageable pageable
+    );
+
+    /** Đơn gửi trả nhập kho gửi trong [from, to) — màn Quản lý hoá đơn. */
+    @Query(
+        """
+        select o from ShipmentOrder o
+        left join fetch o.fromOffice
+        left join fetch o.toOffice
+        left join fetch o.finalToOffice
+        where (o.paymentTerm is null or o.paymentTerm = com.mycompany.myapp.domain.enumeration.PaymentTerm.GUI_TRA)
+        and o.pickedUpAt >= :from and o.pickedUpAt < :to
+        and o.status not in :excluded
+        """
+    )
+    List<ShipmentOrder> findInvoiceWarehouseInBetween(
+        @Param("from") java.time.Instant from,
+        @Param("to") java.time.Instant to,
+        @Param("excluded") java.util.Collection<com.mycompany.myapp.domain.enumeration.OrderStatus> excluded
+    );
+
+    @Query(
+        """
+        select o from ShipmentOrder o
+        left join fetch o.fromOffice
+        left join fetch o.toOffice
+        left join fetch o.finalToOffice
+        where o.id in :ids
+        """
+    )
+    List<ShipmentOrder> findAllWithOfficesByIdIn(@Param("ids") java.util.Collection<Long> ids);
+
+    /** Đơn gần nhất có thông tin HĐ công ty mà SĐT là người gửi hoặc người nhận (lọc người trả cước ở service). */
+    @Query(
+        """
+        select o from ShipmentOrder o
+        where o.invoiceTaxCode is not null and o.invoiceCompanyName is not null
+        and (o.senderPhone = :phone or o.receiverPhone = :phone)
+        order by o.id desc
+        """
+    )
+    List<ShipmentOrder> findInvoiceProfilesByPhone(@Param("phone") String phone, Pageable pageable);
 }

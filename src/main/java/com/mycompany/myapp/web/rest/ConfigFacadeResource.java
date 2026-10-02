@@ -45,6 +45,21 @@ public class ConfigFacadeResource {
         return configFacadeService.putIntegrationConfig(body);
     }
 
+    /** Công tắc tự xuất HĐĐT sau 3 tiếng (màn Cấu hình, chỉ admin). */
+    @GetMapping("/api/admin/invoice-auto-issue")
+    public Map<String, Object> getInvoiceAutoIssue() {
+        return configFacadeService.getMisaAutoIssue();
+    }
+
+    @PutMapping("/api/admin/invoice-auto-issue")
+    public Map<String, Object> putInvoiceAutoIssue(@RequestBody Map<String, Object> body) {
+        Object enabled = body == null ? null : body.get("enabled");
+        if (!(enabled instanceof Boolean b)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "enabled (true/false) là bắt buộc");
+        }
+        return configFacadeService.putMisaAutoIssue(b);
+    }
+
     @PostMapping("/api/integration-config/test")
     public Map<String, Object> testIntegration() {
         return configFacadeService.testIntegration();

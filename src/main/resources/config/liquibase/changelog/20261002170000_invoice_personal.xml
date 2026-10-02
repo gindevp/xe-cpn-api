@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261002170000-1" author="cpn">
+        <comment>Loại HĐĐT đã xuất: COMPANY | PERSONAL (null = chưa xuất)</comment>
+        <addColumn tableName="shipment_order">
+            <column name="invoice_type" type="varchar(20)"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20261002170000-2" author="cpn">
+        <comment>Công tắc tự xuất HĐ sau mốc thanh toán + 3 tiếng; since = lúc bật (chỉ áp đơn có mốc sau thời điểm này)</comment>
+        <addColumn tableName="integration_config">
+            <column name="misa_auto_issue_enabled" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="misa_auto_issue_since" type="datetime"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

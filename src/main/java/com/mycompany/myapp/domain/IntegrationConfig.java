@@ -138,6 +138,16 @@ public class IntegrationConfig implements Serializable {
     @Column(name = "autocall_call_to", length = 5)
     private String autocallCallTo;
 
+    /** Tự xuất HĐĐT sau mốc thanh toán + 3 tiếng (DN nếu khách yêu cầu trước hạn, còn lại cá nhân); mặc định tắt. */
+    @Column(name = "misa_auto_issue_enabled", nullable = false)
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Boolean misaAutoIssueEnabled;
+
+    /** Lúc bật tự xuất — chỉ áp đơn có mốc (nhập kho gửi / giao) sau thời điểm này; đơn cũ xuất bù bằng tay. */
+    @Column(name = "misa_auto_issue_since")
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Instant misaAutoIssueSince;
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 
@@ -432,6 +442,25 @@ public class IntegrationConfig implements Serializable {
         if (autocallRetryEnabled == null) {
             autocallRetryEnabled = false;
         }
+        if (misaAutoIssueEnabled == null) {
+            misaAutoIssueEnabled = false;
+        }
+    }
+
+    public Boolean getMisaAutoIssueEnabled() {
+        return misaAutoIssueEnabled;
+    }
+
+    public void setMisaAutoIssueEnabled(Boolean misaAutoIssueEnabled) {
+        this.misaAutoIssueEnabled = misaAutoIssueEnabled;
+    }
+
+    public Instant getMisaAutoIssueSince() {
+        return misaAutoIssueSince;
+    }
+
+    public void setMisaAutoIssueSince(Instant misaAutoIssueSince) {
+        this.misaAutoIssueSince = misaAutoIssueSince;
     }
 
     @JsonProperty(value = "autocallApiKeyConfigured", access = JsonProperty.Access.READ_ONLY)

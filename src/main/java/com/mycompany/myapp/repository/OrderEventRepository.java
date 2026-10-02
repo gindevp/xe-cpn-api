@@ -59,4 +59,42 @@ public interface OrderEventRepository extends JpaRepository<OrderEvent, Long> {
         @Param("orderIds") java.util.Collection<Long> orderIds,
         @Param("actions") java.util.Collection<String> actions
     );
+
+    /** Đơn nhận trả/COD/chia tỉ lệ đã giao trong [from, to], chưa có trạng thái HĐ, không công nợ — chờ tự xuất HĐ. */
+    @Query(
+        """
+        select distinct e.order.id from OrderEvent e
+        where upper(e.action) in :actions and e.eventAt >= :from and e.eventAt <= :to
+        and e.order.status = com.mycompany.myapp.domain.enumeration.OrderStatus.DELIVERED
+        and e.order.paymentTerm is not null
+        and e.order.paymentTerm <> com.mycompany.myapp.domain.enumeration.PaymentTerm.GUI_TRA
+        and (e.order.invoiceStatus is null or e.order.invoiceStatus = 'SKIPPED')
+        and (e.order.onCredit is null or e.order.onCredit = false)
+        and coalesce(e.order.fareAmount, 0) <= coalesce(e.order.paidAmount, 0)
+        """
+    )
+    List<Long> findAutoInvoiceDeliveredIds(
+        @Param("actions") java.util.Collection<String> actions,
+        @Param("from") java.time.Instant from,
+        @Param("to") java.time.Instant to,
+        Pageable pageable
+    );
+
+    /** Hàng [orderId, lúc giao gần nhất] của đơn không phải gửi trả, giao thành công trong [from, to). */
+    @Query(
+        """
+        select e.order.id, max(e.eventAt) from OrderEvent e
+        where upper(e.action) in :actions
+        and e.order.status = com.mycompany.myapp.domain.enumeration.OrderStatus.DELIVERED
+        and e.order.paymentTerm is not null
+        and e.order.paymentTerm <> com.mycompany.myapp.domain.enumeration.PaymentTerm.GUI_TRA
+        group by e.order.id
+        having max(e.eventAt) >= :from and max(e.eventAt) < :to
+        """
+    )
+    List<Object[]> findInvoiceDeliveredBetween(
+        @Param("actions") java.util.Collection<String> actions,
+        @Param("from") java.time.Instant from,
+        @Param("to") java.time.Instant to
+    );
 }

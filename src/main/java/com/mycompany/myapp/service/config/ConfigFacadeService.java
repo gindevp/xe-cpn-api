@@ -222,6 +222,42 @@ public class ConfigFacadeService {
         return out;
     }
 
+    /** Công tắc tự xuất HĐĐT (màn Cấu hình) — {@code enabled}, {@code since} (lúc bật gần nhất). */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getMisaAutoIssue() {
+        return misaAutoIssueView(getIntegrationConfig());
+    }
+
+    public Map<String, Object> putMisaAutoIssue(boolean enabled) {
+        IntegrationConfig current = integrationConfigRepository.findAll().stream().findFirst().orElseGet(IntegrationConfig::new);
+        IntegrationConfig incoming = new IntegrationConfig();
+        incoming.setMisaAutoIssueEnabled(enabled);
+        mergeMisaAutoIssue(current, incoming, Instant.now());
+        current.setUpdatedAt(Instant.now());
+        IntegrationConfig saved = integrationConfigRepository.save(current);
+        LOG.info("MISA auto-issue {} since={}", enabled ? "ON" : "OFF", saved.getMisaAutoIssueSince());
+        return misaAutoIssueView(saved);
+    }
+
+    private static Map<String, Object> misaAutoIssueView(IntegrationConfig cfg) {
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("enabled", Boolean.TRUE.equals(cfg.getMisaAutoIssueEnabled()));
+        out.put("since", cfg.getMisaAutoIssueSince());
+        return out;
+    }
+
+    /** Tự xuất HĐ: null = không đổi; tắt → bật thì ghi lại mốc bật để không tự xuất bù đơn cũ. */
+    static void mergeMisaAutoIssue(IntegrationConfig current, IntegrationConfig incoming, Instant now) {
+        Boolean want = incoming.getMisaAutoIssueEnabled();
+        if (want == null) {
+            return;
+        }
+        if (want && !Boolean.TRUE.equals(current.getMisaAutoIssueEnabled())) {
+            current.setMisaAutoIssueSince(now);
+        }
+        current.setMisaAutoIssueEnabled(want);
+    }
+
     /** Auto Call: key/secret rỗng → giữ giá trị đã lưu; autocallEnabled là Boolean nên null = không đổi. */
     static void mergeAutoCall(IntegrationConfig current, IntegrationConfig incoming) {
         if (incoming.getAutocallEnabled() != null) {

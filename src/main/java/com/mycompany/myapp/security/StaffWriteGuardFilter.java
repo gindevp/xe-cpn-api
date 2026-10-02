@@ -58,6 +58,16 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             staffAccessService.requireScreenWrite(ScreenKey.GIAO_THANH_CONG);
             return;
         }
+        // Tích đã xuất HĐ cá nhân: chỉ kế toán (màn Quản lý hoá đơn)
+        if (path.startsWith("/api/invoices/mark")) {
+            staffAccessService.requireScreenWrite(ScreenKey.QUAN_LY_HOA_DON);
+            return;
+        }
+        // Xuất bù HĐĐT: màn Quản lý hoá đơn hoặc Giao thành công
+        if (path.startsWith("/api/invoices/")) {
+            staffAccessService.requireScreenWrite(ScreenKey.QUAN_LY_HOA_DON, ScreenKey.GIAO_THANH_CONG);
+            return;
+        }
         // Master CRUD
         if (
             path.startsWith("/api/offices") ||
@@ -96,7 +106,11 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             return;
         }
         // Bảo trì hệ thống
-        if (path.startsWith("/api/admin/maintenance") || path.startsWith("/api/admin/session-policy")) {
+        if (
+            path.startsWith("/api/admin/maintenance") ||
+            path.startsWith("/api/admin/session-policy") ||
+            path.startsWith("/api/admin/invoice-auto-issue")
+        ) {
             staffAccessService.requireScreenWrite(ScreenKey.BAO_TRI);
             return;
         }

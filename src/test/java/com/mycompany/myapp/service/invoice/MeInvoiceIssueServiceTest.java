@@ -11,9 +11,12 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
+import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.service.day.DayClosureGuard;
@@ -37,6 +40,7 @@ class MeInvoiceIssueServiceTest {
     private OrderEventRepository eventRepo;
     private DayClosureGuard dayClosureGuard;
     private MisaMeInvoiceClient client;
+    private IntegrationConfigRepository configRepo;
     private MeInvoiceIssueService service;
     private ShipmentOrder order;
 
@@ -46,11 +50,17 @@ class MeInvoiceIssueServiceTest {
         eventRepo = mock(OrderEventRepository.class);
         dayClosureGuard = mock(DayClosureGuard.class);
         client = mock(MisaMeInvoiceClient.class);
-        service = new MeInvoiceIssueService(orderRepo, eventRepo, dayClosureGuard, client, new ObjectMapper(), true);
+        configRepo = mock(IntegrationConfigRepository.class);
+        service = new MeInvoiceIssueService(orderRepo, eventRepo, configRepo, dayClosureGuard, client, new ObjectMapper(), true);
 
         order = new ShipmentOrder();
         order.setOrderCode("VT0001ABCD");
         order.setStatus(OrderStatus.DELIVERED);
+        order.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        order.setSenderName("Nguyễn Gửi");
+        order.setSenderPhone("0911111111");
+        order.setReceiverName("Trần Nhận");
+        order.setReceiverPhone("0922222222");
         order.setGoodsFareAmount(new BigDecimal("110000"));
         when(orderRepo.findOneByOrderCodeOrDraftCode("VT0001ABCD")).thenReturn(Optional.of(order));
         when(client.isEnabled()).thenReturn(true);
@@ -93,7 +103,13 @@ class MeInvoiceIssueServiceTest {
         assertThat(inv.get("BuyerTaxCode").asText()).isEqualTo("0100233488");
         assertThat(inv.get("BuyerEmail").asText()).isEqualTo("ketoan@abc.vn");
         assertThat(inv.get("IsSendEmail").asBoolean()).isTrue();
-        assertThat(inv.get("OriginalInvoiceDetail").get(0).get("UnitName").asText()).isEqualTo("Chuyến");
+        assertThat(inv.get("OriginalInvoiceDetail").get(0).get("UnitName").asText()).isEqualTo("Vận đơn");
+        assertThat(inv.get("BuyerLegalName").asText()).isEqualTo("Cty ABC");
+        assertThat(inv.get("BuyerFullName").asText()).isEmpty();
+        assertThat(inv.get("BuyerPhoneNumber").asText()).isEmpty();
+        assertThat(inv.get("ReceiverName").asText()).isEqualTo("Cty ABC");
+        assertThat(inv.get("PaymentMethodName").asText()).isEqualTo("TM/CK");
+        assertThat(out.getInvoiceType()).isEqualTo(InvoicePolicy.TYPE_COMPANY);
 
         ArgumentCaptor<OrderEvent> ev = ArgumentCaptor.forClass(OrderEvent.class);
         verify(eventRepo).save(ev.capture());
@@ -223,24 +239,176 @@ class MeInvoiceIssueServiceTest {
         when(eventRepo.latestEventAtByOrderIds(any(), any())).thenReturn(rows);
     }
 
-    @Test
-    void issueManual_deliveredYesterday_rejects_noPublish() {
-        deliveredAt(ZonedDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(1).toInstant());
-        assertThatThrownBy(() -> service.issueManual("VT0001ABCD", validReq(), "u"))
-            .isInstanceOf(BadRequestAlertException.class)
-            .hasMessageContaining("trong ngày giao");
-        verify(client, never()).publish(any());
-        verify(orderRepo, never()).save(any());
-    }
-
-    @Test
-    void issueManual_deliveredToday_publishes() {
-        deliveredAt(Instant.now());
+    private void publishOk() {
         when(client.publish(any(ObjectNode.class))).thenReturn(
             new MisaMeInvoiceClient.PublishResult(true, false, "TX1", "0000123", "1C26TXE", "CODE1", "{}")
         );
+    }
+
+    private ObjectNode publishedInvoice() {
+        ArgumentCaptor<ObjectNode> body = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(client).publish(body.capture());
+        return (ObjectNode) body.getValue().get("InvoiceData").get(0);
+    }
+
+    @Test
+    void issueManual_deliveredDaysAgo_lateIssueStillAllowed() {
+        deliveredAt(ZonedDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(3).toInstant());
+        publishOk();
         ShipmentOrder out = service.issueManual("VT0001ABCD", validReq(), "u");
         assertThat(out.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
+    }
+
+    @Test
+    void issueManual_senderPaysWarehousedNotDelivered_allowed() {
+        order.setPaymentTerm(PaymentTerm.GUI_TRA);
+        order.setStatus(OrderStatus.IN_TRANSIT);
+        order.setPickedUpAt(Instant.now().minusSeconds(600));
+        publishOk();
+        ShipmentOrder out = service.issueManual("VT0001ABCD", validReq(), "u");
+        assertThat(out.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
+    }
+
+    @Test
+    void issueManual_senderPaysNotWarehoused_rejects() {
+        order.setPaymentTerm(PaymentTerm.GUI_TRA);
+        order.setStatus(OrderStatus.CONFIRMED);
+        assertThatThrownBy(() -> service.issueManual("VT0001ABCD", validReq(), "u"))
+            .isInstanceOf(BadRequestAlertException.class)
+            .hasMessageContaining("nhập kho");
+        verify(client, never()).publish(any());
+    }
+
+    @Test
+    void backfill_receiverPays_personalInvoice_receiverNamePhone_cash_noTax() {
+        order.setFareAmount(new BigDecimal("110000"));
+        order.setPaidAmount(new BigDecimal("110000"));
+        publishOk();
+
+        String result = service.backfillOne("VT0001ABCD", "ketoan");
+
+        assertThat(result).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
+        assertThat(order.getInvoiceType()).isEqualTo(InvoicePolicy.TYPE_PERSONAL);
+        ObjectNode inv = publishedInvoice();
+        assertThat(inv.get("BuyerLegalName").asText()).isEqualTo("Trần Nhận");
+        assertThat(inv.get("BuyerFullName").asText()).isEqualTo("Trần Nhận");
+        assertThat(inv.get("BuyerPhoneNumber").asText()).isEqualTo("0922222222");
+        assertThat(inv.get("BuyerTaxCode").asText()).isEmpty();
+        assertThat(inv.get("IsSendEmail").asBoolean()).isFalse();
+        assertThat(inv.get("PaymentMethodName").asText()).isEqualTo("TM");
+        assertThat(inv.get("OriginalInvoiceDetail").get(0).get("UnitName").asText()).isEqualTo("Vận đơn");
+    }
+
+    @Test
+    void backfill_senderPays_personalUsesSender() {
+        order.setPaymentTerm(PaymentTerm.GUI_TRA);
+        order.setPickedUpAt(Instant.now().minusSeconds(4 * 3600));
+        publishOk();
+        service.backfillOne("VT0001ABCD", "ketoan");
+        ObjectNode inv = publishedInvoice();
+        assertThat(inv.get("BuyerLegalName").asText()).isEqualTo("Nguyễn Gửi");
+        assertThat(inv.get("BuyerPhoneNumber").asText()).isEqualTo("0911111111");
+    }
+
+    @Test
+    void backfill_companyRequested_issuesCompany() {
+        order.setInvoiceRequested(true);
+        order.setInvoiceTaxCode("0100233488");
+        order.setInvoiceCompanyName("Cty ABC");
+        order.setInvoiceCompanyAddress("1 Ly Thuong Kiet");
+        order.setInvoiceEmail("a@abc.vn");
+        publishOk();
+        service.backfillOne("VT0001ABCD", "ketoan");
+        assertThat(order.getInvoiceType()).isEqualTo(InvoicePolicy.TYPE_COMPANY);
+        assertThat(publishedInvoice().get("BuyerTaxCode").asText()).isEqualTo("0100233488");
+    }
+
+    @Test
+    void backfill_markedOrIssued_skipped_noPublish() {
+        order.setInvoiceStatus(MeInvoiceIssueService.STATUS_MANUAL);
+        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("ALREADY");
+        order.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
+        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("ALREADY");
+        verify(client, never()).publish(any());
+    }
+
+    @Test
+    void backfill_unpaidResidue_skipped() {
+        order.setFareAmount(new BigDecimal("110000"));
+        order.setPaidAmount(new BigDecimal("50000"));
+        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("UNPAID_RESIDUE");
+        verify(client, never()).publish(any());
+    }
+
+    @Test
+    void markPersonal_thenSaveInfoAndIssueBlocked_unmarkRestores() {
+        service.markPersonalIssued("VT0001ABCD", true, "ketoan");
+        assertThat(order.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_MANUAL);
+        assertThat(order.getInvoiceType()).isEqualTo(InvoicePolicy.TYPE_PERSONAL);
+
+        assertThatThrownBy(() ->
+            service.saveInfo("VT0001ABCD", new MeInvoiceIssueService.InvoiceInfoRequest(true, "0100233488", "A", "B", "a@b.vn"), "u")
+        ).isInstanceOf(BadRequestAlertException.class);
+        assertThatThrownBy(() -> service.issueManual("VT0001ABCD", validReq(), "u")).isInstanceOf(BadRequestAlertException.class);
+
+        service.markPersonalIssued("VT0001ABCD", false, "ketoan");
+        assertThat(order.getInvoiceStatus()).isNull();
+        assertThat(order.getInvoiceType()).isNull();
+        verify(client, never()).publish(any());
+    }
+
+    @Test
+    void markPersonal_alreadyIssued_rejects() {
+        order.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
+        assertThatThrownBy(() -> service.markPersonalIssued("VT0001ABCD", true, "k")).isInstanceOf(BadRequestAlertException.class);
+    }
+
+    @Test
+    void autoIssue_onCredit_skipped() {
+        order.setId(7L);
+        order.setOnCredit(true);
+        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        assertThat(service.autoIssueOne(7L)).isEqualTo("ON_CREDIT");
+        verify(client, never()).publish(any());
+    }
+
+    @Test
+    void autoIssue_legacySkipped_issuesPersonal() {
+        order.setId(7L);
+        order.setInvoiceStatus(MeInvoiceIssueService.STATUS_SKIPPED);
+        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        publishOk();
+        assertThat(service.autoIssueOne(7L)).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
+        assertThat(order.getInvoiceType()).isEqualTo(InvoicePolicy.TYPE_PERSONAL);
+    }
+
+    @Test
+    void autoIssue_failedNotRetried() {
+        order.setId(7L);
+        order.setInvoiceStatus(MeInvoiceIssueService.STATUS_FAILED);
+        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        assertThat(service.autoIssueOne(7L)).isEqualTo("ALREADY");
+        verify(client, never()).publish(any());
+    }
+
+    @Test
+    void onDelivered_toggleOn_leavesItToScheduler() {
+        IntegrationConfig cfg = new IntegrationConfig();
+        cfg.setMisaAutoIssueEnabled(true);
+        cfg.setMisaAutoIssueSince(Instant.now().minusSeconds(3600));
+        when(configRepo.findAll()).thenReturn(List.of(cfg));
+        order.setInvoiceRequested(true);
+        service.onOrderDelivered(new OrderDeliveredEvent("VT0001ABCD"));
+        verify(client, never()).publish(any());
+        assertThat(order.getInvoiceStatus()).isNull();
+    }
+
+    @Test
+    void onDelivered_toggleOff_legacySkipsNotRequested() {
+        when(configRepo.findAll()).thenReturn(List.of());
+        service.onOrderDelivered(new OrderDeliveredEvent("VT0001ABCD"));
+        assertThat(order.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_SKIPPED);
+        verify(client, never()).publish(any());
     }
 
     @Test

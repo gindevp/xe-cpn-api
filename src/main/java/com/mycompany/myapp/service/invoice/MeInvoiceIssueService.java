@@ -3,13 +3,16 @@ package com.mycompany.myapp.service.invoice;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
+import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.IssueInvoiceRequest;
+import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -28,8 +31,12 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Phát hành HĐĐT MISA ngay khi đơn DELIVERED — idempotent theo RefID {@code XE-{orderCode}}.
- * Không retry định kỳ; lỗi thì status=FAILED (có thể gọi lại thủ công {@code /invoice/issue}).
+ * Phát hành HĐĐT MISA — idempotent theo RefID {@code XE-{orderCode}}.
+ * <ul>
+ *   <li>Công tắc tự xuất tắt (mặc định): giữ cách cũ — đơn có yêu cầu HĐ công ty tự xuất ngay khi giao thành công.</li>
+ *   <li>Công tắc bật: {@link InvoiceAutoIssueService} xuất sau mốc thanh toán + 3 tiếng (DN nếu có yêu cầu, còn lại cá nhân).</li>
+ * </ul>
+ * Lỗi MISA → status=FAILED, không tự thử lại; kế toán xuất lại bằng tay / xuất bù.
  */
 @Service
 public class MeInvoiceIssueService {
@@ -43,14 +50,14 @@ public class MeInvoiceIssueService {
     public static final String STATUS_DUPLICATE = "DUPLICATE";
     public static final String STATUS_FAILED = "FAILED";
     public static final String STATUS_SKIPPED = "SKIPPED";
-
-    private static final List<String> DELIVERED_ACTIONS = List.of("POD", "POD_QUAY", "DELIVERED", "TRANSITION_DELIVERED");
-    private static final java.time.format.DateTimeFormatter DAY_FMT = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    /** Kế toán tích "đã xuất cá nhân" (xuất ngoài hệ thống) — hệ thống không gửi MISA cho đơn này nữa. */
+    public static final String STATUS_MANUAL = "MANUAL";
 
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final OrderEventRepository orderEventRepository;
+    private final IntegrationConfigRepository integrationConfigRepository;
     private final DayClosureGuard dayClosureGuard;
     private final MisaMeInvoiceClient client;
     private final ObjectMapper objectMapper;
@@ -59,6 +66,7 @@ public class MeInvoiceIssueService {
     public MeInvoiceIssueService(
         ShipmentOrderRepository shipmentOrderRepository,
         OrderEventRepository orderEventRepository,
+        IntegrationConfigRepository integrationConfigRepository,
         DayClosureGuard dayClosureGuard,
         MisaMeInvoiceClient client,
         ObjectMapper objectMapper,
@@ -66,17 +74,21 @@ public class MeInvoiceIssueService {
     ) {
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.orderEventRepository = orderEventRepository;
+        this.integrationConfigRepository = integrationConfigRepository;
         this.dayClosureGuard = dayClosureGuard;
         this.client = client;
         this.objectMapper = objectMapper;
         this.issueOnlyWhenRequested = issueOnlyWhenRequested;
     }
 
-    /** Sau commit DELIVERED → gọi MISA ngay (async, không chặn response POD). */
+    /** Sau commit DELIVERED → gọi MISA ngay (async). Khi bật tự xuất 3 tiếng thì job định kỳ lo, bỏ qua ở đây. */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Async
     public void onOrderDelivered(OrderDeliveredEvent event) {
         if (event == null || event.orderCode() == null || event.orderCode().isBlank()) {
+            return;
+        }
+        if (autoIssueEnabled()) {
             return;
         }
         try {
@@ -86,39 +98,40 @@ public class MeInvoiceIssueService {
         }
     }
 
+    public boolean autoIssueEnabled() {
+        return autoIssueConfig() != null;
+    }
+
+    /** Cấu hình khi công tắc tự xuất đang bật (kèm mốc bật); tắt → null. */
+    public IntegrationConfig autoIssueConfig() {
+        return integrationConfigRepository
+            .findAll()
+            .stream()
+            .findFirst()
+            .filter(c -> Boolean.TRUE.equals(c.getMisaAutoIssueEnabled()) && c.getMisaAutoIssueSince() != null)
+            .orElse(null);
+    }
+
+    public boolean isClientEnabled() {
+        return client.isEnabled();
+    }
+
     @Transactional
     public void issueForOrderCode(String orderCode) {
-        ShipmentOrder order = shipmentOrderRepository
-            .findOneByOrderCodeOrDraftCode(orderCode)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderCode));
-        issueForOrder(order);
+        issueForOrder(requireOrder(orderCode));
     }
 
     /**
-     * Xuất HĐĐT thủ công từ màn Giao thành công: lưu thông tin người mua (bắt buộc MST + tên + địa chỉ + email)
-     * rồi gọi MISA ngay. Lỗi nghiệp vụ → 400; lỗi MISA → invoiceStatus=FAILED + invoiceError (gọi lại được).
+     * Xuất HĐ công ty thủ công (popup đơn / màn Giao thành công): lưu thông tin người mua rồi gọi MISA ngay.
+     * Cho xuất muộn (sau hạn 3 tiếng) — FE cảnh báo trước. Lỗi nghiệp vụ → 400; lỗi MISA → FAILED (gọi lại được).
      */
     @Transactional
     public ShipmentOrder issueManual(String orderCode, IssueInvoiceRequest request, String actor) {
-        if (!client.isEnabled()) {
-            throw new BadRequestAlertException("Chưa bật kết nối MISA — không xuất được hoá đơn", ENTITY, "misaDisabled");
-        }
-        ShipmentOrder order = shipmentOrderRepository
-            .findOneByOrderCodeOrDraftCode(orderCode.trim())
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderCode));
-        if (order.getStatus() != OrderStatus.DELIVERED) {
-            throw new BadRequestAlertException("Chỉ xuất hoá đơn cho đơn đã giao thành công", ENTITY, "notDelivered");
-        }
-        if (isAlreadyIssued(order)) {
-            String no = blankToEmpty(order.getInvoiceNo());
-            throw new BadRequestAlertException(
-                "Đơn đã xuất hoá đơn" + (no.isEmpty() ? "" : " số " + no) + " — không xuất lại",
-                ENTITY,
-                "alreadyIssued"
-            );
-        }
+        requireClient();
+        ShipmentOrder order = requireOrder(orderCode);
+        assertPaymentReached(order);
+        assertNotIssuedOrMarked(order, "không xuất lại");
         dayClosureGuard.assertOrderMutable(order);
-        assertIssuedOnDeliveryDay(order);
 
         IssueInvoiceRequest req = request != null ? request : new IssueInvoiceRequest();
         applyBuyer(
@@ -130,38 +143,104 @@ public class MeInvoiceIssueService {
         );
         shipmentOrderRepository.save(order);
 
-        issueForOrder(order);
+        publish(order, InvoicePolicy.TYPE_COMPANY);
+        appendEvent(order, "INVOICE_ISSUE", issueDetail(order), actor);
+        return order;
+    }
 
+    /**
+     * Xuất bù một đơn (màn Quản lý hoá đơn / Giao thành công): DN nếu có yêu cầu kèm MST, còn lại cá nhân.
+     * Trả mã kết quả: ISSUED / DUPLICATE / FAILED / hoặc lý do bỏ qua (không ném lỗi để chạy hàng loạt).
+     */
+    @Transactional
+    public String backfillOne(String orderCode, String actor) {
+        ShipmentOrder order = shipmentOrderRepository.findOneByOrderCodeOrDraftCode(orderCode.trim()).orElse(null);
+        if (order == null) {
+            return "NOT_FOUND";
+        }
         String st = order.getInvoiceStatus();
-        String detail = STATUS_ISSUED.equals(st) || STATUS_DUPLICATE.equals(st)
-            ? "Xuất HĐĐT MISA" +
-            (order.getInvoiceNo() != null ? " số " + order.getInvoiceNo() : "") +
-            " · MST " +
-            order.getInvoiceTaxCode() +
-            " · gửi " +
-            order.getInvoiceEmail()
-            : "Xuất HĐĐT MISA lỗi: " + blankToEmpty(order.getInvoiceError());
-        appendEvent(order, "INVOICE_ISSUE", detail, actor);
+        if (isIssued(order) || STATUS_MANUAL.equals(st) || STATUS_PENDING.equals(st)) {
+            return "ALREADY";
+        }
+        if (!paymentReached(order)) {
+            return "NOT_PAID_YET";
+        }
+        if (OrderMoney.hasUnpaidResidue(order) && !Boolean.TRUE.equals(order.getOnCredit())) {
+            return "UNPAID_RESIDUE";
+        }
+        publish(order, InvoicePolicy.typeToIssue(order));
+        appendEvent(order, "INVOICE_ISSUE", "Xuất bù · " + issueDetail(order), actor);
+        return order.getInvoiceStatus();
+    }
+
+    /**
+     * Tự xuất khi đã quá mốc thanh toán + 3 tiếng (gọi từ job, mỗi đơn một transaction).
+     * Bỏ qua đơn công nợ, đơn còn nợ cước, đơn đã có trạng thái HĐ (trừ SKIPPED của luồng cũ).
+     */
+    @Transactional
+    public String autoIssueOne(Long orderId) {
+        ShipmentOrder order = shipmentOrderRepository.findById(orderId).orElse(null);
+        if (order == null) {
+            return "NOT_FOUND";
+        }
+        String st = order.getInvoiceStatus();
+        if (st != null && !STATUS_SKIPPED.equals(st)) {
+            return "ALREADY";
+        }
+        if (Boolean.TRUE.equals(order.getOnCredit())) {
+            return "ON_CREDIT";
+        }
+        if (!paymentReached(order)) {
+            return "NOT_PAID_YET";
+        }
+        if (OrderMoney.hasUnpaidResidue(order)) {
+            return "UNPAID_RESIDUE";
+        }
+        publish(order, InvoicePolicy.typeToIssue(order));
+        appendEvent(order, "INVOICE_ISSUE", "Tự xuất sau 3 tiếng · " + issueDetail(order), "system");
+        return order.getInvoiceStatus();
+    }
+
+    /** Kế toán tích / bỏ tích "đã xuất cá nhân" (xuất ngoài hệ thống). */
+    @Transactional
+    public ShipmentOrder markPersonalIssued(String orderCode, boolean marked, String actor) {
+        ShipmentOrder order = requireOrder(orderCode);
+        String st = order.getInvoiceStatus();
+        if (marked) {
+            if (STATUS_MANUAL.equals(st)) {
+                return order;
+            }
+            assertNotIssuedOrMarked(order, "không tích được");
+            if (STATUS_PENDING.equals(st)) {
+                throw new BadRequestAlertException("Đơn đang gửi MISA — chờ kết quả rồi tích", ENTITY, "invoicePending");
+            }
+            order.setInvoiceStatus(STATUS_MANUAL);
+            order.setInvoiceType(InvoicePolicy.TYPE_PERSONAL);
+            order.setInvoiceIssuedAt(Instant.now());
+            order.setInvoiceError(null);
+            shipmentOrderRepository.save(order);
+            appendEvent(order, "INVOICE_MARK", "Kế toán tích đã xuất HĐ cá nhân", actor);
+        } else {
+            if (!STATUS_MANUAL.equals(st)) {
+                return order;
+            }
+            order.setInvoiceStatus(null);
+            order.setInvoiceType(null);
+            order.setInvoiceIssuedAt(null);
+            shipmentOrderRepository.save(order);
+            appendEvent(order, "INVOICE_MARK", "Bỏ tích đã xuất HĐ cá nhân", actor);
+        }
         return order;
     }
 
     /**
      * Lưu / bỏ thông tin xuất hoá đơn ở mọi trạng thái đơn (không qua chốt ngày vì không đụng tiền). Đơn đã xuất HĐ
-     * thành công thì khoá. Đơn chưa giao có thông tin sẽ tự xuất khi giao thành công.
+     * hoặc đã tích xuất cá nhân thì khoá.
      */
     @Transactional
     public ShipmentOrder saveInfo(String orderCode, InvoiceInfoRequest request, String actor) {
-        ShipmentOrder order = shipmentOrderRepository
-            .findOneByOrderCodeOrDraftCode(orderCode.trim())
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderCode));
-        if (isAlreadyIssued(order)) {
-            String no = blankToEmpty(order.getInvoiceNo());
-            throw new BadRequestAlertException(
-                "Đơn đã xuất hoá đơn" + (no.isEmpty() ? "" : " số " + no) + " — không sửa thông tin hoá đơn",
-                ENTITY,
-                "alreadyIssued"
-            );
-        }
+        ShipmentOrder order = requireOrder(orderCode);
+        assertNotIssuedOrMarked(order, "không sửa thông tin hoá đơn");
         InvoiceInfoRequest req = request != null ? request : new InvoiceInfoRequest(true, null, null, null, null);
         String detail;
         if (Boolean.FALSE.equals(req.requested())) {
@@ -186,29 +265,196 @@ public class MeInvoiceIssueService {
         return order;
     }
 
-    /** Kế toán: HĐ xuất muộn hơn ngày giao thành công bị phạt — chỉ cho xuất thủ công trong ngày giao (giờ VN). */
-    private void assertIssuedOnDeliveryDay(ShipmentOrder order) {
-        if (order.getId() == null) {
+    /** Luồng cũ (công tắc tắt): chỉ xuất HĐ công ty cho đơn có yêu cầu, ngay khi giao thành công. */
+    @Transactional
+    public void issueForOrder(ShipmentOrder order) {
+        if (!client.isEnabled()) {
+            LOG.debug("MISA disabled — skip {}", order.getOrderCode());
             return;
         }
-        Instant deliveredAt = orderEventRepository
-            .latestEventAtByOrderIds(List.of(order.getId()), DELIVERED_ACTIONS)
+        if (order.getStatus() != OrderStatus.DELIVERED) {
+            markSkipped(order, "Not DELIVERED");
+            return;
+        }
+        if (isIssued(order) || STATUS_MANUAL.equals(order.getInvoiceStatus())) {
+            LOG.info("MISA already issued for {} status={}", order.getOrderCode(), order.getInvoiceStatus());
+            return;
+        }
+        if (issueOnlyWhenRequested && !Boolean.TRUE.equals(order.getInvoiceRequested())) {
+            markSkipped(order, "invoiceRequested=false");
+            return;
+        }
+        publish(order, InvoicePolicy.TYPE_COMPANY);
+    }
+
+    /** Gửi MISA theo loại HĐ; kết quả ghi lên đơn (ISSUED / DUPLICATE / FAILED / SKIPPED). */
+    private void publish(ShipmentOrder order, String type) {
+        if (!client.isEnabled()) {
+            LOG.debug("MISA disabled — skip {}", order.getOrderCode());
+            return;
+        }
+        MeInvoiceAmounts.Breakdown amounts = MeInvoiceAmounts.fromOrder(order);
+        if (amounts.gross().signum() <= 0) {
+            markSkipped(order, "gross=0");
+            return;
+        }
+
+        if (InvoicePolicy.TYPE_COMPANY.equals(type)) {
+            String buyerTax = blankToEmpty(order.getInvoiceTaxCode());
+            if (buyerTax.isBlank()) {
+                markFailed(order, amounts, "Thiếu MST người mua — không gửi MISA");
+                return;
+            }
+            if (!VietnamTaxCode.isValid(buyerTax)) {
+                markFailed(order, amounts, "MST người mua không hợp lệ — không gửi MISA");
+                return;
+            }
+            if (blankToEmpty(order.getInvoiceCompanyName()).isBlank() || blankToEmpty(order.getInvoiceCompanyAddress()).isBlank()) {
+                markFailed(order, amounts, "HĐ công ty cần Tên công ty + Địa chỉ");
+                return;
+            }
+            order.setInvoiceTaxCode(VietnamTaxCode.normalize(buyerTax));
+        }
+
+        String refId = MeInvoiceAmounts.refIdFor(order.getOrderCode());
+        order.setInvoiceRefId(refId);
+        order.setInvoiceType(type);
+        order.setInvoiceStatus(STATUS_PENDING);
+        order.setInvoiceGrossAmount(amounts.gross());
+        order.setInvoiceNetAmount(amounts.net());
+        order.setInvoiceVatAmount(amounts.vat());
+        order.setInvoiceError(null);
+        shipmentOrderRepository.save(order);
+
+        try {
+            ObjectNode body = buildPublishBody(order, amounts, refId, type);
+            MisaMeInvoiceClient.PublishResult result = client.publish(body);
+            if (result.duplicated()) {
+                order.setInvoiceStatus(STATUS_DUPLICATE);
+                order.setInvoiceError(truncate("InvoiceDuplicated"));
+                order.setInvoiceIssuedAt(Instant.now());
+                shipmentOrderRepository.save(order);
+                LOG.info("MISA InvoiceDuplicated RefID={} order={}", refId, order.getOrderCode());
+                return;
+            }
+            order.setInvoiceStatus(STATUS_ISSUED);
+            order.setInvoiceTransactionId(result.transactionId());
+            order.setInvoiceNo(result.invNo());
+            order.setInvoiceSeries(result.invSeries() != null ? result.invSeries() : client.getInvSeries());
+            order.setInvoiceCode(result.invCode());
+            order.setInvoiceIssuedAt(Instant.now());
+            order.setInvoiceError(null);
+            shipmentOrderRepository.save(order);
+            LOG.info(
+                "MISA issued order={} type={} InvNo={} Tx={} Code={}",
+                order.getOrderCode(),
+                type,
+                result.invNo(),
+                result.transactionId(),
+                result.invCode()
+            );
+        } catch (Exception e) {
+            markFailed(order, amounts, e.getMessage());
+            LOG.warn("MISA issue failed order={}: {}", order.getOrderCode(), e.getMessage());
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public String viewLink(String orderCode) {
+        ShipmentOrder order = requireIssued(orderCode);
+        if (blankToEmpty(order.getInvoiceTransactionId()).isBlank()) {
+            throw new BadRequestAlertException("Thiếu TransactionID — không xem được (trùng RefID?)", ENTITY, "noTransactionId");
+        }
+        return client.publishViewLink(order.getInvoiceTransactionId());
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] downloadPdf(String orderCode) {
+        ShipmentOrder order = requireIssued(orderCode);
+        if (blankToEmpty(order.getInvoiceTransactionId()).isBlank()) {
+            throw new BadRequestAlertException("Thiếu TransactionID — không tải PDF", ENTITY, "noTransactionId");
+        }
+        return client.downloadPdf(List.of(order.getInvoiceTransactionId()));
+    }
+
+    /** Lúc giao thành công gần nhất (null nếu chưa giao). */
+    public Instant deliveredAt(ShipmentOrder order) {
+        if (order.getId() == null) {
+            return null;
+        }
+        return orderEventRepository
+            .latestEventAtByOrderIds(List.of(order.getId()), InvoicePolicy.DELIVERED_ACTIONS)
             .stream()
             .map(row -> (Instant) row[1])
             .filter(java.util.Objects::nonNull)
             .findFirst()
             .orElse(null);
-        if (deliveredAt == null) {
-            return;
+    }
+
+    /** Đã tới mốc thanh toán: gửi trả = đã nhập kho gửi; còn lại = đã giao thành công. */
+    boolean paymentReached(ShipmentOrder order) {
+        OrderStatus s = order.getStatus();
+        if (s == OrderStatus.DRAFT || s == OrderStatus.CANCELLED) {
+            return false;
         }
-        LocalDate deliveredDay = deliveredAt.atZone(VN).toLocalDate();
-        if (deliveredDay.isBefore(LocalDate.now(VN))) {
+        if (InvoicePolicy.paidAtWarehouseIn(order)) {
+            return order.getPickedUpAt() != null;
+        }
+        return s == OrderStatus.DELIVERED;
+    }
+
+    private void assertPaymentReached(ShipmentOrder order) {
+        if (!paymentReached(order)) {
+            String msg = InvoicePolicy.paidAtWarehouseIn(order)
+                ? "Đơn gửi trả chưa nhập kho gửi — chưa xuất được hoá đơn"
+                : "Chỉ xuất hoá đơn cho đơn đã giao thành công";
+            throw new BadRequestAlertException(msg, ENTITY, "notDelivered");
+        }
+    }
+
+    private void assertNotIssuedOrMarked(ShipmentOrder order, String suffix) {
+        if (isIssued(order)) {
+            String no = blankToEmpty(order.getInvoiceNo());
             throw new BadRequestAlertException(
-                "Chỉ xuất hoá đơn trong ngày giao thành công (" + deliveredDay.format(DAY_FMT) + ") — đã quá hạn",
+                "Đơn đã xuất hoá đơn" + (no.isEmpty() ? "" : " số " + no) + " — " + suffix,
                 ENTITY,
-                "invoiceDayPassed"
+                "alreadyIssued"
             );
         }
+        if (STATUS_MANUAL.equals(order.getInvoiceStatus())) {
+            throw new BadRequestAlertException("Kế toán đã tích đã xuất HĐ cá nhân — " + suffix, ENTITY, "invoiceMarked");
+        }
+    }
+
+    private void requireClient() {
+        if (!client.isEnabled()) {
+            throw new BadRequestAlertException("Chưa bật kết nối MISA — không xuất được hoá đơn", ENTITY, "misaDisabled");
+        }
+    }
+
+    private ShipmentOrder requireOrder(String orderCode) {
+        return shipmentOrderRepository
+            .findOneByOrderCodeOrDraftCode(orderCode.trim())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderCode));
+    }
+
+    private ShipmentOrder requireIssued(String orderCode) {
+        ShipmentOrder order = requireOrder(orderCode);
+        if (!isIssued(order)) {
+            throw new BadRequestAlertException("Đơn chưa có HĐĐT (status=" + order.getInvoiceStatus() + ")", ENTITY, "notIssued");
+        }
+        return order;
+    }
+
+    private static String issueDetail(ShipmentOrder order) {
+        if (!isIssued(order)) {
+            return "Xuất HĐĐT MISA lỗi: " + blankToEmpty(order.getInvoiceError());
+        }
+        String no = order.getInvoiceNo() != null ? " số " + order.getInvoiceNo() : "";
+        if (InvoicePolicy.TYPE_COMPANY.equals(order.getInvoiceType())) {
+            return "Xuất HĐĐT MISA DN" + no + " · MST " + order.getInvoiceTaxCode() + " · gửi " + blankToEmpty(order.getInvoiceEmail());
+        }
+        return "Xuất HĐĐT MISA cá nhân" + no + " · " + blankToEmpty(InvoicePolicy.payerName(order));
     }
 
     /** Kiểm tra + ghi thông tin người mua (MST, tên, địa chỉ, email đều bắt buộc). */
@@ -252,128 +498,36 @@ public class MeInvoiceIssueService {
         orderEventRepository.save(event);
     }
 
-    @Transactional
-    public void issueForOrder(ShipmentOrder order) {
-        if (!client.isEnabled()) {
-            LOG.debug("MISA disabled — skip {}", order.getOrderCode());
-            return;
-        }
-        if (order.getStatus() != OrderStatus.DELIVERED) {
-            markSkipped(order, "Not DELIVERED");
-            return;
-        }
-        if (isAlreadyIssued(order)) {
-            LOG.info("MISA already issued for {} status={}", order.getOrderCode(), order.getInvoiceStatus());
-            return;
-        }
-        if (issueOnlyWhenRequested && !Boolean.TRUE.equals(order.getInvoiceRequested())) {
-            markSkipped(order, "invoiceRequested=false");
-            return;
-        }
-
-        MeInvoiceAmounts.Breakdown amounts = MeInvoiceAmounts.fromOrder(order);
-        if (amounts.gross().signum() <= 0) {
-            markSkipped(order, "gross=0");
-            return;
-        }
-
-        String buyerTax = blankToEmpty(order.getInvoiceTaxCode());
-        if (!buyerTax.isBlank()) {
-            if (!VietnamTaxCode.isValid(buyerTax)) {
-                markFailed(order, amounts, "MST người mua không hợp lệ — không gửi MISA");
-                return;
-            }
-            if (blankToEmpty(order.getInvoiceCompanyName()).isBlank() || blankToEmpty(order.getInvoiceCompanyAddress()).isBlank()) {
-                markFailed(order, amounts, "HĐ công ty cần Tên công ty + Địa chỉ");
-                return;
-            }
-            buyerTax = VietnamTaxCode.normalize(buyerTax);
-            order.setInvoiceTaxCode(buyerTax);
-        } else if (Boolean.TRUE.equals(order.getInvoiceRequested())) {
-            markFailed(order, amounts, "Thiếu MST người mua — không gửi MISA");
-            return;
-        }
-
-        String refId = MeInvoiceAmounts.refIdFor(order.getOrderCode());
-        order.setInvoiceRefId(refId);
-        order.setInvoiceStatus(STATUS_PENDING);
-        order.setInvoiceGrossAmount(amounts.gross());
-        order.setInvoiceNetAmount(amounts.net());
-        order.setInvoiceVatAmount(amounts.vat());
-        order.setInvoiceError(null);
-        shipmentOrderRepository.save(order);
-
-        try {
-            ObjectNode body = buildPublishBody(order, amounts, refId);
-            MisaMeInvoiceClient.PublishResult result = client.publish(body);
-            if (result.duplicated()) {
-                order.setInvoiceStatus(STATUS_DUPLICATE);
-                order.setInvoiceError(truncate("InvoiceDuplicated"));
-                order.setInvoiceIssuedAt(Instant.now());
-                shipmentOrderRepository.save(order);
-                LOG.info("MISA InvoiceDuplicated RefID={} order={}", refId, order.getOrderCode());
-                return;
-            }
-            order.setInvoiceStatus(STATUS_ISSUED);
-            order.setInvoiceTransactionId(result.transactionId());
-            order.setInvoiceNo(result.invNo());
-            order.setInvoiceSeries(result.invSeries() != null ? result.invSeries() : client.getInvSeries());
-            order.setInvoiceCode(result.invCode());
-            order.setInvoiceIssuedAt(Instant.now());
-            order.setInvoiceError(null);
-            shipmentOrderRepository.save(order);
-            LOG.info(
-                "MISA issued order={} InvNo={} Tx={} Code={}",
-                order.getOrderCode(),
-                result.invNo(),
-                result.transactionId(),
-                result.invCode()
-            );
-        } catch (Exception e) {
-            markFailed(order, amounts, e.getMessage());
-            LOG.warn("MISA issue failed order={}: {}", order.getOrderCode(), e.getMessage());
-        }
-    }
-
-    @Transactional(readOnly = true)
-    public String viewLink(String orderCode) {
-        ShipmentOrder order = requireIssued(orderCode);
-        if (blankToEmpty(order.getInvoiceTransactionId()).isBlank()) {
-            throw new BadRequestAlertException("Thiếu TransactionID — không xem được (trùng RefID?)", ENTITY, "noTransactionId");
-        }
-        return client.publishViewLink(order.getInvoiceTransactionId());
-    }
-
-    @Transactional(readOnly = true)
-    public byte[] downloadPdf(String orderCode) {
-        ShipmentOrder order = requireIssued(orderCode);
-        if (blankToEmpty(order.getInvoiceTransactionId()).isBlank()) {
-            throw new BadRequestAlertException("Thiếu TransactionID — không tải PDF", ENTITY, "noTransactionId");
-        }
-        return client.downloadPdf(List.of(order.getInvoiceTransactionId()));
-    }
-
-    private ShipmentOrder requireIssued(String orderCode) {
-        ShipmentOrder order = shipmentOrderRepository
-            .findOneByOrderCodeOrDraftCode(orderCode)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderCode));
-        String st = order.getInvoiceStatus();
-        if (!STATUS_ISSUED.equals(st) && !STATUS_DUPLICATE.equals(st)) {
-            throw new BadRequestAlertException("Đơn chưa có HĐĐT (status=" + st + ")", ENTITY, "notIssued");
-        }
-        return order;
-    }
-
-    private ObjectNode buildPublishBody(ShipmentOrder order, MeInvoiceAmounts.Breakdown amounts, String refId) {
+    /**
+     * Cá nhân: tên + SĐT người trả cước, không MST, hình thức "TM".
+     * Doanh nghiệp: chỉ thông tin công ty (MST, tên, địa chỉ, email) — không truyền tên/SĐT người.
+     */
+    ObjectNode buildPublishBody(ShipmentOrder order, MeInvoiceAmounts.Breakdown amounts, String refId, String type) {
         String invDate = LocalDate.now(VN).toString();
-        String email = firstNonBlank(order.getInvoiceEmail(), null);
-        boolean sendEmail = email != null && !email.isBlank();
+        boolean company = InvoicePolicy.TYPE_COMPANY.equals(type);
 
-        String legalName = firstNonBlank(order.getInvoiceCompanyName(), order.getSenderName(), order.getReceiverName(), "Khach le");
-        String fullName = firstNonBlank(order.getSenderName(), order.getReceiverName(), legalName);
-        String phone = firstNonBlank(order.getSenderPhone(), order.getReceiverPhone(), "");
-        String address = blankToEmpty(order.getInvoiceCompanyAddress());
-        String buyerTax = blankToEmpty(order.getInvoiceTaxCode());
+        String legalName;
+        String fullName;
+        String phone;
+        String address;
+        String buyerTax;
+        String email;
+        if (company) {
+            legalName = blankToEmpty(order.getInvoiceCompanyName());
+            fullName = "";
+            phone = "";
+            address = blankToEmpty(order.getInvoiceCompanyAddress());
+            buyerTax = blankToEmpty(order.getInvoiceTaxCode());
+            email = blankToEmpty(order.getInvoiceEmail());
+        } else {
+            legalName = firstNonBlank(InvoicePolicy.payerName(order), "Khách lẻ");
+            fullName = legalName;
+            phone = blankToEmpty(InvoicePolicy.payerPhone(order));
+            address = "";
+            buyerTax = "";
+            email = "";
+        }
+        boolean sendEmail = !email.isBlank();
 
         ObjectNode invoice = objectMapper.createObjectNode();
         invoice.put("RefID", refId);
@@ -381,15 +535,15 @@ public class MeInvoiceIssueService {
         invoice.put("InvDate", invDate);
         invoice.put("CurrencyCode", "VND");
         invoice.put("ExchangeRate", 1);
-        invoice.put("PaymentMethodName", "TM/CK");
+        invoice.put("PaymentMethodName", company ? "TM/CK" : "TM");
         invoice.put("IsInvoiceCalculatingMachine", true);
         invoice.put("BuyerLegalName", legalName);
         invoice.put("BuyerTaxCode", buyerTax);
         invoice.put("BuyerAddress", address);
-        invoice.put("BuyerEmail", blankToEmpty(email));
+        invoice.put("BuyerEmail", email);
         invoice.put("IsSendEmail", sendEmail);
-        invoice.put("ReceiverName", fullName);
-        invoice.put("ReceiverEmail", blankToEmpty(email));
+        invoice.put("ReceiverName", company ? legalName : fullName);
+        invoice.put("ReceiverEmail", email);
         invoice.put("BuyerPhoneNumber", phone);
         invoice.put("BuyerFullName", fullName);
 
@@ -441,7 +595,7 @@ public class MeInvoiceIssueService {
     }
 
     private void markSkipped(ShipmentOrder order, String reason) {
-        if (STATUS_ISSUED.equals(order.getInvoiceStatus()) || STATUS_DUPLICATE.equals(order.getInvoiceStatus())) {
+        if (isIssued(order)) {
             return;
         }
         order.setInvoiceStatus(STATUS_SKIPPED);
@@ -459,7 +613,7 @@ public class MeInvoiceIssueService {
         shipmentOrderRepository.save(order);
     }
 
-    private static boolean isAlreadyIssued(ShipmentOrder order) {
+    static boolean isIssued(ShipmentOrder order) {
         String st = order.getInvoiceStatus();
         return STATUS_ISSUED.equals(st) || STATUS_DUPLICATE.equals(st);
     }

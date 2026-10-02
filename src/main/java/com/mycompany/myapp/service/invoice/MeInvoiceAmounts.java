@@ -17,14 +17,14 @@ public final class MeInvoiceAmounts {
     public static final BigDecimal VAT_FACTOR = new BigDecimal("1.1");
     public static final String VAT_RATE_NAME = "10%";
     public static final String ITEM_CODE = "DV-VANCHUYEN";
-    public static final String UNIT_NAME = "Chuyến";
+    public static final String UNIT_NAME = "Vận đơn";
 
     private MeInvoiceAmounts() {}
 
     /**
      * Tên hàng hóa/dịch vụ trên HĐĐT:
      * {@code Dịch vụ bưu chính chuyển phát hàng hóa từ {tỉnh gửi} đến {tỉnh nhận} Bill: {mã đơn}}.
-     * Tỉnh/TP lấy từ địa chỉ người gửi/nhận (đoạn cuối sau dấu phẩy); thiếu thì fallback VP.
+     * Tỉnh/TP lấy từ địa chỉ người gửi/nhận, thiếu thì từ địa chỉ/tên VP — luôn quy về tỉnh mới sau sáp nhập.
      */
     public static String itemNameFor(ShipmentOrder order) {
         String from = placeFromAddressOrOffice(order.getPickupAddress(), order.getFromOffice());
@@ -41,8 +41,18 @@ public final class MeInvoiceAmounts {
         return name.length() > 500 ? name.substring(0, 500) : name;
     }
 
-    /** Ưu tiên tỉnh/TP từ địa chỉ đầy đủ; thiếu thì lấy từ địa chỉ/tên VP. */
+    /** Tỉnh mới tìm được trong địa chỉ → địa chỉ VP → tên VP; không nhận ra tỉnh nào thì giữ cách đọc đoạn cuối địa chỉ. */
     static String placeFromAddressOrOffice(String address, Office office) {
+        for (String text : new String[] {
+            address,
+            office != null ? office.getAddress() : null,
+            office != null ? office.getName() : null,
+        }) {
+            String merged = ProvinceMerger.find(text);
+            if (!merged.isBlank()) {
+                return merged;
+            }
+        }
         String fromAddress = provinceFromAddress(address);
         if (!fromAddress.isBlank()) {
             return fromAddress;
