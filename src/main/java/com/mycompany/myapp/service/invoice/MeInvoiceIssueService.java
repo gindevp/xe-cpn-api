@@ -162,6 +162,9 @@ public class MeInvoiceIssueService {
         if (isIssued(order) || STATUS_MANUAL.equals(st) || STATUS_PENDING.equals(st)) {
             return "ALREADY";
         }
+        if (inReturnFlow(order)) {
+            return "RETURNING";
+        }
         if (!paymentReached(order)) {
             return "NOT_PAID_YET";
         }
@@ -189,6 +192,9 @@ public class MeInvoiceIssueService {
         }
         if (Boolean.TRUE.equals(order.getOnCredit())) {
             return "ON_CREDIT";
+        }
+        if (inReturnFlow(order)) {
+            return "RETURNING";
         }
         if (!paymentReached(order)) {
             return "NOT_PAID_YET";
@@ -611,6 +617,11 @@ public class MeInvoiceIssueService {
         order.setInvoiceVatAmount(amounts.vat());
         order.setInvoiceError(truncate(message));
         shipmentOrderRepository.save(order);
+    }
+
+    /** Đơn huỷ giao / chuyển hoàn: không tự xuất, không xuất bù (kế toán xử lý tay). */
+    static boolean inReturnFlow(ShipmentOrder order) {
+        return order.getStatus() == OrderStatus.RETURNING || order.getStatus() == OrderStatus.RETURNED;
     }
 
     static boolean isIssued(ShipmentOrder order) {

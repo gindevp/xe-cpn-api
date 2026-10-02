@@ -214,20 +214,17 @@ public class InvoiceAutoIssueService {
             .toList();
     }
 
-    /** Đơn đang hoàn / đã hoàn mà chưa thu đồng nào và chưa có HĐ: không đưa lên màn kế toán. */
+    /** Đơn đang hoàn / đã hoàn chưa có HĐ: không đưa lên màn kế toán (không tự xuất, không xuất bù). */
     static boolean hiddenFromList(ShipmentOrder o) {
-        if (o.getStatus() != OrderStatus.RETURNING && o.getStatus() != OrderStatus.RETURNED) {
+        if (!MeInvoiceIssueService.inReturnFlow(o)) {
             return false;
         }
         String st = o.getInvoiceStatus();
-        if (
+        return !(
             MeInvoiceIssueService.isIssued(o) ||
             MeInvoiceIssueService.STATUS_MANUAL.equals(st) ||
             MeInvoiceIssueService.STATUS_PENDING.equals(st)
-        ) {
-            return false;
-        }
-        return o.getPaidAmount() == null || o.getPaidAmount().signum() <= 0;
+        );
     }
 
     static InvoiceRow toRow(ShipmentOrder o, Instant paidAt) {

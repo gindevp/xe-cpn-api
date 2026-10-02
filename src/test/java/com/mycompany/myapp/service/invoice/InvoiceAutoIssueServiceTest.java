@@ -131,7 +131,7 @@ class InvoiceAutoIssueServiceTest {
     }
 
     @Test
-    void list_hidesUnpaidReturningOrders_keepsPaidOrIssuedOnes() {
+    void list_hidesReturningOrdersWithoutInvoice_keepsIssuedOnes() {
         when(orderRepo.findInvoiceWarehouseInBetween(any(), any(), any())).thenReturn(
             List.of(
                 senderPaysOrder("RET_UNPAID", OrderStatus.RETURNING, "0", null),
@@ -150,12 +150,12 @@ class InvoiceAutoIssueServiceTest {
             .map(InvoiceAutoIssueService.InvoiceRow::orderCode)
             .toList();
 
-        assertThat(codes).containsExactlyInAnyOrder("RET_PAID", "RET_ISSUED", "RET_MANUAL", "NORMAL_UNPAID");
+        assertThat(codes).containsExactlyInAnyOrder("RET_ISSUED", "RET_MANUAL", "NORMAL_UNPAID");
     }
 
     @Test
-    void list_hidesUnpaidReturnedAfterDelivery() {
-        ShipmentOrder returned = senderPaysOrder("DLV_RET", OrderStatus.RETURNED, "0", null);
+    void list_hidesReturnedAfterDelivery() {
+        ShipmentOrder returned = senderPaysOrder("DLV_RET", OrderStatus.RETURNED, "395000", null);
         returned.setPaymentTerm(PaymentTerm.NHAN_TRA);
         ShipmentOrder delivered = senderPaysOrder("DLV_OK", OrderStatus.DELIVERED, "395000", null);
         delivered.setPaymentTerm(PaymentTerm.NHAN_TRA);

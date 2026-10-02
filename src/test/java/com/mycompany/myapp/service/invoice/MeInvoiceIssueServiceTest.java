@@ -366,6 +366,32 @@ class MeInvoiceIssueServiceTest {
     }
 
     @Test
+    void backfill_returningOrReturned_skipped_evenWhenPaid() {
+        order.setPaymentTerm(PaymentTerm.GUI_TRA);
+        order.setPickedUpAt(Instant.parse("2026-10-01T02:00:00Z"));
+        order.setFareAmount(new BigDecimal("30000"));
+        order.setPaidAmount(new BigDecimal("30000"));
+        order.setStatus(OrderStatus.RETURNING);
+        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("RETURNING");
+        order.setStatus(OrderStatus.RETURNED);
+        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("RETURNING");
+        verify(client, never()).publish(any());
+    }
+
+    @Test
+    void autoIssue_returning_skipped_evenWhenPaid() {
+        order.setId(7L);
+        order.setPaymentTerm(PaymentTerm.GUI_TRA);
+        order.setPickedUpAt(Instant.parse("2026-10-01T02:00:00Z"));
+        order.setFareAmount(new BigDecimal("30000"));
+        order.setPaidAmount(new BigDecimal("30000"));
+        order.setStatus(OrderStatus.RETURNING);
+        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        assertThat(service.autoIssueOne(7L)).isEqualTo("RETURNING");
+        verify(client, never()).publish(any());
+    }
+
+    @Test
     void autoIssue_onCredit_skipped() {
         order.setId(7L);
         order.setOnCredit(true);
