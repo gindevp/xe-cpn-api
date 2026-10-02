@@ -19,12 +19,12 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -121,6 +121,7 @@ public class AutoCallService {
         if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled()) || !cfg.isAutocallApiKeyConfigured()) {
             return;
         }
+        autoCallRepository.skipScheduledForOrder(order.getId(), "SUPERSEDED", "Thay bằng lệnh gọi mới");
         autoCallRepository.clearRetriesForOrder(order.getId());
         AutoCall call = new AutoCall();
         call.setOrder(order);
@@ -142,6 +143,17 @@ public class AutoCallService {
         }
         call.setPhone(phone);
         call.setStatus("PENDING");
+        Instant at = fitCallWindow(cfg, call.getCreatedAt());
+        if (at.isAfter(call.getCreatedAt())) {
+            call.setNextRetryAt(at);
+            autoCallRepository.save(call);
+            appendEvent(
+                order,
+                "AUTO_CALL_REQUEST",
+                sandboxPrefix(call) + "Gọi giao → " + phone + " · ngoài khung giờ gọi, hẹn gọi lúc " + RETRY_AT_FMT.format(at)
+            );
+            return;
+        }
         autoCallRepository.save(call);
         appendEvent(order, "AUTO_CALL_REQUEST", sandboxPrefix(call) + "Gọi giao → " + phone);
         Long id = call.getId();
@@ -276,8 +288,6 @@ public class AutoCallService {
         SEND_ERROR,
     }
 
-    record RetrySlot(Instant at, int day, int daySeq) {}
-
     static RetryReason retryReason(AutoCall call) {
         if ("ERROR".equals(call.getStatus())) return RetryReason.SEND_ERROR;
         if (!"FAILED".equals(call.getStatus())) return null;
@@ -301,34 +311,47 @@ public class AutoCallService {
         }
     }
 
-    /**
-     * Lượt gọi lại kế tiếp sau {@code prev}: cùng ngày nếu còn lượt và còn trong khung giờ,
-     * không thì sang đầu khung giờ ngày hôm sau (nếu bật). Null = hết lượt.
-     */
-    static RetrySlot nextRetrySlot(IntegrationConfig cfg, AutoCall prev, Instant now) {
-        int max = cfg.getAutocallRetryMax() != null ? cfg.getAutocallRetryMax() : 2;
-        int interval = cfg.getAutocallRetryIntervalMin() != null ? cfg.getAutocallRetryIntervalMin() : 30;
-        int maxDays = cfg.getAutocallRetryMaxDays() != null ? cfg.getAutocallRetryMaxDays() : 1;
+    static final List<Integer> DEFAULT_RETRY_INTERVALS = List.of(60, 120);
+
+    /** "60,120" → [60, 120]: phút chờ trước lần gọi lại thứ 1, 2, … */
+    static List<Integer> retryIntervals(IntegrationConfig cfg) {
+        String raw = cfg.getAutocallRetryIntervals();
+        if (raw == null) return DEFAULT_RETRY_INTERVALS;
+        List<Integer> out = new ArrayList<>();
+        for (String part : raw.split(",")) {
+            try {
+                int v = Integer.parseInt(part.trim());
+                if (v > 0) out.add(v);
+            } catch (NumberFormatException ignored) {
+                // bỏ phần tử hỏng
+            }
+        }
+        return out;
+    }
+
+    /** Giữ nguyên nếu trong khung giờ gọi; trước giờ mở → giờ mở cùng ngày; sau giờ đóng → giờ mở hôm sau. */
+    static Instant fitCallWindow(IntegrationConfig cfg, Instant at) {
         LocalTime from = parseHhmm(cfg.getAutocallCallFrom(), LocalTime.of(8, 0));
         LocalTime to = parseHhmm(cfg.getAutocallCallTo(), LocalTime.of(20, 0));
-        int day = prev.getRetryDay() != null ? prev.getRetryDay() : 0;
-        int daySeq = prev.getRetryDaySeq() != null ? prev.getRetryDaySeq() : 0;
-        LocalDate prevDate = (prev.getCreatedAt() != null ? prev.getCreatedAt() : now).atZone(VN).toLocalDate();
+        ZonedDateTime z = at.atZone(VN);
+        if (z.toLocalTime().isBefore(from)) {
+            return z.toLocalDate().atTime(from).atZone(VN).toInstant();
+        }
+        if (z.toLocalTime().isAfter(to)) {
+            return z.toLocalDate().plusDays(1).atTime(from).atZone(VN).toInstant();
+        }
+        return at;
+    }
 
-        ZonedDateTime cand = now.plus(Duration.ofMinutes(interval)).atZone(VN);
-        if (daySeq < max && cand.toLocalDate().equals(prevDate)) {
-            if (cand.toLocalTime().isBefore(from)) {
-                cand = prevDate.atTime(from).atZone(VN);
-            }
-            if (!cand.toLocalTime().isAfter(to)) {
-                return new RetrySlot(cand.toInstant(), day, daySeq + 1);
-            }
-        }
-        if (Boolean.TRUE.equals(cfg.getAutocallRetryNextDay()) && day < maxDays) {
-            Instant at = prevDate.plusDays(1).atTime(from).atZone(VN).toInstant();
-            return new RetrySlot(at.isBefore(now) ? now : at, day + 1, 0);
-        }
-        return null;
+    /**
+     * Giờ gọi lại kế tiếp sau {@code prev} (kết quả có lúc {@code now}): {@code now} + khoảng cách của lần đó,
+     * rơi ngoài khung giờ thì dời sang đầu khung kế tiếp. Null = đã gọi đủ số lần.
+     */
+    static Instant nextRetryAt(IntegrationConfig cfg, AutoCall prev, Instant now) {
+        List<Integer> intervals = retryIntervals(cfg);
+        int done = nz(prev.getRetryNo());
+        if (done >= intervals.size()) return null;
+        return fitCallWindow(cfg, now.plus(Duration.ofMinutes(intervals.get(done))));
     }
 
     private void scheduleRetry(AutoCall call) {
@@ -338,17 +361,17 @@ public class AutoCallService {
         if (!retryAllowed(cfg, retryReason(call))) return;
         ShipmentOrder order = call.getOrder();
         if (order == null || RETRY_STOP_STATUSES.contains(order.getStatus())) return;
-        RetrySlot slot = nextRetrySlot(cfg, call, Instant.now());
-        if (slot == null) {
+        Instant at = nextRetryAt(cfg, call, Instant.now());
+        if (at == null) {
             appendEvent(order, "AUTO_CALL_RETRY", sandboxPrefix(call) + "Hết lượt gọi lại theo cấu hình");
             return;
         }
-        call.setNextRetryAt(slot.at());
+        call.setNextRetryAt(at);
         autoCallRepository.save(call);
         appendEvent(
             order,
             "AUTO_CALL_RETRY",
-            sandboxPrefix(call) + "Hẹn gọi lại lần " + (nz(call.getRetryNo()) + 1) + " lúc " + RETRY_AT_FMT.format(slot.at())
+            sandboxPrefix(call) + "Hẹn gọi lại lần " + (nz(call.getRetryNo()) + 1) + " lúc " + RETRY_AT_FMT.format(at)
         );
     }
 
@@ -357,7 +380,14 @@ public class AutoCallService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void processDueRetries() {
         try {
-            transactionTemplate.executeWithoutResult(s -> autoCallRepository.clearRetriesForOrderStatuses(RETRY_STOP_STATUSES));
+            transactionTemplate.executeWithoutResult(s -> {
+                autoCallRepository.skipScheduledForOrderStatuses(
+                    RETRY_STOP_STATUSES,
+                    "ORDER_CLOSED",
+                    "Đơn đã giao / huỷ / hoàn trước giờ gọi"
+                );
+                autoCallRepository.clearRetriesForOrderStatuses(RETRY_STOP_STATUSES);
+            });
             for (Long id : autoCallRepository.findDueRetryIds(Instant.now())) {
                 Long newId = transactionTemplate.execute(s -> fireRetry(id, Instant.now()));
                 if (newId != null) {
@@ -369,13 +399,19 @@ public class AutoCallService {
         }
     }
 
-    /** Tạo cuộc gọi lại (refId mới) từ cuộc gọi {@code prevId} đã đến giờ hẹn; trả id cuộc gọi mới cần gửi. */
+    /**
+     * Cuộc {@code prevId} đã đến giờ hẹn: chưa gửi lần nào (chờ khung giờ) → trả chính nó để gửi;
+     * đã có kết quả → tạo cuộc gọi lại (refId mới) và trả id cuộc mới cần gửi.
+     */
     Long fireRetry(Long prevId, Instant now) {
         AutoCall prev = autoCallRepository.findById(prevId).orElse(null);
         if (prev == null || prev.getNextRetryAt() == null || prev.getNextRetryAt().isAfter(now)) {
             return null;
         }
         prev.setNextRetryAt(null);
+        if (isScheduledUnsent(prev)) {
+            return fireScheduled(prev, now);
+        }
         if ("ERROR".equals(prev.getStatus())) {
             prev.setStatus("FAILED");
             prev.setResult("send_error");
@@ -404,9 +440,6 @@ public class AutoCallService {
             appendEvent(order, "AUTO_CALL_SKIPPED", "Không gọi lại được: SĐT người nhận không hợp lệ");
             return null;
         }
-        LocalDate prevDate = (prev.getCreatedAt() != null ? prev.getCreatedAt() : now).atZone(VN).toLocalDate();
-        boolean sameDay = now.atZone(VN).toLocalDate().equals(prevDate);
-
         AutoCall call = new AutoCall();
         call.setOrder(order);
         call.setCallType(prev.getCallType());
@@ -418,10 +451,34 @@ public class AutoCallService {
         call.setPhone(phone);
         call.setStatus("PENDING");
         call.setRetryNo(nz(prev.getRetryNo()) + 1);
-        call.setRetryDay(sameDay ? nz(prev.getRetryDay()) : nz(prev.getRetryDay()) + 1);
-        call.setRetryDaySeq(sameDay ? nz(prev.getRetryDaySeq()) + 1 : 0);
         autoCallRepository.save(call);
         appendEvent(order, "AUTO_CALL_REQUEST", sandboxPrefix(call) + "Gọi lại lần " + call.getRetryNo() + " → " + phone);
+        return call.getId();
+    }
+
+    /** PENDING chưa có callId và đang có giờ hẹn = cuộc gọi chờ tới khung giờ gọi, chưa gửi HHVN. */
+    static boolean isScheduledUnsent(AutoCall call) {
+        return "PENDING".equals(call.getStatus()) && call.getCallId() == null;
+    }
+
+    private Long fireScheduled(AutoCall call, Instant now) {
+        call.setUpdatedAt(now);
+        IntegrationConfig cfg = currentConfig();
+        ShipmentOrder order = call.getOrder();
+        String skip = null;
+        if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled())) {
+            skip = "Auto Call đang tắt";
+        } else if (order == null || RETRY_STOP_STATUSES.contains(order.getStatus())) {
+            skip = "Đơn đã giao / huỷ / hoàn trước giờ gọi";
+        }
+        if (skip != null) {
+            call.setStatus("SKIPPED");
+            call.setErrorCode("NOT_SENT");
+            call.setErrorMessage(skip);
+            autoCallRepository.save(call);
+            return null;
+        }
+        autoCallRepository.save(call);
         return call.getId();
     }
 
@@ -433,10 +490,15 @@ public class AutoCallService {
             .filter(c -> c.getOrder() != null && order.getId().equals(c.getOrder().getId()))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy cuộc gọi"));
         if (call.getNextRetryAt() != null) {
+            boolean unsent = isScheduledUnsent(call);
             call.setNextRetryAt(null);
+            if (unsent) {
+                call.setStatus("CANCELLED");
+                call.setResult("cancelled");
+            }
             call.setUpdatedAt(Instant.now());
             autoCallRepository.save(call);
-            appendEvent(order, "AUTO_CALL_RETRY", "Đã dừng gọi lại");
+            appendEvent(order, "AUTO_CALL_RETRY", unsent ? "Đã huỷ cuộc gọi đang chờ khung giờ" : "Đã dừng gọi lại");
         }
         return list(orderCode);
     }
@@ -451,6 +513,9 @@ public class AutoCallService {
         IntegrationConfig cfg = requireKeyConfigured();
         for (AutoCall call : autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(order.getId())) {
             if (FINAL_STATUSES.contains(call.getStatus()) || "SKIPPED".equals(call.getStatus())) {
+                continue;
+            }
+            if (call.getNextRetryAt() != null && isScheduledUnsent(call)) {
                 continue;
             }
             if (call.getCallId() == null) {
@@ -481,6 +546,7 @@ public class AutoCallService {
         if (call.getCallId() == null) {
             if (
                 "PENDING".equals(call.getStatus()) &&
+                call.getNextRetryAt() == null &&
                 call.getCreatedAt() != null &&
                 call.getCreatedAt().isAfter(Instant.now().minusSeconds(30))
             ) {

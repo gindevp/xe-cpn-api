@@ -241,19 +241,14 @@ public class ConfigFacadeService {
             current.setAutocallEnabled(false);
         }
         if (incoming.getAutocallRetryEnabled() != null) current.setAutocallRetryEnabled(incoming.getAutocallRetryEnabled());
-        if (incoming.getAutocallRetryMax() != null) current.setAutocallRetryMax(clamp(incoming.getAutocallRetryMax(), 0, 10));
-        if (incoming.getAutocallRetryIntervalMin() != null) {
-            current.setAutocallRetryIntervalMin(clamp(incoming.getAutocallRetryIntervalMin(), 5, 720));
+        if (incoming.getAutocallRetryIntervals() != null) {
+            current.setAutocallRetryIntervals(normalizeRetryIntervals(incoming.getAutocallRetryIntervals()));
         }
         if (incoming.getAutocallRetryNoAnswer() != null) current.setAutocallRetryNoAnswer(incoming.getAutocallRetryNoAnswer());
         if (incoming.getAutocallRetryCarrierError() != null) {
             current.setAutocallRetryCarrierError(incoming.getAutocallRetryCarrierError());
         }
         if (incoming.getAutocallRetrySendError() != null) current.setAutocallRetrySendError(incoming.getAutocallRetrySendError());
-        if (incoming.getAutocallRetryNextDay() != null) current.setAutocallRetryNextDay(incoming.getAutocallRetryNextDay());
-        if (incoming.getAutocallRetryMaxDays() != null) {
-            current.setAutocallRetryMaxDays(clamp(incoming.getAutocallRetryMaxDays(), 1, 7));
-        }
         String from = incoming.getAutocallCallFrom() != null
             ? normalizeHhmm(incoming.getAutocallCallFrom())
             : current.getAutocallCallFrom();
@@ -269,6 +264,28 @@ public class ConfigFacadeService {
         if (current.getAutocallRetryEnabled() == null) {
             current.setAutocallRetryEnabled(false);
         }
+    }
+
+    static final int MAX_RETRY_COUNT = 10;
+
+    /** "60, 120" → "60,120"; mỗi khoảng 5–1440 phút, tối đa 10 lần; "" = không gọi lại. */
+    static String normalizeRetryIntervals(String raw) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String part : raw.split(",")) {
+            String p = part.trim();
+            if (p.isEmpty()) continue;
+            int v;
+            try {
+                v = Integer.parseInt(p);
+            } catch (NumberFormatException e) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Khoảng cách gọi lại phải là số phút");
+            }
+            out.add(String.valueOf(clamp(v, 5, 1440)));
+        }
+        if (out.size() > MAX_RETRY_COUNT) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tối đa " + MAX_RETRY_COUNT + " lần gọi lại");
+        }
+        return String.join(",", out);
     }
 
     private static int clamp(int v, int min, int max) {

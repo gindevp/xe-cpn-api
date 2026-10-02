@@ -25,6 +25,26 @@ public interface AutoCallRepository extends JpaRepository<AutoCall, Long> {
     @Query("select a.id from AutoCall a where a.nextRetryAt is not null and a.nextRetryAt <= :now order by a.nextRetryAt")
     List<Long> findDueRetryIds(@Param("now") Instant now);
 
+    /** Cuộc gọi chưa gửi đang chờ đến khung giờ gọi của các đơn ở {@code statuses} → bỏ qua. */
+    @Modifying
+    @Query(
+        "update AutoCall a set a.status = 'SKIPPED', a.errorCode = :code, a.errorMessage = :message, a.nextRetryAt = null " +
+        "where a.nextRetryAt is not null and a.status = 'PENDING' and a.callId is null and a.order.id in " +
+        "(select o.id from ShipmentOrder o where o.status in :statuses)"
+    )
+    int skipScheduledForOrderStatuses(
+        @Param("statuses") Collection<OrderStatus> statuses,
+        @Param("code") String code,
+        @Param("message") String message
+    );
+
+    @Modifying
+    @Query(
+        "update AutoCall a set a.status = 'SKIPPED', a.errorCode = :code, a.errorMessage = :message, a.nextRetryAt = null " +
+        "where a.nextRetryAt is not null and a.status = 'PENDING' and a.callId is null and a.order.id = :orderId"
+    )
+    int skipScheduledForOrder(@Param("orderId") Long orderId, @Param("code") String code, @Param("message") String message);
+
     /** Đơn đã giao / huỷ / hoàn → bỏ mọi lịch gọi lại. */
     @Modifying
     @Query(

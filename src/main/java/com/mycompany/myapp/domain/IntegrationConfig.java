@@ -102,12 +102,13 @@ public class IntegrationConfig implements Serializable {
     @Column(name = "autocall_retry_enabled", nullable = false)
     private Boolean autocallRetryEnabled;
 
-    /** Số lần gọi lại tối đa mỗi ngày (không tính lần gọi đầu của ngày). */
-    @Column(name = "autocall_retry_max")
-    private Integer autocallRetryMax;
-
-    @Column(name = "autocall_retry_interval_min")
-    private Integer autocallRetryIntervalMin;
+    /**
+     * Khoảng cách (phút) trước mỗi lần gọi lại, tính từ khi có kết quả cuộc trước — "60,120" = cuộc 2 sau cuộc 1
+     * 60', cuộc 3 sau cuộc 2 120'. Số phần tử = số lần gọi lại tối đa (tính trên mọi ngày).
+     */
+    @Size(max = 100)
+    @Column(name = "autocall_retry_intervals", length = 100)
+    private String autocallRetryIntervals;
 
     @Column(name = "autocall_retry_no_answer")
     private Boolean autocallRetryNoAnswer;
@@ -118,15 +119,10 @@ public class IntegrationConfig implements Serializable {
     @Column(name = "autocall_retry_send_error")
     private Boolean autocallRetrySendError;
 
-    /** Hết lượt / hết giờ gọi trong ngày mà chưa gọi được → hôm sau gọi lại từ đầu khung giờ. */
-    @Column(name = "autocall_retry_next_day")
-    private Boolean autocallRetryNextDay;
-
-    /** Số ngày gọi tiếp tối đa sau ngày đầu. */
-    @Column(name = "autocall_retry_max_days")
-    private Integer autocallRetryMaxDays;
-
-    /** Khung giờ được gọi lại, HH:mm giờ Việt Nam. */
+    /**
+     * Khung giờ được gọi (cả cuộc đầu lẫn gọi lại, khi bật gọi lại), HH:mm giờ Việt Nam.
+     * Ngoài khung → dời sang đầu khung kế tiếp.
+     */
     @Size(max = 5)
     @Column(name = "autocall_call_from", length = 5)
     private String autocallCallFrom;
@@ -363,20 +359,12 @@ public class IntegrationConfig implements Serializable {
         this.autocallRetryEnabled = autocallRetryEnabled;
     }
 
-    public Integer getAutocallRetryMax() {
-        return autocallRetryMax;
+    public String getAutocallRetryIntervals() {
+        return autocallRetryIntervals;
     }
 
-    public void setAutocallRetryMax(Integer autocallRetryMax) {
-        this.autocallRetryMax = autocallRetryMax;
-    }
-
-    public Integer getAutocallRetryIntervalMin() {
-        return autocallRetryIntervalMin;
-    }
-
-    public void setAutocallRetryIntervalMin(Integer autocallRetryIntervalMin) {
-        this.autocallRetryIntervalMin = autocallRetryIntervalMin;
+    public void setAutocallRetryIntervals(String autocallRetryIntervals) {
+        this.autocallRetryIntervals = autocallRetryIntervals;
     }
 
     public Boolean getAutocallRetryNoAnswer() {
@@ -401,22 +389,6 @@ public class IntegrationConfig implements Serializable {
 
     public void setAutocallRetrySendError(Boolean autocallRetrySendError) {
         this.autocallRetrySendError = autocallRetrySendError;
-    }
-
-    public Boolean getAutocallRetryNextDay() {
-        return autocallRetryNextDay;
-    }
-
-    public void setAutocallRetryNextDay(Boolean autocallRetryNextDay) {
-        this.autocallRetryNextDay = autocallRetryNextDay;
-    }
-
-    public Integer getAutocallRetryMaxDays() {
-        return autocallRetryMaxDays;
-    }
-
-    public void setAutocallRetryMaxDays(Integer autocallRetryMaxDays) {
-        this.autocallRetryMaxDays = autocallRetryMaxDays;
     }
 
     public String getAutocallCallFrom() {

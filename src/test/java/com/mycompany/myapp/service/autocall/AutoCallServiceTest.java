@@ -85,6 +85,8 @@ class AutoCallServiceTest {
         IntegrationConfig c = new IntegrationConfig();
         c.setAutocallEnabled(enabled);
         c.setAutocallApiKey(key);
+        c.setAutocallCallFrom("00:00");
+        c.setAutocallCallTo("23:59");
         return c;
     }
 
@@ -425,9 +427,8 @@ class AutoCallServiceTest {
     private static IntegrationConfig retryConfig() {
         IntegrationConfig c = config(true, KEY);
         c.setAutocallRetryEnabled(true);
-        c.setAutocallRetryMax(2);
-        c.setAutocallRetryIntervalMin(30);
-        c.setAutocallCallFrom("08:00");
+        c.setAutocallRetryIntervals("60,120");
+        c.setAutocallCallFrom("07:30");
         c.setAutocallCallTo("20:00");
         return c;
     }
@@ -436,49 +437,107 @@ class AutoCallServiceTest {
         return java.time.LocalDateTime.parse(localDateTime).atZone(AutoCallService.VN).toInstant();
     }
 
-    private AutoCall failedCallAt(String createdLocal, int day, int daySeq) {
+    private AutoCall failedCallAt(String createdLocal, int retryNo) {
         AutoCall c = pendingCall();
         c.setStatus("FAILED");
         c.setResult("not_answered");
         c.setCreatedAt(vn(createdLocal));
-        c.setRetryDay(day);
-        c.setRetryDaySeq(daySeq);
+        c.setRetryNo(retryNo);
         return c;
     }
 
     @Test
-    void nextRetrySlot_sameDay_afterInterval() {
-        AutoCall prev = failedCallAt("2026-10-02T09:00:00", 0, 0);
-        AutoCallService.RetrySlot s = AutoCallService.nextRetrySlot(retryConfig(), prev, vn("2026-10-02T09:05:00"));
-        assertThat(s.at()).isEqualTo(vn("2026-10-02T09:35:00"));
-        assertThat(s.day()).isZero();
-        assertThat(s.daySeq()).isEqualTo(1);
-    }
-
-    @Test
-    void nextRetrySlot_outOfTriesOrWindow_stopsWithoutNextDay_orMovesToNextMorning() {
+    void nextRetryAt_usesIntervalOfEachAttempt_thenStops() {
         IntegrationConfig cfg = retryConfig();
-        AutoCall used = failedCallAt("2026-10-02T09:00:00", 0, 2);
-        assertThat(AutoCallService.nextRetrySlot(cfg, used, vn("2026-10-02T09:05:00"))).isNull();
-        AutoCall late = failedCallAt("2026-10-02T19:50:00", 0, 0);
-        assertThat(AutoCallService.nextRetrySlot(cfg, late, vn("2026-10-02T19:55:00"))).isNull();
-
-        cfg.setAutocallRetryNextDay(true);
-        cfg.setAutocallRetryMaxDays(1);
-        AutoCallService.RetrySlot s = AutoCallService.nextRetrySlot(cfg, late, vn("2026-10-02T19:55:00"));
-        assertThat(s.at()).isEqualTo(vn("2026-10-03T08:00:00"));
-        assertThat(s.day()).isEqualTo(1);
-        assertThat(s.daySeq()).isZero();
-
-        AutoCall lastDay = failedCallAt("2026-10-03T19:50:00", 1, 2);
-        assertThat(AutoCallService.nextRetrySlot(cfg, lastDay, vn("2026-10-03T19:55:00"))).isNull();
+        assertThat(AutoCallService.nextRetryAt(cfg, failedCallAt("2026-10-02T09:00:00", 0), vn("2026-10-02T09:05:00"))).isEqualTo(
+            vn("2026-10-02T10:05:00")
+        );
+        assertThat(AutoCallService.nextRetryAt(cfg, failedCallAt("2026-10-02T10:05:00", 1), vn("2026-10-02T10:10:00"))).isEqualTo(
+            vn("2026-10-02T12:10:00")
+        );
+        assertThat(AutoCallService.nextRetryAt(cfg, failedCallAt("2026-10-02T12:10:00", 2), vn("2026-10-02T12:15:00"))).isNull();
     }
 
     @Test
-    void nextRetrySlot_beforeWindow_waitsUntilStart() {
-        AutoCall prev = failedCallAt("2026-10-02T06:00:00", 0, 0);
-        AutoCallService.RetrySlot s = AutoCallService.nextRetrySlot(retryConfig(), prev, vn("2026-10-02T06:10:00"));
-        assertThat(s.at()).isEqualTo(vn("2026-10-02T08:00:00"));
+    void nextRetryAt_afterWindow_carriesOverToNextMorning_withoutExtraAttempts() {
+        IntegrationConfig cfg = retryConfig();
+        assertThat(AutoCallService.nextRetryAt(cfg, failedCallAt("2026-10-02T19:20:00", 0), vn("2026-10-02T19:30:00"))).isEqualTo(
+            vn("2026-10-03T07:30:00")
+        );
+        assertThat(AutoCallService.nextRetryAt(cfg, failedCallAt("2026-10-03T07:30:00", 1), vn("2026-10-03T07:35:00"))).isEqualTo(
+            vn("2026-10-03T09:35:00")
+        );
+        assertThat(AutoCallService.nextRetryAt(cfg, failedCallAt("2026-10-02T19:00:00", 0), vn("2026-10-02T19:00:00"))).isEqualTo(
+            vn("2026-10-02T20:00:00")
+        );
+    }
+
+    @Test
+    void nextRetryAt_beforeWindow_waitsUntilStart_andEmptyListMeansNoRetry() {
+        IntegrationConfig cfg = retryConfig();
+        assertThat(AutoCallService.nextRetryAt(cfg, failedCallAt("2026-10-02T05:00:00", 0), vn("2026-10-02T05:10:00"))).isEqualTo(
+            vn("2026-10-02T07:30:00")
+        );
+        cfg.setAutocallRetryIntervals("");
+        assertThat(AutoCallService.nextRetryAt(cfg, failedCallAt("2026-10-02T09:00:00", 0), vn("2026-10-02T09:05:00"))).isNull();
+    }
+
+    @Test
+    void arrivedAtDest_outsideWindow_schedulesFirstCallForMorning_withoutSending() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.time.LocalTime.now(AutoCallService.VN).isBefore(java.time.LocalTime.of(23, 57)));
+        IntegrationConfig cfg = config(true, KEY);
+        cfg.setAutocallCallFrom("23:58");
+        cfg.setAutocallCallTo("23:59");
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(cfg));
+        when(autoCallRepository.countByOrder_IdAndCallType(10L, "giao")).thenReturn(0L);
+        stubSaveAssignsId();
+
+        service.onArrivedAtDest(order("0912345678"), "SCAN_IN");
+
+        ArgumentCaptor<AutoCall> captor = ArgumentCaptor.forClass(AutoCall.class);
+        verify(autoCallRepository).save(captor.capture());
+        AutoCall saved = captor.getValue();
+        assertThat(saved.getStatus()).isEqualTo("PENDING");
+        assertThat(saved.getNextRetryAt()).isAfter(saved.getCreatedAt());
+        assertThat(dispatched).isEmpty();
+        verify(autoCallRepository).skipScheduledForOrder(eq(10L), eq("SUPERSEDED"), anyString());
+    }
+
+    @Test
+    void fitCallWindow_movesLateTriggerToNextMorning() {
+        IntegrationConfig cfg = retryConfig();
+        assertThat(AutoCallService.fitCallWindow(cfg, vn("2026-10-02T21:15:00"))).isEqualTo(vn("2026-10-03T07:30:00"));
+        assertThat(AutoCallService.fitCallWindow(cfg, vn("2026-10-02T06:00:00"))).isEqualTo(vn("2026-10-02T07:30:00"));
+        assertThat(AutoCallService.fitCallWindow(cfg, vn("2026-10-02T12:00:00"))).isEqualTo(vn("2026-10-02T12:00:00"));
+    }
+
+    @Test
+    void fireRetry_scheduledFirstCall_returnsSameCallToSend() {
+        java.time.Instant now = vn("2026-10-03T07:30:30");
+        AutoCall c = pendingCall();
+        c.setCreatedAt(vn("2026-10-02T21:00:00"));
+        c.setNextRetryAt(vn("2026-10-03T07:30:00"));
+        c.getOrder().setStatus(com.mycompany.myapp.domain.enumeration.OrderStatus.AT_DEST);
+        when(autoCallRepository.findById(99L)).thenReturn(Optional.of(c));
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(retryConfig()));
+
+        assertThat(service.fireRetry(99L, now)).isEqualTo(99L);
+        assertThat(c.getNextRetryAt()).isNull();
+        assertThat(c.getStatus()).isEqualTo("PENDING");
+    }
+
+    @Test
+    void fireRetry_scheduledFirstCall_deliveredOrder_isSkipped() {
+        java.time.Instant now = vn("2026-10-03T07:30:30");
+        AutoCall c = pendingCall();
+        c.setCreatedAt(vn("2026-10-02T21:00:00"));
+        c.setNextRetryAt(vn("2026-10-03T07:30:00"));
+        c.getOrder().setStatus(com.mycompany.myapp.domain.enumeration.OrderStatus.DELIVERED);
+        when(autoCallRepository.findById(99L)).thenReturn(Optional.of(c));
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(retryConfig()));
+
+        assertThat(service.fireRetry(99L, now)).isNull();
+        assertThat(c.getStatus()).isEqualTo("SKIPPED");
     }
 
     @Test
@@ -501,7 +560,6 @@ class AutoCallServiceTest {
         IntegrationConfig cfg = retryConfig();
         cfg.setAutocallCallFrom("00:00");
         cfg.setAutocallCallTo("23:59");
-        cfg.setAutocallRetryNextDay(true);
         when(integrationConfigRepository.findAll()).thenReturn(List.of(cfg));
 
         service.applyCallObject(
@@ -531,7 +589,7 @@ class AutoCallServiceTest {
     @Test
     void fireRetry_createsNewPendingCall_andClearsSchedule() {
         java.time.Instant now = vn("2026-10-02T10:00:00");
-        AutoCall prev = failedCallAt("2026-10-02T09:00:00", 0, 0);
+        AutoCall prev = failedCallAt("2026-10-02T09:00:00", 0);
         prev.setNextRetryAt(now.minusSeconds(5));
         prev.getOrder().setStatus(com.mycompany.myapp.domain.enumeration.OrderStatus.AT_DEST);
         when(autoCallRepository.findById(99L)).thenReturn(Optional.of(prev));
@@ -553,14 +611,13 @@ class AutoCallServiceTest {
         assertThat(created.getStatus()).isEqualTo("PENDING");
         assertThat(created.getTriggerAction()).isEqualTo("RETRY");
         assertThat(created.getRetryNo()).isEqualTo(1);
-        assertThat(created.getRetryDaySeq()).isEqualTo(1);
         assertThat(created.getRefId()).startsWith("CPN-GIAO-HN260930-0001-2-");
     }
 
     @Test
     void fireRetry_deliveredOrder_doesNotCall() {
         java.time.Instant now = vn("2026-10-02T10:00:00");
-        AutoCall prev = failedCallAt("2026-10-02T09:00:00", 0, 0);
+        AutoCall prev = failedCallAt("2026-10-02T09:00:00", 0);
         prev.setNextRetryAt(now.minusSeconds(5));
         prev.getOrder().setStatus(com.mycompany.myapp.domain.enumeration.OrderStatus.DELIVERED);
         when(autoCallRepository.findById(99L)).thenReturn(Optional.of(prev));
