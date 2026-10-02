@@ -8,6 +8,7 @@ import com.mycompany.myapp.domain.enumeration.DeliveryAttemptResult;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentKind;
 import com.mycompany.myapp.domain.enumeration.PaymentMethod;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.OrderDeliveryAttemptRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
 import com.mycompany.myapp.repository.OrderPodPhotoRepository;
@@ -75,6 +76,8 @@ public class DeliveryFacadeService {
         if (req.getPhotos().size() > 3) {
             throw new BadRequestAlertException("Max 3 POD photos", ENTITY, "podPhotoMax");
         }
+        BigDecimal collected = req.getCollectedAmount() == null ? BigDecimal.ZERO : req.getCollectedAmount();
+        assertReceiverCollectAllowed(order, collected);
 
         String channel = req.getChannel() == null ? "COUNTER" : req.getChannel().trim().toUpperCase();
         String actor = currentActor();
@@ -100,7 +103,6 @@ public class DeliveryFacadeService {
             seq++;
         }
 
-        BigDecimal collected = req.getCollectedAmount() == null ? BigDecimal.ZERO : req.getCollectedAmount();
         if (collected.compareTo(BigDecimal.ZERO) > 0) {
             PaymentMethod method = req.getPaymentMethod() != null ? req.getPaymentMethod() : PaymentMethod.TM;
             addPaymentInternal(order, collected, method, PaymentKind.SAU, "POD " + channel, actor);
@@ -257,6 +259,17 @@ public class DeliveryFacadeService {
         );
         shipmentOrderRepository.save(order);
         return orderFacadeService.getByCode(order.getOrderCode());
+    }
+
+    /** Đơn người gửi trả: cước còn nợ thuộc phần VP gửi lập phiếu thu, không thu người nhận lúc giao. */
+    static void assertReceiverCollectAllowed(ShipmentOrder order, BigDecimal collected) {
+        if (collected != null && collected.signum() > 0 && order.getPaymentTerm() == PaymentTerm.GUI_TRA) {
+            throw new BadRequestAlertException(
+                "Đơn người gửi trả — cước còn nợ do VP gửi lập phiếu thu, không thu người nhận khi giao. Để số thu = 0.",
+                ENTITY,
+                "senderPaysNoCollect"
+            );
+        }
     }
 
     /** CONFIRMED/WAITING = hàng còn ở VP gửi: chỉ giao tại chỗ khi VP gửi cũng là VP nhận. */

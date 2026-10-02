@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
+import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 
 class DeliveryFacadeServicePodGuardTest {
@@ -45,6 +47,24 @@ class DeliveryFacadeServicePodGuardTest {
     @Test
     void confirmedSameOfficeIsAllowed() {
         assertThatCode(() -> DeliveryFacadeService.assertArrivedForPod(order(OrderStatus.CONFIRMED, 5, 5, 5L))).doesNotThrowAnyException();
+    }
+
+    @Test
+    void senderPaysOrderRejectsCollectingFromReceiver() {
+        ShipmentOrder o = order(OrderStatus.AT_DEST, 1, 2, null);
+        o.setPaymentTerm(PaymentTerm.GUI_TRA);
+        assertThatThrownBy(() -> DeliveryFacadeService.assertReceiverCollectAllowed(o, new BigDecimal("60000")))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("senderPaysNoCollect");
+        assertThatCode(() -> DeliveryFacadeService.assertReceiverCollectAllowed(o, BigDecimal.ZERO)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void receiverPaysOrderAllowsCollecting() {
+        ShipmentOrder o = order(OrderStatus.AT_DEST, 1, 2, null);
+        o.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        assertThatCode(() -> DeliveryFacadeService.assertReceiverCollectAllowed(o, new BigDecimal("60000"))).doesNotThrowAnyException();
     }
 
     @Test
