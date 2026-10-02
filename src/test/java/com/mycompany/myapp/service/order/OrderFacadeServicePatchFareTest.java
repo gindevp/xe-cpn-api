@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -213,6 +215,64 @@ class OrderFacadeServicePatchFareTest {
         ArgumentCaptor<ShipmentOrder> captor = ArgumentCaptor.forClass(ShipmentOrder.class);
         verify(shipmentOrderRepository).save(captor.capture());
         assertThat(captor.getValue().getFareAmount()).isEqualByComparingTo("40000");
+    }
+
+    @Test
+    void patch_untickHomeDelivery_rebuildsFareIgnoringStaleClientFare() {
+        stubLoadAndDetail();
+        order.setGoodsFareAmount(new BigDecimal("30000"));
+        order.setDeliveryFeeAmount(new BigDecimal("50000"));
+        order.setHomeDelivery(true);
+        order.setFareAmount(new BigDecimal("80000"));
+        order.setPaidAmount(BigDecimal.ZERO);
+        when(fareCalculator.estimate(any(), eq(false), eq(false), any(), any())).thenReturn(
+            new SimpleFareCalculator.FareBreakdown(new BigDecimal("30000"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("30000"))
+        );
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setHomeDelivery(false);
+        req.setFareAmount(new BigDecimal("80000"));
+
+        service.patch("XE-H1-001", req);
+
+        assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("0");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("30000");
+    }
+
+    @Test
+    void patch_untickHomeDelivery_belowPaid_throws() {
+        when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("XE-H1-001")).thenReturn(Optional.of(order));
+        order.setGoodsFareAmount(new BigDecimal("30000"));
+        order.setDeliveryFeeAmount(new BigDecimal("50000"));
+        order.setHomeDelivery(true);
+        order.setFareAmount(new BigDecimal("80000"));
+        order.setPaidAmount(new BigDecimal("80000"));
+        when(fareCalculator.estimate(any(), eq(false), eq(false), any(), any())).thenReturn(
+            new SimpleFareCalculator.FareBreakdown(new BigDecimal("30000"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("30000"))
+        );
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setHomeDelivery(false);
+        req.setFareAmount(new BigDecimal("80000"));
+
+        assertThatThrownBy(() -> service.patch("XE-H1-001", req))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("fareBelowPaid");
+        verify(shipmentOrderRepository, never()).save(any());
+    }
+
+    @Test
+    void patch_sameHomeDeliveryFlag_keepsDoorFees() {
+        stubLoadAndDetail();
+        order.setDeliveryFeeAmount(new BigDecimal("65000"));
+        order.setHomeDelivery(true);
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setHomeDelivery(true);
+
+        service.patch("XE-H1-001", req);
+
+        assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("65000");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("40000");
+        verify(fareCalculator, never()).estimate(any(), anyBoolean(), anyBoolean(), any(), any());
     }
 
     private void stubLoadAndDetail() {

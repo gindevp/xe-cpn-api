@@ -825,11 +825,13 @@ public class OrderFacadeService {
             order.setFareAmount(req.getFareAmount());
         }
         boolean doorChanged = false;
-        if (req.getHomePickup() != null) {
+        SimpleFareCalculator.FareBreakdown doorFees = null;
+        // Chỉ tính lại phí tận nơi khi cờ thật sự đổi — gửi lại cùng giá trị không được làm mất phí đã tính theo KM lúc tạo.
+        if (req.getHomePickup() != null && req.getHomePickup() != Boolean.TRUE.equals(order.getHomePickup())) {
             order.setHomePickup(req.getHomePickup());
             doorChanged = true;
         }
-        if (req.getHomeDelivery() != null) {
+        if (req.getHomeDelivery() != null && req.getHomeDelivery() != Boolean.TRUE.equals(order.getHomeDelivery())) {
             order.setHomeDelivery(req.getHomeDelivery());
             doorChanged = true;
         }
@@ -837,26 +839,9 @@ public class OrderFacadeService {
             boolean hp = Boolean.TRUE.equals(order.getHomePickup());
             boolean hd = Boolean.TRUE.equals(order.getHomeDelivery());
             order.setServiceType(resolveServiceType(hp, hd));
-            SimpleFareCalculator.FareBreakdown fees = fareCalculator.estimate(
-                order.getWeightKg(),
-                hp,
-                hd,
-                order.getFromOffice(),
-                order.getToOffice()
-            );
-            order.setPickupFeeAmount(fees.pickupFee());
-            order.setDeliveryFeeAmount(fees.deliveryFee());
-            // Recalc total only when client did not send explicit fareAmount in this PATCH
-            if (req.getFareAmount() == null) {
-                BigDecimal recalc = fees
-                    .total()
-                    .add(OrderMoney.nz(order.getCodFeeAmount()))
-                    .add(OrderMoney.nz(order.getDeclaredFeeAmount()))
-                    .subtract(OrderMoney.nz(order.getDiscountAmount()))
-                    .max(BigDecimal.ZERO);
-                assertFareNotBelowPaid(recalc, order.getPaidAmount());
-                order.setFareAmount(recalc);
-            }
+            doorFees = fareCalculator.estimate(order.getWeightKg(), hp, hd, order.getFromOffice(), order.getToOffice());
+            order.setPickupFeeAmount(doorFees.pickupFee());
+            order.setDeliveryFeeAmount(doorFees.deliveryFee());
             // Legs: do not rebuild/wipe existing OrderLeg rows on door-flag PATCH (LEG regression safe)
         }
         if (req.getPickingAt() != null) {
@@ -905,6 +890,23 @@ public class OrderFacadeService {
         }
         if (req.getDiscountAmount() != null) {
             order.setDiscountAmount(req.getDiscountAmount());
+        }
+        if (doorFees != null) {
+            // Phí tận nơi vừa tính lại → tổng cước dựng lại từ các khoản (fareAmount client gửi kèm có thể còn phí cũ).
+            BigDecimal recalc = recalcFareAfterDoorChange(order, doorFees);
+            BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
+            if (recalc.compareTo(paid) < 0) {
+                throw new BadRequestAlertException(
+                    "Đơn đã thu " +
+                    paid.toPlainString() +
+                    "đ — bỏ lấy/giao tận nơi làm cước còn " +
+                    recalc.toPlainString() +
+                    "đ, thấp hơn số đã thu. Cần hoàn tiền cho khách trước khi đổi.",
+                    ENTITY,
+                    "fareBelowPaid"
+                );
+            }
+            order.setFareAmount(recalc);
         }
         if (req.getBankName() != null) {
             order.setBankName(blankToNull(req.getBankName()));
@@ -1873,6 +1875,22 @@ public class OrderFacadeService {
             });
         }
         return events;
+    }
+
+    /**
+    /** Cước hàng (hoặc giá bảng nếu đơn chưa lưu cước hàng) + phí tận nơi + phí COD + phí khai giá − giảm giá. */
+    static BigDecimal recalcFareAfterDoorChange(ShipmentOrder order, SimpleFareCalculator.FareBreakdown doorFees) {
+        BigDecimal goods = order.getGoodsFareAmount() != null
+            ? order.getGoodsFareAmount()
+            : OrderMoney.nz(doorFees.total()).subtract(OrderMoney.nz(doorFees.pickupFee())).subtract(OrderMoney.nz(doorFees.deliveryFee()));
+        BigDecimal codFee = OrderMoney.nz(order.getCodAmount()).signum() > 0 ? OrderMoney.nz(order.getCodFeeAmount()) : BigDecimal.ZERO;
+        return goods
+            .add(OrderMoney.nz(order.getPickupFeeAmount()))
+            .add(OrderMoney.nz(order.getDeliveryFeeAmount()))
+            .add(codFee)
+            .add(OrderMoney.nz(order.getDeclaredFeeAmount()))
+            .subtract(OrderMoney.nz(order.getDiscountAmount()))
+            .max(BigDecimal.ZERO);
     }
 
     /**
