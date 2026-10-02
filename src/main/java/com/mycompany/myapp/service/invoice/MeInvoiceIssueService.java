@@ -499,7 +499,7 @@ public class MeInvoiceIssueService {
     }
 
     /**
-     * Cá nhân: tên + SĐT người trả cước, không MST, hình thức "TM".
+     * Cá nhân: họ tên + SĐT người trả cước, không tên đơn vị (BuyerLegalName), không MST, hình thức "TM".
      * Doanh nghiệp: chỉ thông tin công ty (MST, tên, địa chỉ, email) — không truyền tên/SĐT người.
      */
     ObjectNode buildPublishBody(ShipmentOrder order, MeInvoiceAmounts.Breakdown amounts, String refId, String type) {
@@ -520,8 +520,8 @@ public class MeInvoiceIssueService {
             buyerTax = blankToEmpty(order.getInvoiceTaxCode());
             email = blankToEmpty(order.getInvoiceEmail());
         } else {
-            legalName = firstNonBlank(InvoicePolicy.payerName(order), "Khách lẻ");
-            fullName = legalName;
+            legalName = "";
+            fullName = firstNonBlank(InvoicePolicy.payerName(order), "Khách lẻ");
             phone = blankToEmpty(InvoicePolicy.payerPhone(order));
             address = "";
             buyerTax = "";

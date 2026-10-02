@@ -290,8 +290,9 @@ class MeInvoiceIssueServiceTest {
         assertThat(result).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
         assertThat(order.getInvoiceType()).isEqualTo(InvoicePolicy.TYPE_PERSONAL);
         ObjectNode inv = publishedInvoice();
-        assertThat(inv.get("BuyerLegalName").asText()).isEqualTo("Trần Nhận");
+        assertThat(inv.get("BuyerLegalName").asText()).isEmpty();
         assertThat(inv.get("BuyerFullName").asText()).isEqualTo("Trần Nhận");
+        assertThat(inv.get("ReceiverName").asText()).isEqualTo("Trần Nhận");
         assertThat(inv.get("BuyerPhoneNumber").asText()).isEqualTo("0922222222");
         assertThat(inv.get("BuyerTaxCode").asText()).isEmpty();
         assertThat(inv.get("IsSendEmail").asBoolean()).isFalse();
@@ -306,7 +307,8 @@ class MeInvoiceIssueServiceTest {
         publishOk();
         service.backfillOne("VT0001ABCD", "ketoan");
         ObjectNode inv = publishedInvoice();
-        assertThat(inv.get("BuyerLegalName").asText()).isEqualTo("Nguyễn Gửi");
+        assertThat(inv.get("BuyerLegalName").asText()).isEmpty();
+        assertThat(inv.get("BuyerFullName").asText()).isEqualTo("Nguyễn Gửi");
         assertThat(inv.get("BuyerPhoneNumber").asText()).isEqualTo("0911111111");
     }
 
