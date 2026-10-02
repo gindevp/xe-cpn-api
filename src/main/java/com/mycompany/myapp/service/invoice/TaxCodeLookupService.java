@@ -22,9 +22,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Tra tên + địa chỉ doanh nghiệp theo MST để điền sẵn thông tin xuất hoá đơn (nhân viên vẫn kiểm tra/sửa).
- * Nguồn chính: API công khai VietQR (dữ liệu Cục Thuế, địa chỉ theo đơn vị hành chính mới, có MST chi nhánh);
- * dự phòng: esgoo.net. Không cào masothue.com — trang này trả công ty ngẫu nhiên khác cho bot.
+ * Tra tên + địa chỉ doanh nghiệp theo MST để điền sẵn thông tin xuất hoá đơn.
+ * Nguồn chính: Xinvoice (dữ liệu Tổng cục Thuế, có MST chi nhánh + trạng thái hoạt động; client-id/api-key tuỳ chọn);
+ * dự phòng: VietQR rồi esgoo.net. Không cào masothue.com — trang này trả công ty ngẫu nhiên khác cho bot.
  */
 @Service
 public class TaxCodeLookupService {
@@ -42,6 +42,8 @@ public class TaxCodeLookupService {
     private final Map<String, Instant> alerted = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
     private final ObjectProvider<ServerEventService> serverEventService;
+    private final String xinvoiceUrl;
+    private final Map<String, String> xinvoiceHeaders;
     private final String vietQrUrl;
     private final String baseUrl;
     private final HttpClient http;
@@ -49,12 +51,24 @@ public class TaxCodeLookupService {
     public TaxCodeLookupService(
         ObjectMapper objectMapper,
         ObjectProvider<ServerEventService> serverEventService,
+        @Value("${cpn.tax-lookup.xinvoice-url:https://api.xinvoice.vn/gdt-api/tax-payer}") String xinvoiceUrl,
+        @Value("${cpn.tax-lookup.xinvoice-client-id:}") String xinvoiceClientId,
+        @Value("${cpn.tax-lookup.xinvoice-api-key:}") String xinvoiceApiKey,
         @Value("${cpn.tax-lookup.vietqr-url:https://api.vietqr.io/v2/business}") String vietQrUrl,
         @Value("${cpn.tax-lookup.base-url:https://esgoo.net/api-mst}") String baseUrl,
         @Value("${cpn.tax-lookup.insecure-ssl:false}") boolean insecureSsl
     ) {
         this.objectMapper = objectMapper;
         this.serverEventService = serverEventService;
+        this.xinvoiceUrl = trimSlash(xinvoiceUrl);
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (xinvoiceClientId != null && !xinvoiceClientId.isBlank()) {
+            headers.put("client-id", xinvoiceClientId.trim());
+        }
+        if (xinvoiceApiKey != null && !xinvoiceApiKey.isBlank()) {
+            headers.put("api-key", xinvoiceApiKey.trim());
+        }
+        this.xinvoiceHeaders = Map.copyOf(headers);
         this.vietQrUrl = trimSlash(vietQrUrl);
         this.baseUrl = trimSlash(baseUrl);
         this.http = PartnerHttpClients.build(TIMEOUT, insecureSsl);
@@ -114,32 +128,52 @@ public class TaxCodeLookupService {
         events.taxLookupError(payload);
     }
 
+    /** Thử lần lượt các nguồn; nguồn nào báo "không tìm thấy" thì kết quả cuối là NOT_FOUND (không báo lỗi admin). */
     Map<String, Object> fetch(String taxCode) {
-        Map<String, Object> primary = fetchFrom("vietqr", vietQrUrl + "/" + taxCode, taxCode, TaxCodeLookupService::parseVietQr);
-        if (Boolean.TRUE.equals(primary.get("ok"))) {
-            return primary;
+        Map<String, Object> xinvoice = fetchFrom(
+            "xinvoice",
+            xinvoiceUrl + "/" + taxCode,
+            xinvoiceHeaders,
+            taxCode,
+            TaxCodeLookupService::parseXinvoice
+        );
+        if (Boolean.TRUE.equals(xinvoice.get("ok"))) {
+            return xinvoice;
         }
-        Map<String, Object> fallback = fetchFrom("esgoo", baseUrl + "/" + taxCode + ".htm", taxCode, TaxCodeLookupService::parse);
-        if (Boolean.TRUE.equals(fallback.get("ok"))) {
-            return fallback;
+        Map<String, Object> vietQr = fetchFrom("vietqr", vietQrUrl + "/" + taxCode, Map.of(), taxCode, TaxCodeLookupService::parseVietQr);
+        if (Boolean.TRUE.equals(vietQr.get("ok"))) {
+            return vietQr;
         }
-        return "NOT_FOUND".equals(primary.get("code")) ? primary : fallback;
+        Map<String, Object> esgoo = fetchFrom("esgoo", baseUrl + "/" + taxCode + ".htm", Map.of(), taxCode, TaxCodeLookupService::parse);
+        if (Boolean.TRUE.equals(esgoo.get("ok"))) {
+            return esgoo;
+        }
+        for (Map<String, Object> r : java.util.List.of(xinvoice, vietQr, esgoo)) {
+            if ("NOT_FOUND".equals(r.get("code"))) {
+                return r;
+            }
+        }
+        return esgoo;
     }
 
     Map<String, Object> fetchFrom(
         String source,
         String url,
+        Map<String, String> headers,
         String taxCode,
         java.util.function.BiFunction<String, JsonNode, Map<String, Object>> parser
     ) {
         try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
                 .timeout(TIMEOUT)
                 .header("Accept", "application/json")
-                .header("User-Agent", "Mozilla/5.0 (compatible; CPN/1.0)")
-                .GET()
-                .build();
+                .header("User-Agent", "Mozilla/5.0 (compatible; CPN/1.0)");
+            headers.forEach(builder::header);
+            HttpRequest req = builder.GET().build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() == 404) {
+                return error("NOT_FOUND", "Không tìm thấy doanh nghiệp với MST này");
+            }
             if (res.statusCode() != 200) {
                 LOG.warn("Tax lookup {} via {} -> HTTP {}", taxCode, source, res.statusCode());
                 return error("UPSTREAM_ERROR", "Nguồn tra cứu MST đang lỗi — nhập tay thông tin công ty");
@@ -155,6 +189,35 @@ public class TaxCodeLookupService {
             LOG.warn("Tax lookup {} via {} failed: {}", taxCode, source, e.toString());
             return error("UPSTREAM_ERROR", "Không tra được MST — nhập tay thông tin công ty");
         }
+    }
+
+    /** Xinvoice: {@code {taxID, name, address, status, orgType}}; không có MST thì HTTP 404. */
+    static Map<String, Object> parseXinvoice(String taxCode, JsonNode body) {
+        String name = body == null ? null : clean(body.path("name").asText(null));
+        if (name == null) {
+            return error("NOT_FOUND", "Không tìm thấy doanh nghiệp với MST này");
+        }
+        String returned = clean(body.path("taxID").asText(null));
+        if (returned != null && !VietnamTaxCode.compact(returned).equals(VietnamTaxCode.compact(taxCode))) {
+            return error("NOT_FOUND", "Nguồn tra cứu trả về MST khác — kiểm tra lại MST");
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("taxCode", taxCode);
+        out.put("companyName", name);
+        out.put("address", clean(body.path("address").asText(null)));
+        String status = clean(body.path("status").asText(null));
+        if (status != null) {
+            out.put("status", status);
+            out.put("active", isActiveStatus(status));
+        }
+        return out;
+    }
+
+    /** "NNT đang hoạt động…" là còn hoạt động; ngừng / tạm ngừng / không hoạt động tại địa chỉ thì không. */
+    static boolean isActiveStatus(String status) {
+        String s = status.toLowerCase(java.util.Locale.ROOT);
+        return s.contains("đang hoạt động") && !s.contains("ngừng") && !s.contains("không hoạt động");
     }
 
     /** VietQR: {@code {code:"00", data:{id, name, address}}}. */

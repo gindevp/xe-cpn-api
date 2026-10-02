@@ -35,7 +35,7 @@ class TaxCodeLookupServiceTest {
     @Test
     void lookup_upstreamFailure_alertsAdminsOncePerCooldown() {
         ServerEventService events = mock(ServerEventService.class);
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, eventsOf(events), NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, eventsOf(events), NOWHERE, "", "", NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 return Map.of("ok", false, "code", "UPSTREAM_ERROR", "message", "lỗi");
@@ -49,7 +49,7 @@ class TaxCodeLookupServiceTest {
     @Test
     void lookup_notFound_doesNotAlert() {
         ServerEventService events = mock(ServerEventService.class);
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, eventsOf(events), NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, eventsOf(events), NOWHERE, "", "", NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 return Map.of("ok", false, "code", "NOT_FOUND");
@@ -122,49 +122,83 @@ class TaxCodeLookupServiceTest {
         ).containsEntry("ok", false);
     }
 
-    @Test
-    void fetch_vietQrFails_fallsBackToEsgoo() {
-        List<String> sources = new ArrayList<>();
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, NOWHERE, false) {
+    /** Giả lập từng nguồn trả kết quả theo {@code results}; nguồn không có trong map coi như lỗi kết nối. */
+    private static TaxCodeLookupService stubSources(List<String> sources, Map<String, Map<String, Object>> results) {
+        return new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, "", "", NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetchFrom(
                 String source,
                 String url,
+                Map<String, String> headers,
                 String taxCode,
                 BiFunction<String, JsonNode, Map<String, Object>> parser
             ) {
                 sources.add(source);
-                return "vietqr".equals(source)
-                    ? Map.of("ok", false, "code", "UPSTREAM_ERROR")
-                    : Map.of("ok", true, "taxCode", taxCode, "companyName", "B");
+                return results.getOrDefault(source, Map.of("ok", false, "code", "UPSTREAM_ERROR"));
             }
         };
-        assertThat(service.lookup("0103179782")).containsEntry("companyName", "B");
-        assertThat(sources).containsExactly("vietqr", "esgoo");
     }
 
     @Test
-    void fetch_vietQrOk_skipsEsgoo() {
+    void fetch_xinvoiceOk_skipsFallbacks() {
         List<String> sources = new ArrayList<>();
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, NOWHERE, false) {
-            @Override
-            Map<String, Object> fetchFrom(
-                String source,
-                String url,
-                String taxCode,
-                BiFunction<String, JsonNode, Map<String, Object>> parser
-            ) {
-                sources.add(source);
-                return Map.of("ok", true, "taxCode", taxCode, "companyName", "A");
-            }
-        };
-        assertThat(service.lookup("0103179782")).containsEntry("companyName", "A");
-        assertThat(sources).containsExactly("vietqr");
+        TaxCodeLookupService service = stubSources(sources, Map.of("xinvoice", Map.of("ok", true, "companyName", "X")));
+        assertThat(service.lookup("0103179782")).containsEntry("companyName", "X");
+        assertThat(sources).containsExactly("xinvoice");
+    }
+
+    @Test
+    void fetch_xinvoiceFails_fallsBackToVietQrThenEsgoo() {
+        List<String> sources = new ArrayList<>();
+        TaxCodeLookupService service = stubSources(sources, Map.of("esgoo", Map.of("ok", true, "companyName", "B")));
+        assertThat(service.lookup("0103179782")).containsEntry("companyName", "B");
+        assertThat(sources).containsExactly("xinvoice", "vietqr", "esgoo");
+    }
+
+    @Test
+    void fetch_allMissOneNotFound_returnsNotFound() {
+        List<String> sources = new ArrayList<>();
+        TaxCodeLookupService service = stubSources(sources, Map.of("xinvoice", Map.of("ok", false, "code", "NOT_FOUND")));
+        assertThat(service.lookup("0103179782")).containsEntry("code", "NOT_FOUND");
+    }
+
+    @Test
+    void parseXinvoice_branch_mapsNameAddressAndStatus() throws Exception {
+        Map<String, Object> out = TaxCodeLookupService.parseXinvoice(
+            "0316794479-001",
+            JSON.readTree(
+                "{\"orgType\":\"Chi nhánh\",\"taxID\":\"0316794479-001\",\"name\":\"VĂN PHÒNG ĐẠI DIỆN CÔNG TY TNHH CASSO\",\"address\":\"Số 8 Lô LK1, Phường Đông Hòa, TP Hồ Chí Minh\",\"status\":\"NNT đang hoạt động\"}"
+            )
+        );
+        assertThat(out)
+            .containsEntry("ok", true)
+            .containsEntry("companyName", "VĂN PHÒNG ĐẠI DIỆN CÔNG TY TNHH CASSO")
+            .containsEntry("address", "Số 8 Lô LK1, Phường Đông Hòa, TP Hồ Chí Minh")
+            .containsEntry("active", true);
+    }
+
+    @Test
+    void parseXinvoice_otherTaxCodeOrNoName_isRejected() throws Exception {
+        assertThat(
+            TaxCodeLookupService.parseXinvoice("0103179782", JSON.readTree("{\"taxID\":\"0100109106\",\"name\":\"KHÁC\"}"))
+        ).containsEntry("code", "NOT_FOUND");
+        assertThat(
+            TaxCodeLookupService.parseXinvoice("0103179782", JSON.readTree("{\"success\":false,\"message\":\"Tax not found\"}"))
+        ).containsEntry("code", "NOT_FOUND");
+    }
+
+    @Test
+    void isActiveStatus_detectsStoppedTaxpayers() {
+        assertThat(TaxCodeLookupService.isActiveStatus("NNT đang hoạt động (đã được cấp GCN ĐKT)")).isTrue();
+        assertThat(TaxCodeLookupService.isActiveStatus("NNT ngừng hoạt động và đã đóng MST")).isFalse();
+        assertThat(TaxCodeLookupService.isActiveStatus("NNT tạm ngừng KD có thời hạn")).isFalse();
+        assertThat(TaxCodeLookupService.isActiveStatus("NNT không hoạt động tại địa chỉ đã đăng ký")).isFalse();
+        assertThat(TaxCodeLookupService.isActiveStatus("NNT ngừng HĐ nhưng chưa hoàn thành thủ tục chấm dứt hiệu lực MST")).isFalse();
     }
 
     @Test
     void lookup_invalidChecksum_doesNotCallUpstream() {
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, "", "", NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 throw new AssertionError("không được gọi nguồn khi MST sai");
@@ -176,7 +210,7 @@ class TaxCodeLookupServiceTest {
     @Test
     void lookup_cachesSuccess_only() {
         int[] calls = { 0 };
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, "", "", NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 calls[0]++;
