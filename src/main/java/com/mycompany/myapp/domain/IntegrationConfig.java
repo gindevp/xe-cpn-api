@@ -110,6 +110,13 @@ public class IntegrationConfig implements Serializable {
     @Column(name = "autocall_retry_intervals", length = 100)
     private String autocallRetryIntervals;
 
+    /**
+     * Số ngày gọi tối đa: 1 = chỉ 1 đợt; N > 1 = gọi đủ đợt (cuộc 1 + các lần gọi lại) vẫn chưa được thì
+     * hôm sau gọi lại từ đầu khung giờ một đợt mới, tối đa N đợt.
+     */
+    @Column(name = "autocall_retry_days")
+    private Integer autocallRetryDays;
+
     @Column(name = "autocall_retry_no_answer")
     private Boolean autocallRetryNoAnswer;
 
@@ -365,6 +372,14 @@ public class IntegrationConfig implements Serializable {
 
     public void setAutocallRetryIntervals(String autocallRetryIntervals) {
         this.autocallRetryIntervals = autocallRetryIntervals;
+    }
+
+    public Integer getAutocallRetryDays() {
+        return autocallRetryDays;
+    }
+
+    public void setAutocallRetryDays(Integer autocallRetryDays) {
+        this.autocallRetryDays = autocallRetryDays;
     }
 
     public Boolean getAutocallRetryNoAnswer() {

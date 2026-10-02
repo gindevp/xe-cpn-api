@@ -244,6 +244,7 @@ public class ConfigFacadeService {
         if (incoming.getAutocallRetryIntervals() != null) {
             current.setAutocallRetryIntervals(normalizeRetryIntervals(incoming.getAutocallRetryIntervals()));
         }
+        if (incoming.getAutocallRetryDays() != null) current.setAutocallRetryDays(clamp(incoming.getAutocallRetryDays(), 1, 7));
         if (incoming.getAutocallRetryNoAnswer() != null) current.setAutocallRetryNoAnswer(incoming.getAutocallRetryNoAnswer());
         if (incoming.getAutocallRetryCarrierError() != null) {
             current.setAutocallRetryCarrierError(incoming.getAutocallRetryCarrierError());

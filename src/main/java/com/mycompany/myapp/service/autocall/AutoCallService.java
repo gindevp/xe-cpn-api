@@ -343,15 +343,36 @@ public class AutoCallService {
         return at;
     }
 
+    static int retryDays(IntegrationConfig cfg) {
+        Integer v = cfg.getAutocallRetryDays();
+        return v == null ? 1 : Math.max(1, Math.min(7, v));
+    }
+
+    /** {@code newDay} = mở đợt gọi mới (ngày kế tiếp), cuộc đầu của đợt. */
+    record RetrySlot(Instant at, boolean newDay) {}
+
     /**
-     * Giờ gọi lại kế tiếp sau {@code prev} (kết quả có lúc {@code now}): {@code now} + khoảng cách của lần đó,
-     * rơi ngoài khung giờ thì dời sang đầu khung kế tiếp. Null = đã gọi đủ số lần.
+     * Lần gọi kế tiếp sau {@code prev} (kết quả có lúc {@code now}). Còn lần gọi lại trong đợt → {@code now} +
+     * khoảng cách của lần đó, rơi ngoài khung giờ thì dời sang đầu khung kế tiếp. Hết đợt mà còn ngày → đầu khung
+     * giờ hôm sau, mở đợt mới. Null = hết lượt.
      */
-    static Instant nextRetryAt(IntegrationConfig cfg, AutoCall prev, Instant now) {
+    static RetrySlot nextRetry(IntegrationConfig cfg, AutoCall prev, Instant now) {
         List<Integer> intervals = retryIntervals(cfg);
         int done = nz(prev.getRetryNo());
-        if (done >= intervals.size()) return null;
-        return fitCallWindow(cfg, now.plus(Duration.ofMinutes(intervals.get(done))));
+        if (done < intervals.size()) {
+            return new RetrySlot(fitCallWindow(cfg, now.plus(Duration.ofMinutes(intervals.get(done)))), false);
+        }
+        if (nz(prev.getRetryDay()) + 1 < retryDays(cfg)) {
+            LocalTime from = parseHhmm(cfg.getAutocallCallFrom(), LocalTime.of(8, 0));
+            return new RetrySlot(now.atZone(VN).toLocalDate().plusDays(1).atTime(from).atZone(VN).toInstant(), true);
+        }
+        return null;
+    }
+
+    /** "gọi lại lần 2" · "ngày 2 · cuộc 1" · "ngày 2 · gọi lại lần 1". */
+    static String attemptLabel(int day, int retryNo) {
+        String inDay = retryNo == 0 ? "cuộc 1" : "gọi lại lần " + retryNo;
+        return day == 0 ? inDay : "ngày " + (day + 1) + " · " + inDay;
     }
 
     private void scheduleRetry(AutoCall call) {
@@ -361,18 +382,17 @@ public class AutoCallService {
         if (!retryAllowed(cfg, retryReason(call))) return;
         ShipmentOrder order = call.getOrder();
         if (order == null || RETRY_STOP_STATUSES.contains(order.getStatus())) return;
-        Instant at = nextRetryAt(cfg, call, Instant.now());
-        if (at == null) {
+        RetrySlot slot = nextRetry(cfg, call, Instant.now());
+        if (slot == null) {
             appendEvent(order, "AUTO_CALL_RETRY", sandboxPrefix(call) + "Hết lượt gọi lại theo cấu hình");
             return;
         }
-        call.setNextRetryAt(at);
+        call.setNextRetryAt(slot.at());
         autoCallRepository.save(call);
-        appendEvent(
-            order,
-            "AUTO_CALL_RETRY",
-            sandboxPrefix(call) + "Hẹn gọi lại lần " + (nz(call.getRetryNo()) + 1) + " lúc " + RETRY_AT_FMT.format(at)
-        );
+        String next = slot.newDay()
+            ? attemptLabel(nz(call.getRetryDay()) + 1, 0)
+            : attemptLabel(nz(call.getRetryDay()), nz(call.getRetryNo()) + 1);
+        appendEvent(order, "AUTO_CALL_RETRY", sandboxPrefix(call) + "Hẹn " + next + " lúc " + RETRY_AT_FMT.format(slot.at()));
     }
 
     /** Mỗi phút: bỏ lịch của đơn đã giao/huỷ/hoàn, rồi tạo cuộc gọi lại cho các lịch đã đến giờ. */
@@ -450,9 +470,15 @@ public class AutoCallService {
         call.setCreatedAt(now);
         call.setPhone(phone);
         call.setStatus("PENDING");
-        call.setRetryNo(nz(prev.getRetryNo()) + 1);
+        boolean newDay = nz(prev.getRetryNo()) >= retryIntervals(cfg).size();
+        call.setRetryDay(newDay ? nz(prev.getRetryDay()) + 1 : nz(prev.getRetryDay()));
+        call.setRetryNo(newDay ? 0 : nz(prev.getRetryNo()) + 1);
         autoCallRepository.save(call);
-        appendEvent(order, "AUTO_CALL_REQUEST", sandboxPrefix(call) + "Gọi lại lần " + call.getRetryNo() + " → " + phone);
+        appendEvent(
+            order,
+            "AUTO_CALL_REQUEST",
+            sandboxPrefix(call) + "Gọi " + attemptLabel(call.getRetryDay(), call.getRetryNo()) + " → " + phone
+        );
         return call.getId();
     }
 
@@ -784,6 +810,7 @@ public class AutoCallService {
         String triggerAction,
         Instant createdAt,
         Integer retryNo,
+        Integer retryDay,
         Instant nextRetryAt
     ) {
         static AutoCallView of(AutoCall c) {
@@ -805,6 +832,7 @@ public class AutoCallService {
                 c.getTriggerAction(),
                 c.getCreatedAt(),
                 c.getRetryNo(),
+                c.getRetryDay(),
                 c.getNextRetryAt()
             );
         }
