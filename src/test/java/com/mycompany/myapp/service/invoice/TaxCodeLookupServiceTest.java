@@ -2,13 +2,18 @@ package com.mycompany.myapp.service.invoice;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 import org.junit.jupiter.api.Test;
 
 class TaxCodeLookupServiceTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final String NOWHERE = "http://127.0.0.1:9";
 
     @Test
     void parse_success_mapsNameAndAddress() throws Exception {
@@ -47,8 +52,75 @@ class TaxCodeLookupServiceTest {
     }
 
     @Test
+    void parseVietQr_branchTaxCode_mapsNameAndAddress() throws Exception {
+        Map<String, Object> out = TaxCodeLookupService.parseVietQr(
+            "0101394777-008",
+            JSON.readTree(
+                "{\"code\":\"00\",\"desc\":\"Success\",\"data\":{\"id\":\"0101394777-008\",\"name\":\"CHI NHÁNH CÔNG TY CỔ PHẦN NGỌC HÀ TẠI NAM ĐỊNH\",\"address\":\"Số 135, đường Nguyễn Công Trứ, Phường Đông A, Ninh Bình\"}}"
+            )
+        );
+        assertThat(out)
+            .containsEntry("ok", true)
+            .containsEntry("companyName", "CHI NHÁNH CÔNG TY CỔ PHẦN NGỌC HÀ TẠI NAM ĐỊNH")
+            .containsEntry("address", "Số 135, đường Nguyễn Công Trứ, Phường Đông A, Ninh Bình");
+    }
+
+    @Test
+    void parseVietQr_notFoundOrOtherTaxCode_isRejected() throws Exception {
+        assertThat(
+            TaxCodeLookupService.parseVietQr("0103179782", JSON.readTree("{\"code\":\"52\",\"desc\":\"not found\",\"data\":null}"))
+        ).containsEntry("code", "NOT_FOUND");
+        assertThat(
+            TaxCodeLookupService.parseVietQr(
+                "0103179782",
+                JSON.readTree("{\"code\":\"00\",\"data\":{\"id\":\"0100109106\",\"name\":\"CÔNG TY KHÁC\"}}")
+            )
+        ).containsEntry("ok", false);
+    }
+
+    @Test
+    void fetch_vietQrFails_fallsBackToEsgoo() {
+        List<String> sources = new ArrayList<>();
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NOWHERE, NOWHERE, false) {
+            @Override
+            Map<String, Object> fetchFrom(
+                String source,
+                String url,
+                String taxCode,
+                BiFunction<String, JsonNode, Map<String, Object>> parser
+            ) {
+                sources.add(source);
+                return "vietqr".equals(source)
+                    ? Map.of("ok", false, "code", "UPSTREAM_ERROR")
+                    : Map.of("ok", true, "taxCode", taxCode, "companyName", "B");
+            }
+        };
+        assertThat(service.lookup("0103179782")).containsEntry("companyName", "B");
+        assertThat(sources).containsExactly("vietqr", "esgoo");
+    }
+
+    @Test
+    void fetch_vietQrOk_skipsEsgoo() {
+        List<String> sources = new ArrayList<>();
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NOWHERE, NOWHERE, false) {
+            @Override
+            Map<String, Object> fetchFrom(
+                String source,
+                String url,
+                String taxCode,
+                BiFunction<String, JsonNode, Map<String, Object>> parser
+            ) {
+                sources.add(source);
+                return Map.of("ok", true, "taxCode", taxCode, "companyName", "A");
+            }
+        };
+        assertThat(service.lookup("0103179782")).containsEntry("companyName", "A");
+        assertThat(sources).containsExactly("vietqr");
+    }
+
+    @Test
     void lookup_invalidChecksum_doesNotCallUpstream() {
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, "http://127.0.0.1:9", false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 throw new AssertionError("không được gọi nguồn khi MST sai");
@@ -60,7 +132,7 @@ class TaxCodeLookupServiceTest {
     @Test
     void lookup_cachesSuccess_only() {
         int[] calls = { 0 };
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, "http://127.0.0.1:9", false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 calls[0]++;
