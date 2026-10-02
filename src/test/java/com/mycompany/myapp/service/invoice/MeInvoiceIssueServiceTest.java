@@ -20,6 +20,10 @@ import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.IssueInvoiceRequest;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -210,6 +214,32 @@ class MeInvoiceIssueServiceTest {
         ).isInstanceOf(BadRequestAlertException.class);
         assertThat(order.getInvoiceTaxCode()).isEqualTo("0103179782");
         verify(orderRepo, never()).save(any());
+    }
+
+    private void deliveredAt(Instant at) {
+        order.setId(42L);
+        List<Object[]> rows = List.<Object[]>of(new Object[] { 42L, at });
+        when(eventRepo.latestEventAtByOrderIds(any(), any())).thenReturn(rows);
+    }
+
+    @Test
+    void issueManual_deliveredYesterday_rejects_noPublish() {
+        deliveredAt(ZonedDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(1).toInstant());
+        assertThatThrownBy(() -> service.issueManual("VT0001ABCD", validReq(), "u"))
+            .isInstanceOf(BadRequestAlertException.class)
+            .hasMessageContaining("trong ngày giao");
+        verify(client, never()).publish(any());
+        verify(orderRepo, never()).save(any());
+    }
+
+    @Test
+    void issueManual_deliveredToday_publishes() {
+        deliveredAt(Instant.now());
+        when(client.publish(any(ObjectNode.class))).thenReturn(
+            new MisaMeInvoiceClient.PublishResult(true, false, "TX1", "0000123", "1C26TXE", "CODE1", "{}")
+        );
+        ShipmentOrder out = service.issueManual("VT0001ABCD", validReq(), "u");
+        assertThat(out.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
     }
 
     @Test

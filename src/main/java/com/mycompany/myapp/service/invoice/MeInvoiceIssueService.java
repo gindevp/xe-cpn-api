@@ -44,6 +44,9 @@ public class MeInvoiceIssueService {
     public static final String STATUS_FAILED = "FAILED";
     public static final String STATUS_SKIPPED = "SKIPPED";
 
+    private static final List<String> DELIVERED_ACTIONS = List.of("POD", "POD_QUAY", "DELIVERED", "TRANSITION_DELIVERED");
+    private static final java.time.format.DateTimeFormatter DAY_FMT = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     private final ShipmentOrderRepository shipmentOrderRepository;
@@ -115,6 +118,7 @@ public class MeInvoiceIssueService {
             );
         }
         dayClosureGuard.assertOrderMutable(order);
+        assertIssuedOnDeliveryDay(order);
 
         IssueInvoiceRequest req = request != null ? request : new IssueInvoiceRequest();
         applyBuyer(
@@ -180,6 +184,31 @@ public class MeInvoiceIssueService {
         shipmentOrderRepository.save(order);
         appendEvent(order, "INVOICE_INFO", detail, actor);
         return order;
+    }
+
+    /** Kế toán: HĐ xuất muộn hơn ngày giao thành công bị phạt — chỉ cho xuất thủ công trong ngày giao (giờ VN). */
+    private void assertIssuedOnDeliveryDay(ShipmentOrder order) {
+        if (order.getId() == null) {
+            return;
+        }
+        Instant deliveredAt = orderEventRepository
+            .latestEventAtByOrderIds(List.of(order.getId()), DELIVERED_ACTIONS)
+            .stream()
+            .map(row -> (Instant) row[1])
+            .filter(java.util.Objects::nonNull)
+            .findFirst()
+            .orElse(null);
+        if (deliveredAt == null) {
+            return;
+        }
+        LocalDate deliveredDay = deliveredAt.atZone(VN).toLocalDate();
+        if (deliveredDay.isBefore(LocalDate.now(VN))) {
+            throw new BadRequestAlertException(
+                "Chỉ xuất hoá đơn trong ngày giao thành công (" + deliveredDay.format(DAY_FMT) + ") — đã quá hạn",
+                ENTITY,
+                "invoiceDayPassed"
+            );
+        }
     }
 
     /** Kiểm tra + ghi thông tin người mua (MST, tên, địa chỉ, email đều bắt buộc). */
