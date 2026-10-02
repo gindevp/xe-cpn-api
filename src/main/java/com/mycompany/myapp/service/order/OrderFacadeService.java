@@ -289,12 +289,14 @@ public class OrderFacadeService {
         }
         if (keyword != null && !keyword.isBlank()) {
             String like = "%" + keyword.trim().toLowerCase() + "%";
+            String phone = phoneSearchDigits(keyword);
+            String phoneLike = phone != null ? "%" + phone + "%" : like;
             spec = spec.and((root, q, cb) ->
                 cb.or(
                     cb.like(cb.lower(root.get("orderCode")), like),
                     cb.like(cb.lower(root.get("draftCode")), like),
-                    cb.like(cb.lower(root.get("senderPhone")), like),
-                    cb.like(cb.lower(root.get("receiverPhone")), like),
+                    cb.like(cb.lower(root.get("senderPhone")), phoneLike),
+                    cb.like(cb.lower(root.get("receiverPhone")), phoneLike),
                     cb.like(cb.lower(root.get("receiverName")), like),
                     cb.like(cb.lower(cb.coalesce(root.get("senderName"), "")), like)
                 )
@@ -425,6 +427,19 @@ public class OrderFacadeService {
             updated++;
         }
         return updated;
+    }
+
+    /**
+     * Từ khoá dạng SĐT ("0912 456 874", "0912.456.874", "+84912456874") → chỉ chữ số, đầu 84 đổi về 0.
+     * Không phải SĐT (có chữ cái, &lt; 3 số) → null, giữ cách so khớp cũ.
+     */
+    static String phoneSearchDigits(String keyword) {
+        if (keyword == null) return null;
+        String compact = keyword.trim().replaceAll("[\\s.\\-()]", "");
+        if (!compact.matches("\\+?\\d{3,}")) return null;
+        String digits = compact.startsWith("+") ? compact.substring(1) : compact;
+        if (digits.startsWith("84") && digits.length() >= 11) digits = "0" + digits.substring(2);
+        return digits;
     }
 
     private static Instant parseDayStart(String day) {
