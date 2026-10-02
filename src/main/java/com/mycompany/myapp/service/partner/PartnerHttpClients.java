@@ -12,11 +12,11 @@ import javax.net.ssl.X509TrustManager;
  * Shared HttpClient builder for partner HTTPS calls (Ahamove, …).
  * {@code insecureSsl} dùng khi JVM local/proxy không trust được CA (giống VTHK).
  */
-final class PartnerHttpClients {
+public final class PartnerHttpClients {
 
     private PartnerHttpClients() {}
 
-    static HttpClient build(Duration connectTimeout, boolean insecureSsl) {
+    public static HttpClient build(Duration connectTimeout, boolean insecureSsl) {
         try {
             HttpClient.Builder builder = HttpClient.newBuilder().connectTimeout(connectTimeout);
             if (insecureSsl) {
