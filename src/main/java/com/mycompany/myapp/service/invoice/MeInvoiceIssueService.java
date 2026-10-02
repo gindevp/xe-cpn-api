@@ -219,7 +219,7 @@ public class MeInvoiceIssueService {
             order.setInvoiceIssuedAt(Instant.now());
             order.setInvoiceError(null);
             shipmentOrderRepository.save(order);
-            appendEvent(order, "INVOICE_MARK", "Kế toán tích đã xuất HĐ cá nhân", actor);
+            appendEvent(order, "INVOICE_MARK", "Kế toán tích bỏ xuất tự động hoá đơn", actor);
         } else {
             if (!STATUS_MANUAL.equals(st)) {
                 return order;
@@ -228,7 +228,7 @@ public class MeInvoiceIssueService {
             order.setInvoiceType(null);
             order.setInvoiceIssuedAt(null);
             shipmentOrderRepository.save(order);
-            appendEvent(order, "INVOICE_MARK", "Bỏ tích đã xuất HĐ cá nhân", actor);
+            appendEvent(order, "INVOICE_MARK", "Bỏ tích bỏ xuất tự động hoá đơn", actor);
         }
         return order;
     }
@@ -422,7 +422,7 @@ public class MeInvoiceIssueService {
             );
         }
         if (STATUS_MANUAL.equals(order.getInvoiceStatus())) {
-            throw new BadRequestAlertException("Kế toán đã tích đã xuất HĐ cá nhân — " + suffix, ENTITY, "invoiceMarked");
+            throw new BadRequestAlertException("Kế toán đã tích bỏ xuất tự động — " + suffix, ENTITY, "invoiceMarked");
         }
     }
 
