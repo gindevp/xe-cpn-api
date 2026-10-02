@@ -2,6 +2,8 @@ package com.mycompany.myapp.service;
 
 import com.mycompany.myapp.domain.Driver;
 import com.mycompany.myapp.repository.DriverRepository;
+import com.mycompany.myapp.repository.TripRepository;
+import com.mycompany.myapp.repository.VehicleRepository;
 import com.mycompany.myapp.service.dto.DriverDTO;
 import com.mycompany.myapp.service.mapper.DriverMapper;
 import java.util.LinkedList;
@@ -26,9 +28,20 @@ public class DriverService {
 
     private final DriverMapper driverMapper;
 
-    public DriverService(DriverRepository driverRepository, DriverMapper driverMapper) {
+    private final TripRepository tripRepository;
+
+    private final VehicleRepository vehicleRepository;
+
+    public DriverService(
+        DriverRepository driverRepository,
+        DriverMapper driverMapper,
+        TripRepository tripRepository,
+        VehicleRepository vehicleRepository
+    ) {
         this.driverRepository = driverRepository;
         this.driverMapper = driverMapper;
+        this.tripRepository = tripRepository;
+        this.vehicleRepository = vehicleRepository;
     }
 
     /**
@@ -39,6 +52,15 @@ public class DriverService {
      */
     public DriverDTO save(DriverDTO driverDTO) {
         LOG.debug("Request to save Driver : {}", driverDTO);
+        if (driverDTO.getId() == null && driverDTO.getFullName() != null) {
+            Optional<Driver> hidden = driverRepository
+                .findFirstByFullNameIgnoreCase(driverDTO.getFullName().trim())
+                .filter(d -> Boolean.FALSE.equals(d.getActive()));
+            if (hidden.isPresent()) {
+                hidden.get().setActive(true);
+                return driverMapper.toDto(driverRepository.save(hidden.get()));
+            }
+        }
         Driver driver = driverMapper.toEntity(driverDTO);
         driver = driverRepository.save(driver);
         return driverMapper.toDto(driver);
@@ -107,6 +129,14 @@ public class DriverService {
      */
     public void delete(Long id) {
         LOG.debug("Request to delete Driver : {}", id);
+        Optional<Driver> existing = driverRepository.findById(id);
+        if (existing.isPresent() && (tripRepository.existsByDriver_Id(id) || vehicleRepository.existsByDefaultDriver_Id(id))) {
+            // Chuyến / xe còn tham chiếu tài xế (FK) — ẩn khỏi danh sách thay vì xoá.
+            Driver d = existing.get();
+            d.setActive(false);
+            driverRepository.save(d);
+            return;
+        }
         driverRepository.deleteById(id);
     }
 }

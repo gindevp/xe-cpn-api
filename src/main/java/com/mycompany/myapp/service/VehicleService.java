@@ -4,6 +4,7 @@ import com.mycompany.myapp.domain.Driver;
 import com.mycompany.myapp.domain.Vehicle;
 import com.mycompany.myapp.repository.DriverRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
+import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.repository.VehicleRepository;
 import com.mycompany.myapp.service.audit.AuditRecorder;
 import com.mycompany.myapp.service.dto.VehicleDTO;
@@ -36,18 +37,22 @@ public class VehicleService {
 
     private final AuditRecorder auditRecorder;
 
+    private final TripRepository tripRepository;
+
     public VehicleService(
         VehicleRepository vehicleRepository,
         VehicleMapper vehicleMapper,
         OfficeRepository officeRepository,
         DriverRepository driverRepository,
-        AuditRecorder auditRecorder
+        AuditRecorder auditRecorder,
+        TripRepository tripRepository
     ) {
         this.vehicleRepository = vehicleRepository;
         this.vehicleMapper = vehicleMapper;
         this.officeRepository = officeRepository;
         this.driverRepository = driverRepository;
         this.auditRecorder = auditRecorder;
+        this.tripRepository = tripRepository;
     }
 
     /**
@@ -58,6 +63,16 @@ public class VehicleService {
      */
     public VehicleDTO save(VehicleDTO vehicleDTO) {
         LOG.debug("Request to save Vehicle : {}", vehicleDTO);
+        if (vehicleDTO.getId() == null && vehicleDTO.getPlateNumber() != null) {
+            Optional<Vehicle> hidden = vehicleRepository
+                .findOneByPlateNumber(vehicleDTO.getPlateNumber().trim())
+                .filter(v -> Boolean.FALSE.equals(v.getActive()));
+            if (hidden.isPresent()) {
+                vehicleDTO.setId(hidden.get().getId());
+                vehicleDTO.setActive(true);
+                return update(vehicleDTO);
+            }
+        }
         Vehicle vehicle = vehicleMapper.toEntity(vehicleDTO);
         attachRefs(vehicleDTO, vehicle);
         vehicle = vehicleRepository.save(vehicle);
@@ -147,6 +162,13 @@ public class VehicleService {
             vehicle.setDefaultDriver(
                 driverRepository
                     .findFirstByFullNameIgnoreCase(name)
+                    .map(d -> {
+                        if (Boolean.FALSE.equals(d.getActive())) {
+                            d.setActive(true);
+                            return driverRepository.save(d);
+                        }
+                        return d;
+                    })
                     .orElseGet(() -> {
                         Driver d = new Driver();
                         String code = "VEH-" + Integer.toHexString(name.toLowerCase().hashCode()).toUpperCase();
@@ -171,7 +193,16 @@ public class VehicleService {
      */
     public void delete(Long id) {
         LOG.debug("Request to delete Vehicle : {}", id);
-        String before = vehicleRepository.findOneWithRefs(id).map(VehicleService::describe).orElse("-");
+        Optional<Vehicle> existing = vehicleRepository.findOneWithRefs(id);
+        String before = existing.map(VehicleService::describe).orElse("-");
+        if (existing.isPresent() && tripRepository.existsByVehicle_Id(id)) {
+            // Chuyến cũ còn tham chiếu xe (FK) — ẩn khỏi danh sách thay vì xoá, giữ lịch sử chuyến.
+            Vehicle v = existing.get();
+            v.setActive(false);
+            vehicleRepository.save(v);
+            auditRecorder.record("VEHICLE_DELETE", "Vehicle", id, before + " (đã có chuyến → ngưng hoạt động)");
+            return;
+        }
         vehicleRepository.deleteById(id);
         auditRecorder.record("VEHICLE_DELETE", "Vehicle", id, before);
     }

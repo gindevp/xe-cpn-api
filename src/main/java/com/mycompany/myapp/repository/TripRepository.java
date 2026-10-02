@@ -81,5 +81,9 @@ public interface TripRepository extends JpaRepository<Trip, Long>, JpaSpecificat
         @Param("to") java.time.Instant to
     );
 
+    boolean existsByVehicle_Id(Long vehicleId);
+
+    boolean existsByDriver_Id(Long driverId);
+
     Optional<Trip> findFirstByVehicle_PlateNumberAndStatusInOrderByIdDesc(String plateNumber, Collection<TripStatus> statuses);
 }
