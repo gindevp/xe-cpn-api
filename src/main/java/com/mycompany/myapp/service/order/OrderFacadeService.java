@@ -1199,6 +1199,22 @@ public class OrderFacadeService {
         return stage == null || stage == ForwardStage.PICKED || stage == ForwardStage.WH_IN;
     }
 
+    /** Quầy chỉ đổi HTTT ở Chờ lấy hàng (shipper chưa nhận lấy) / Chờ nhận hàng / Nhập kho gửi (chưa gán xe). */
+    static boolean counterMayChangePaymentTerm(ShipmentOrder order) {
+        boolean notPickedUp = order.getPickedUpAt() == null && order.getForwardStage() == null;
+        if (notPickedUp) {
+            boolean picking =
+                order.getPickingAt() != null || (order.getPickupStaffUsername() != null && !order.getPickupStaffUsername().isBlank());
+            if (picking || order.getCurrentTrip() != null) {
+                return false;
+            }
+            if (order.getStatus() == OrderStatus.DRAFT) {
+                return true;
+            }
+        }
+        return atSenderWarehouse(order);
+    }
+
     /**
      * Đổi hình thức thanh toán. Điều phối VP gửi đổi được khi hàng còn ở kho gửi chưa gán xe (kể cả đã thu — khoản thu
      * được đảo bằng payment âm); sau đó điều phối chỉ đổi khi đơn chưa thu đồng nào, admin đổi được cả khi đã ghi thu.
@@ -1306,8 +1322,23 @@ public class OrderFacadeService {
             if (profile.getRoleCode() == com.mycompany.myapp.domain.enumeration.RoleCode.AD) {
                 admin = true;
                 senderOfficeStaff = true;
+            } else if (profile.getRoleCode() == com.mycompany.myapp.domain.enumeration.RoleCode.Q) {
+                String scoped = staffAccessService.scopedOfficeCode().orElse(null);
+                boolean ownSender =
+                    scoped != null && order.getFromOffice() != null && scoped.equalsIgnoreCase(order.getFromOffice().getCode());
+                if (!ownSender) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Quầy chỉ đổi được đơn của VP gửi mình");
+                }
+                if (!counterMayChangePaymentTerm(order)) {
+                    throw new BadRequestAlertException(
+                        "Quầy chỉ đổi hình thức thanh toán khi đơn ở Chờ lấy hàng / Chờ nhận hàng / Nhập kho gửi",
+                        ENTITY,
+                        "paymentTermCounterStage"
+                    );
+                }
+                senderOfficeStaff = true;
             } else if (profile.getRoleCode() != com.mycompany.myapp.domain.enumeration.RoleCode.DH) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ admin / điều phối được đổi hình thức thanh toán");
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ admin / điều phối / quầy được đổi hình thức thanh toán");
             } else {
                 String scoped = staffAccessService.scopedOfficeCode().orElse(null);
                 Office receiver = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();

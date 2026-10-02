@@ -134,6 +134,73 @@ class OrderFacadeServicePaymentTermTest {
         lenient().when(staffAccessService.scopedOfficeCode()).thenReturn(Optional.of(officeCode));
     }
 
+    private void asCounter(String officeCode) {
+        StaffProfile p = new StaffProfile();
+        p.setRoleCode(RoleCode.Q);
+        when(staffAccessService.isSystemAdmin()).thenReturn(false);
+        when(staffAccessService.current()).thenReturn(Optional.of(p));
+        lenient().when(staffAccessService.scopedOfficeCode()).thenReturn(Optional.of(officeCode));
+    }
+
+    @Test
+    void counter_waitingPickup_switches() {
+        asCounter("VP_PT");
+        order.setStatus(OrderStatus.DRAFT);
+        order.setHomePickup(true);
+
+        service.changePaymentTerm("PT3009TERM", req("NHAN_TRA"));
+
+        assertThat(order.getPaymentTerm()).isEqualTo(PaymentTerm.NHAN_TRA);
+    }
+
+    @Test
+    void counter_shipperPicking_isBlocked() {
+        asCounter("VP_PT");
+        order.setStatus(OrderStatus.DRAFT);
+        order.setHomePickup(true);
+        order.setPickupStaffUsername("ship1");
+
+        assertThatThrownBy(() -> service.changePaymentTerm("PT3009TERM", req("NHAN_TRA")))
+            .extracting(OrderFacadeServicePaymentTermTest::errorKey)
+            .isEqualTo("paymentTermCounterStage");
+    }
+
+    @Test
+    void counter_senderWarehouse_afterCollection_reverses() {
+        asCounter("VP_PT");
+        order.setPickedUpAt(Instant.now());
+        order.setForwardStage(ForwardStage.WH_IN);
+        order.setPaidAmount(new BigDecimal("30000"));
+
+        service.changePaymentTerm("PT3009TERM", req("CONG_NO"));
+
+        ArgumentCaptor<OrderPayment> pay = ArgumentCaptor.forClass(OrderPayment.class);
+        verify(orderPaymentRepository).save(pay.capture());
+        assertThat(pay.getValue().getAmount()).isEqualByComparingTo("-30000");
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("0");
+        assertThat(order.getOnCredit()).isTrue();
+    }
+
+    @Test
+    void counter_assignedToVehicle_isBlocked() {
+        asCounter("VP_PT");
+        order.setPickedUpAt(Instant.now());
+        order.setForwardStage(ForwardStage.WH_IN);
+        order.setCurrentTrip(new Trip());
+
+        assertThatThrownBy(() -> service.changePaymentTerm("PT3009TERM", req("NHAN_TRA")))
+            .extracting(OrderFacadeServicePaymentTermTest::errorKey)
+            .isEqualTo("paymentTermCounterStage");
+    }
+
+    @Test
+    void counter_receiverOffice_isForbidden() {
+        asCounter("VP_HD");
+        order.setForwardStage(ForwardStage.WH_IN);
+
+        assertThatThrownBy(() -> service.changePaymentTerm("PT3009TERM", req("NHAN_TRA"))).isInstanceOf(ResponseStatusException.class);
+    }
+
     private void asAdmin() {
         when(staffAccessService.isSystemAdmin()).thenReturn(true);
     }
