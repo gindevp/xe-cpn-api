@@ -1184,9 +1184,23 @@ public class OrderFacadeService {
         );
     }
 
+    /** Hàng còn nằm kho VP gửi, chưa gán xe. */
+    static boolean atSenderWarehouse(ShipmentOrder order) {
+        OrderStatus st = order.getStatus();
+        if (st != OrderStatus.CONFIRMED && st != OrderStatus.WAITING) {
+            return false;
+        }
+        if (order.getCurrentTrip() != null) {
+            return false;
+        }
+        ForwardStage stage = order.getForwardStage();
+        return stage == null || stage == ForwardStage.PICKED || stage == ForwardStage.WH_IN;
+    }
+
     /**
-     * Đổi hình thức thanh toán. Điều phối (VP gửi/nhận của đơn) chỉ đổi khi đơn chưa thu đồng nào; admin đổi được cả
-     * khi đã ghi thu (khoản thu được đảo bằng payment âm). Đã lên phiếu thu / đã giao / hoàn / huỷ thì không ai đổi.
+     * Đổi hình thức thanh toán. Điều phối VP gửi đổi được khi hàng còn ở kho gửi chưa gán xe (kể cả đã thu — khoản thu
+     * được đảo bằng payment âm); sau đó điều phối chỉ đổi khi đơn chưa thu đồng nào, admin đổi được cả khi đã ghi thu.
+     * Đã lên phiếu thu / đã giao / hoàn / huỷ thì không ai đổi.
      */
     /**
      * Đổi VP nhận khi hàng đang nằm ở kho VP nhận (nhập kho giao / giao thất bại / chờ giao lại) vì hàng đã được chuyển
@@ -1282,26 +1296,28 @@ public class OrderFacadeService {
         }
 
         boolean admin = staffAccessService.isSystemAdmin();
+        boolean senderOfficeStaff = admin;
         if (!admin) {
             var profile = staffAccessService
                 .current()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ admin / điều phối được đổi"));
             if (profile.getRoleCode() == com.mycompany.myapp.domain.enumeration.RoleCode.AD) {
                 admin = true;
+                senderOfficeStaff = true;
             } else if (profile.getRoleCode() != com.mycompany.myapp.domain.enumeration.RoleCode.DH) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ admin / điều phối được đổi hình thức thanh toán");
             } else {
                 String scoped = staffAccessService.scopedOfficeCode().orElse(null);
                 Office receiver = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
-                boolean inScope =
-                    scoped == null ||
-                    (order.getFromOffice() != null && scoped.equalsIgnoreCase(order.getFromOffice().getCode())) ||
-                    (receiver != null && scoped.equalsIgnoreCase(receiver.getCode()));
+                senderOfficeStaff =
+                    scoped == null || (order.getFromOffice() != null && scoped.equalsIgnoreCase(order.getFromOffice().getCode()));
+                boolean inScope = senderOfficeStaff || (receiver != null && scoped.equalsIgnoreCase(receiver.getCode()));
                 if (!inScope) {
                     throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Đơn không thuộc VP của bạn");
                 }
             }
         }
+        boolean atSenderWh = atSenderWarehouse(order) && senderOfficeStaff;
 
         OrderStatus st = order.getStatus();
         if (st == OrderStatus.DELIVERED || st == OrderStatus.RETURNING || st == OrderStatus.RETURNED || st == OrderStatus.CANCELLED) {
@@ -1324,9 +1340,9 @@ public class OrderFacadeService {
         if (currentTerm == target && currentCredit == targetCredit) {
             throw new BadRequestAlertException("Đơn đang ở hình thức này rồi", ENTITY, "paymentTermUnchanged");
         }
-        if (target == PaymentTerm.GUI_TRA && !targetCredit && senderWarehouseDone(order)) {
+        if (target == PaymentTerm.GUI_TRA && !targetCredit && senderWarehouseDone(order) && !atSenderWh) {
             throw new BadRequestAlertException(
-                "Đơn đã nhập kho gửi — chỉ đổi được sang Người nhận trả hoặc Công nợ",
+                "Đơn đã gán xe — chỉ đổi được sang Người nhận trả hoặc Công nợ",
                 ENTITY,
                 "paymentTermSenderGone"
             );
@@ -1334,9 +1350,9 @@ public class OrderFacadeService {
 
         BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
         boolean reverse = paid.signum() > 0 && !(target == PaymentTerm.GUI_TRA && !targetCredit);
-        if (paid.signum() > 0 && !admin) {
+        if (paid.signum() > 0 && !admin && !atSenderWh) {
             throw new BadRequestAlertException(
-                "Đơn đã thu " + paid.toPlainString() + "đ — chỉ admin đổi được hình thức thanh toán",
+                "Đơn đã thu " + paid.toPlainString() + "đ và đã gán xe — chỉ admin đổi được hình thức thanh toán",
                 ENTITY,
                 "paymentTermCollected"
             );
@@ -1372,6 +1388,9 @@ public class OrderFacadeService {
         }
         detail.append(" · Lý do: ").append(reason);
         appendEvent(order, "PAYMENT_TERM_CHANGE", detail.toString(), actor);
+        if (target == PaymentTerm.GUI_TRA && !targetCredit && senderWarehouseDone(order)) {
+            collectSenderFareOnWarehouseIn(order);
+        }
         return getByCode(order.getOrderCode());
     }
 

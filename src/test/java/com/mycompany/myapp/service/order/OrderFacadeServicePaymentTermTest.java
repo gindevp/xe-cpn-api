@@ -13,6 +13,8 @@ import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.StaffProfile;
+import com.mycompany.myapp.domain.Trip;
+import com.mycompany.myapp.domain.enumeration.ForwardStage;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.domain.enumeration.RoleCode;
@@ -160,14 +162,69 @@ class OrderFacadeServicePaymentTermTest {
     }
 
     @Test
-    void dispatcher_afterCollection_isBlocked() {
+    void dispatcher_afterCollection_assignedToVehicle_isBlocked() {
         asDispatcher("VP_PT");
+        order.setForwardStage(ForwardStage.TRANSFER_PENDING);
         order.setPaidAmount(new BigDecimal("30000"));
 
         assertThatThrownBy(() -> service.changePaymentTerm("PT3009TERM", req("NHAN_TRA")))
             .isInstanceOf(BadRequestAlertException.class)
             .extracting(OrderFacadeServicePaymentTermTest::errorKey)
             .isEqualTo("paymentTermCollected");
+    }
+
+    @Test
+    void senderDispatcher_atSenderWarehouse_afterCollection_reverses() {
+        asDispatcher("VP_PT");
+        order.setForwardStage(ForwardStage.WH_IN);
+        order.setPaidAmount(new BigDecimal("30000"));
+
+        service.changePaymentTerm("PT3009TERM", req("NHAN_TRA"));
+
+        ArgumentCaptor<OrderPayment> pay = ArgumentCaptor.forClass(OrderPayment.class);
+        verify(orderPaymentRepository).save(pay.capture());
+        assertThat(pay.getValue().getAmount()).isEqualByComparingTo("-30000");
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("0");
+        assertThat(order.getPaymentTerm()).isEqualTo(PaymentTerm.NHAN_TRA);
+    }
+
+    @Test
+    void receiverDispatcher_atSenderWarehouse_afterCollection_isBlocked() {
+        asDispatcher("VP_HD");
+        order.setForwardStage(ForwardStage.WH_IN);
+        order.setPaidAmount(new BigDecimal("30000"));
+
+        assertThatThrownBy(() -> service.changePaymentTerm("PT3009TERM", req("NHAN_TRA")))
+            .extracting(OrderFacadeServicePaymentTermTest::errorKey)
+            .isEqualTo("paymentTermCollected");
+    }
+
+    @Test
+    void dispatcher_onTrip_isNotAtSenderWarehouse() {
+        asDispatcher("VP_PT");
+        order.setForwardStage(ForwardStage.WH_IN);
+        order.setCurrentTrip(new Trip());
+        order.setPaidAmount(new BigDecimal("30000"));
+
+        assertThatThrownBy(() -> service.changePaymentTerm("PT3009TERM", req("NHAN_TRA")))
+            .extracting(OrderFacadeServicePaymentTermTest::errorKey)
+            .isEqualTo("paymentTermCollected");
+    }
+
+    @Test
+    void toSenderPays_atSenderWarehouse_switchesAndCollectsSenderFare() {
+        asDispatcher("VP_PT");
+        order.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        order.setForwardStage(ForwardStage.WH_IN);
+
+        service.changePaymentTerm("PT3009TERM", req("GUI_TRA"));
+
+        assertThat(order.getPaymentTerm()).isEqualTo(PaymentTerm.GUI_TRA);
+        ArgumentCaptor<OrderPayment> pay = ArgumentCaptor.forClass(OrderPayment.class);
+        verify(orderPaymentRepository).save(pay.capture());
+        assertThat(pay.getValue().getAmount()).isEqualByComparingTo("30000");
+        assertThat(pay.getValue().getNote()).isEqualTo(OrderFacadeService.NOTE_SENDER_PREPAID);
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("30000");
     }
 
     @Test
@@ -205,10 +262,11 @@ class OrderFacadeServicePaymentTermTest {
     }
 
     @Test
-    void toSenderPays_afterWarehouseIn_isBlocked() {
+    void toSenderPays_afterAssignedToVehicle_isBlocked() {
         asAdmin();
         order.setPaymentTerm(PaymentTerm.NHAN_TRA);
         order.setPickedUpAt(Instant.now());
+        order.setForwardStage(ForwardStage.TRANSFER_PENDING);
 
         assertThatThrownBy(() -> service.changePaymentTerm("PT3009TERM", req("GUI_TRA")))
             .extracting(OrderFacadeServicePaymentTermTest::errorKey)
