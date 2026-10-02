@@ -13,6 +13,7 @@ import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.service.config.AutoCallConfigService;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient.Result;
+import com.mycompany.myapp.service.realtime.ServerEventService;
 import jakarta.annotation.PreDestroy;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -37,6 +38,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -102,6 +104,13 @@ public class AutoCallService {
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.client = client;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+    }
+
+    private ServerEventService serverEventService;
+
+    @Autowired(required = false)
+    void setServerEventService(ServerEventService serverEventService) {
+        this.serverEventService = serverEventService;
     }
 
     @PreDestroy
@@ -275,6 +284,9 @@ public class AutoCallService {
         autoCallRepository.save(call);
         if (status != null && FINAL_STATUSES.contains(status) && !status.equals(prevStatus)) {
             appendEvent(call.getOrder(), "AUTO_CALL_RESULT", sandboxPrefix(call) + resultText(call));
+            if ("error".equals(call.getResult())) {
+                alertAdmins(call, "carrier", "Lỗi tổng đài / nhà mạng");
+            }
             scheduleRetry(call);
         }
         return true;
@@ -724,9 +736,28 @@ public class AutoCallService {
         call.setUpdatedAt(Instant.now());
         autoCallRepository.save(call);
         appendEvent(call.getOrder(), "AUTO_CALL_ERROR", message != null ? message : code);
+        alertAdmins(call, "send", message != null ? message : code);
         if (!"API_KEY_MISSING".equals(code)) {
             scheduleRetry(call);
         }
+    }
+
+    /** Popup cho admin đang mở web (SSE) — gửi sau commit để không báo lỗi của transaction bị rollback. */
+    private void alertAdmins(AutoCall call, String kind, String message) {
+        ServerEventService events = serverEventService;
+        if (events == null) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("kind", kind);
+        payload.put("message", truncate(message, 255));
+        payload.put("orderCode", call.getOrder() != null ? call.getOrder().getOrderCode() : null);
+        payload.put("phone", call.getPhone());
+        payload.put("refId", call.getRefId());
+        payload.put("callId", call.getCallId());
+        payload.put("sandbox", Boolean.TRUE.equals(call.getSandbox()));
+        payload.put("at", Instant.now().toString());
+        dispatchAfterCommit(() -> events.autoCallError(payload));
     }
 
     private void appendEvent(ShipmentOrder order, String action, String detail) {

@@ -49,7 +49,8 @@ public class ServerEventService {
     private static final int MAX_SUBSCRIBERS = 2000;
     private static final int LOAD_CHUNK = 500;
 
-    private record Subscriber(SseEmitter emitter, String login, String officeCode) {}
+    /** @param integrationAlerts nhận cảnh báo tích hợp (lỗi Auto Call…) — người có quyền ghi màn Tích hợp */
+    private record Subscriber(SseEmitter emitter, String login, String officeCode, boolean integrationAlerts) {}
 
     private record OrderChange(String code, Set<String> officeCodes) {}
 
@@ -107,12 +108,12 @@ public class ServerEventService {
     }
 
     /** @param officeCode null = nhận thay đổi của mọi văn phòng */
-    public SseEmitter subscribe(String login, String officeCode) {
+    public SseEmitter subscribe(String login, String officeCode, boolean integrationAlerts) {
         if (subscribers.size() >= MAX_SUBSCRIBERS) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Too many realtime connections");
         }
         SseEmitter emitter = new SseEmitter(EMITTER_TIMEOUT_MS);
-        Subscriber sub = new Subscriber(emitter, login, officeCode);
+        Subscriber sub = new Subscriber(emitter, login, officeCode, integrationAlerts);
         subscribers.add(sub);
         emitter.onCompletion(() -> subscribers.remove(sub));
         emitter.onTimeout(() -> {
@@ -143,6 +144,20 @@ public class ServerEventService {
         if (tripId != null && !subscribers.isEmpty()) {
             pendingTripIds.add(tripId);
         }
+    }
+
+    /** Event "autocall-error" — chỉ gửi tới subscriber nhận cảnh báo tích hợp, trên luồng SSE (không chặn người gọi). */
+    public void autoCallError(Map<String, Object> payload) {
+        if (executor == null || subscribers.stream().noneMatch(Subscriber::integrationAlerts)) {
+            return;
+        }
+        executor.execute(() -> {
+            for (Subscriber s : subscribers) {
+                if (s.integrationAlerts()) {
+                    send(s, "autocall-error", payload);
+                }
+            }
+        });
     }
 
     private void safeFlush() {

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -84,7 +85,7 @@ class AutoCallConsoleServiceTest {
         when(client.listCalls(any(), eq("xk_test_1234"), anyMap())).thenReturn(new Result(true, 200, null, null, body));
         when(autoCallRepository.findOrderCodesByRefIds(any())).thenReturn(List.of(ref("CPN-GIAO-A-1-x", "A")));
 
-        Map<String, Object> out = service.listCalls("2026-09-01", "2026-09-30", "GIAO", "", 1, 500);
+        Map<String, Object> out = service.listCalls("2026-09-01", "2026-09-30", "GIAO", "", null, null, 1, 500);
 
         ArgumentCaptor<Map<String, String>> q = ArgumentCaptor.forClass(Map.class);
         verify(client).listCalls(any(), any(), q.capture());
@@ -122,7 +123,7 @@ class AutoCallConsoleServiceTest {
             return new Result(true, 200, null, null, "1".equals(q.get("page")) ? p1 : p2);
         });
 
-        Map<String, Object> first = service.listCalls("2026-09-01", "2026-09-30", null, null, 1, 20);
+        Map<String, Object> first = service.listCalls("2026-09-01", "2026-09-30", null, null, null, null, 1, 20);
         List<JsonNode> data = (List<JsonNode>) first.get("data");
         assertThat(data).hasSize(20);
         assertThat(data.get(0).path("callId").asText()).isEqualTo("newest");
@@ -130,17 +131,67 @@ class AutoCallConsoleServiceTest {
         assertThat(((JsonNode) first.get("pagination")).path("total").asInt()).isEqualTo(202);
         assertThat(((JsonNode) first.get("pagination")).path("totalPages").asInt()).isEqualTo(11);
 
-        Map<String, Object> last = service.listCalls("2026-09-01", "2026-09-30", null, null, 11, 20);
+        Map<String, Object> last = service.listCalls("2026-09-01", "2026-09-30", null, null, null, null, 11, 20);
         assertThat((List<JsonNode>) last.get("data")).hasSize(2);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void listCalls_filtersByPhone_partialAnd84Prefix() throws Exception {
+        stubKey("xk_test_1234");
+        JsonNode body = JSON.readTree(
+            "{\"success\":true,\"data\":[" +
+            "{\"callId\":\"a\",\"phone\":\"0912345678\"}," +
+            "{\"callId\":\"b\",\"phone\":\"0987654321\"}," +
+            "{\"callId\":\"c\",\"phone\":\"0912000678\"}]," +
+            "\"pagination\":{\"page\":1,\"limit\":200,\"total\":3,\"totalPages\":1}}"
+        );
+        when(client.listCalls(any(), any(), anyMap())).thenReturn(new Result(true, 200, null, null, body));
+
+        Map<String, Object> full = service.listCalls(null, null, null, null, null, "+84 912 345 678", 1, 20);
+        assertThat((List<JsonNode>) full.get("data")).extracting(n -> n.path("callId").asText()).containsExactly("a");
+        assertThat(((JsonNode) full.get("pagination")).path("total").asInt()).isEqualTo(1);
+
+        Map<String, Object> tail = service.listCalls(null, null, null, null, null, "678", 1, 20);
+        assertThat((List<JsonNode>) tail.get("data")).extracting(n -> n.path("callId").asText()).containsExactlyInAnyOrder("a", "c");
+
+        verify(client, never()).listCalls(any(), any(), argThat(q -> q.containsKey("phone")));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void listCalls_filtersByResult() throws Exception {
+        stubKey("xk_test_1234");
+        JsonNode body = JSON.readTree(
+            "{\"success\":true,\"data\":[" +
+            "{\"callId\":\"a\",\"result\":\"answered\"}," +
+            "{\"callId\":\"b\",\"result\":\"not_answered\"}," +
+            "{\"callId\":\"c\",\"result\":\"error\"}," +
+            "{\"callId\":\"d\",\"status\":\"queued\"}]," +
+            "\"pagination\":{\"page\":1,\"limit\":200,\"total\":4,\"totalPages\":1}}"
+        );
+        when(client.listCalls(any(), any(), anyMap())).thenReturn(new Result(true, 200, null, null, body));
+
+        Map<String, Object> err = service.listCalls(null, null, null, null, "ERROR", null, 1, 20);
+        assertThat((List<JsonNode>) err.get("data")).extracting(n -> n.path("callId").asText()).containsExactly("c");
+        Map<String, Object> no = service.listCalls(null, null, null, null, "not_answered", null, 1, 20);
+        assertThat((List<JsonNode>) no.get("data")).extracting(n -> n.path("callId").asText()).containsExactly("b");
+
+        assertThatThrownBy(() -> service.listCalls(null, null, null, null, "busy", null, 1, 20)).hasMessageContaining("Kết quả");
     }
 
     @Test
     void listCalls_rejectsRangeOver31DaysAndReversedDates() {
-        assertThatThrownBy(() -> service.listCalls("2026-08-30", "2026-09-30", null, null, null, null)).hasMessageContaining("31");
-        assertThatThrownBy(() -> service.listCalls("2026-09-30", "2026-09-01", null, null, null, null)).hasMessageContaining("trước");
-        assertThatThrownBy(() -> service.listCalls("2026-09-01", "2026-09-30", null, "done", null, null)).hasMessageContaining(
+        assertThatThrownBy(() -> service.listCalls("2026-08-30", "2026-09-30", null, null, null, null, null, null)).hasMessageContaining(
+            "31"
+        );
+        assertThatThrownBy(() -> service.listCalls("2026-09-30", "2026-09-01", null, null, null, null, null, null)).hasMessageContaining(
+            "trước"
+        );
+        assertThatThrownBy(() -> service.listCalls("2026-09-01", "2026-09-30", null, "done", null, null, null, null)).hasMessageContaining(
             "Trạng thái"
         );
+        assertThatThrownBy(() -> service.listCalls(null, null, null, null, null, "09", null, null)).hasMessageContaining("3 số");
         verify(client, never()).listCalls(any(), any(), anyMap());
     }
 
@@ -148,7 +199,7 @@ class AutoCallConsoleServiceTest {
     void listCalls_hhvnError_returnsVietnameseMessage() {
         stubKey("xk_test_1234");
         when(client.listCalls(any(), any(), anyMap())).thenReturn(new Result(false, 403, "IP_NOT_ALLOWED", "ip", null));
-        Map<String, Object> out = service.listCalls(null, null, null, null, null, null);
+        Map<String, Object> out = service.listCalls(null, null, null, null, null, null, null, null);
         assertThat(out.get("ok")).isEqualTo(false);
         assertThat((String) out.get("message")).contains("whitelist");
     }

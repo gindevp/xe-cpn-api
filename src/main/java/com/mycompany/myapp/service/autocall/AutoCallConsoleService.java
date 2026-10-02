@@ -48,6 +48,7 @@ public class AutoCallConsoleService {
     static final int MAX_FETCH_PAGES = 10;
     static final Set<String> CALL_TYPES = Set.of("giao", "hoan");
     static final Set<String> CALL_STATUSES = Set.of("queued", "calling", "retrying", "completed", "failed", "cancelled");
+    static final Set<String> CALL_RESULTS = Set.of("answered", "not_answered", "error");
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
     private static final DateTimeFormatter REF_TIME = DateTimeFormatter.ofPattern("yyMMddHHmmss");
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -74,8 +75,26 @@ public class AutoCallConsoleService {
     }
 
     /** GET /calls của HHVN. {@code from}/{@code to} là ngày (yyyy-MM-dd, giờ VN), mặc định 7 ngày gần nhất. */
-    public Map<String, Object> listCalls(String from, String to, String type, String status, Integer page, Integer limit) {
+    /**
+     * {@code result} (answered / not_answered / error) và {@code phone} (chứa chuỗi số đã nhập, chấp nhận 84…/+84…):
+     * HHVN không có 2 tham số này nên lọc phía CPN.
+     */
+    public Map<String, Object> listCalls(
+        String from,
+        String to,
+        String type,
+        String status,
+        String result,
+        String phone,
+        Integer page,
+        Integer limit
+    ) {
         staffAccessService.requireScreenRead(ScreenKey.TICH_HOP);
+        String resultFilter = optionalOf(result, CALL_RESULTS, "Kết quả không hợp lệ");
+        String phoneQuery = phoneDigits(phone);
+        if (phoneQuery != null && phoneQuery.length() < 3) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nhập ít nhất 3 số điện thoại");
+        }
         LocalDate toDate = parseDate(to, LocalDate.now(VN));
         LocalDate fromDate = parseDate(from, toDate.minusDays(6));
         if (fromDate.isAfter(toDate)) {
@@ -121,6 +140,15 @@ public class AutoCallConsoleService {
                 break;
             }
         }
+        if (resultFilter != null) {
+            all.removeIf(c -> !resultFilter.equals(c.path("result").asText("")));
+        }
+        if (phoneQuery != null) {
+            all.removeIf(c -> {
+                String p = phoneDigits(c.path("phone").asText(""));
+                return p == null || !p.contains(phoneQuery);
+            });
+        }
         all.sort(Comparator.<JsonNode>comparingLong(AutoCallConsoleService::createdAtMillis).reversed());
         int start = Math.min(all.size(), (pg - 1) * lim);
         int end = Math.min(all.size(), start + lim);
@@ -135,6 +163,21 @@ public class AutoCallConsoleService {
             out.put("truncated", true);
         }
         return out;
+    }
+
+    /** Chỉ giữ chữ số, đổi đầu 84 (11 số) về 0; null nếu rỗng. */
+    static String phoneDigits(String s) {
+        if (s == null) {
+            return null;
+        }
+        String d = s.replaceAll("\\D", "");
+        if (d.isEmpty()) {
+            return null;
+        }
+        if (d.startsWith("84") && d.length() == 11) {
+            d = "0" + d.substring(2);
+        }
+        return d;
     }
 
     static long createdAtMillis(JsonNode call) {

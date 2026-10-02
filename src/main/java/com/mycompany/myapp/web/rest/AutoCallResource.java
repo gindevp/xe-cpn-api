@@ -54,10 +54,12 @@ public class AutoCallResource {
         @RequestParam(value = "to", required = false) String to,
         @RequestParam(value = "type", required = false) String type,
         @RequestParam(value = "status", required = false) String status,
+        @RequestParam(value = "result", required = false) String result,
+        @RequestParam(value = "phone", required = false) String phone,
         @RequestParam(value = "page", required = false) Integer page,
         @RequestParam(value = "limit", required = false) Integer limit
     ) {
-        return consoleService.listCalls(from, to, type, status, page, limit);
+        return consoleService.listCalls(from, to, type, status, result, phone, page, limit);
     }
 
     /** {@code q} = callId ({@code call_…}) hoặc refId. */

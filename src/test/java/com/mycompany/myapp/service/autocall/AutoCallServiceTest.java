@@ -22,6 +22,7 @@ import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient.Result;
+import com.mycompany.myapp.service.realtime.ServerEventService;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HexFormat;
@@ -615,6 +616,39 @@ class AutoCallServiceTest {
 
         assertThat(c.getNextRetryAt()).isNotNull();
         assertThat(eventActions()).containsExactly("AUTO_CALL_RESULT", "AUTO_CALL_RETRY");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void applyCallObject_carrierError_alertsAdminsAfterCommit_notAnsweredDoesNot() throws Exception {
+        ServerEventService events = org.mockito.Mockito.mock(ServerEventService.class);
+        service.setServerEventService(events);
+        org.mockito.Mockito.lenient().when(integrationConfigRepository.findAll()).thenReturn(List.of(config(true, KEY)));
+
+        AutoCall err = pendingCall();
+        err.setStatus("QUEUED");
+        when(autoCallRepository.findOneByRefId(err.getRefId())).thenReturn(Optional.of(err));
+        service.applyCallObject(
+            JSON.readTree("{\"callId\":\"call_1\",\"refId\":\"" + err.getRefId() + "\",\"status\":\"failed\",\"result\":\"error\"}")
+        );
+        verify(events, never()).autoCallError(anyMap());
+        dispatched.forEach(Runnable::run);
+        ArgumentCaptor<java.util.Map<String, Object>> payload = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(events).autoCallError(payload.capture());
+        assertThat(payload.getValue())
+            .containsEntry("kind", "carrier")
+            .containsEntry("phone", err.getPhone())
+            .containsEntry("refId", err.getRefId())
+            .containsEntry("callId", "call_1");
+
+        dispatched.clear();
+        AutoCall noAnswer = pendingCall();
+        noAnswer.setRefId("CPN-GIAO-OTHER");
+        noAnswer.setStatus("QUEUED");
+        when(autoCallRepository.findOneByRefId("CPN-GIAO-OTHER")).thenReturn(Optional.of(noAnswer));
+        service.applyCallObject(JSON.readTree("{\"refId\":\"CPN-GIAO-OTHER\",\"status\":\"failed\",\"result\":\"not_answered\"}"));
+        dispatched.forEach(Runnable::run);
+        verify(events, times(1)).autoCallError(anyMap());
     }
 
     @Test
