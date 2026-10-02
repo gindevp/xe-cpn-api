@@ -76,8 +76,12 @@ public class VthkTripSearchClient {
         return enabled;
     }
 
+    /** Xe đã chạy tới 2 tiếng vẫn hiện để gán hàng lên muộn; xe sắp chạy hiện trước 3 tiếng. */
+    static final Duration WINDOW_BEFORE = Duration.ofHours(2);
+    static final Duration WINDOW_AFTER = Duration.ofHours(3);
+
     /**
-     * Search trips for itinerary labels ({@code MaHanhTrinhs}), window {@code [now, now+1h]} VN time.
+     * Search trips for itinerary labels ({@code MaHanhTrinhs}), window {@code [now-2h, now+3h]} VN time.
      */
     public List<JsonNode> searchTripsByItineraries(List<String> maHanhTrinhs) {
         if (!enabled) {
@@ -87,8 +91,8 @@ public class VthkTripSearchClient {
             throw new BadRequestAlertException("MaHanhTrinhs is required", ENTITY, "maHanhTrinhRequired");
         }
         LocalDateTime now = LocalDateTime.now(VN);
-        String ngayDiTu = CRM_DT.format(now);
-        String ngayDiDen = CRM_DT.format(now.plusHours(1));
+        String ngayDiTu = CRM_DT.format(now.minus(WINDOW_BEFORE));
+        String ngayDiDen = CRM_DT.format(now.plus(WINDOW_AFTER));
         return searchTripsByItineraries(maHanhTrinhs, ngayDiTu, ngayDiDen);
     }
 

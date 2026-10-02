@@ -54,7 +54,7 @@ public class AvailableTripSearchService {
     }
 
     /**
-     * @param date ignored — window is always now → now+1h (VN)
+     * @param date ignored — window is always now-2h → now+3h (VN)
      * @param timeSlot ignored — no FE time-slot filter
      * @param lfid / ltid ignored — CRM uses MaHanhTrinhs from itinerary name
      */
