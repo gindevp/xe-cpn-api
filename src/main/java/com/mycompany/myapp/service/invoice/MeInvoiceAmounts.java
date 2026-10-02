@@ -17,7 +17,7 @@ public final class MeInvoiceAmounts {
     public static final BigDecimal VAT_FACTOR = new BigDecimal("1.1");
     public static final String VAT_RATE_NAME = "10%";
     public static final String ITEM_CODE = "DV-VANCHUYEN";
-    public static final String UNIT_NAME = "Chuyen";
+    public static final String UNIT_NAME = "Chuyến";
 
     private MeInvoiceAmounts() {}
 

@@ -93,6 +93,7 @@ class MeInvoiceIssueServiceTest {
         assertThat(inv.get("BuyerTaxCode").asText()).isEqualTo("0100233488");
         assertThat(inv.get("BuyerEmail").asText()).isEqualTo("ketoan@abc.vn");
         assertThat(inv.get("IsSendEmail").asBoolean()).isTrue();
+        assertThat(inv.get("OriginalInvoiceDetail").get(0).get("UnitName").asText()).isEqualTo("Chuyến");
 
         ArgumentCaptor<OrderEvent> ev = ArgumentCaptor.forClass(OrderEvent.class);
         verify(eventRepo).save(ev.capture());
