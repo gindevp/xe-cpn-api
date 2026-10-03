@@ -108,5 +108,6 @@
     <include file="config/liquibase/changelog/20261002140000_autocall_retry_days.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261002170000_invoice_personal.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261003140000_order_event_detail_1000.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261003170000_pricing_rule_basis.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 

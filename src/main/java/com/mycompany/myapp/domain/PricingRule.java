@@ -83,6 +83,14 @@ public class PricingRule implements Serializable {
     @Column(name = "active", nullable = false)
     private Boolean active;
 
+    /** {@link #BASIS_KG} = mức theo cân; {@link #BASIS_SIZE} = mức theo chiều lớn nhất (minKg/maxKg là cm, stepGram là bước cm). */
+    @Size(max = 10)
+    @Column(name = "rule_basis", length = 10, nullable = false)
+    private String ruleBasis = BASIS_KG;
+
+    public static final String BASIS_KG = "KG";
+    public static final String BASIS_SIZE = "SIZE";
+
     @ManyToOne
     @JsonIgnoreProperties(value = { "fromOffice", "toOffice" }, allowSetters = true)
     private Route route;
@@ -287,6 +295,24 @@ public class PricingRule implements Serializable {
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+    public String getRuleBasis() {
+        return this.ruleBasis;
+    }
+
+    public void setRuleBasis(String ruleBasis) {
+        this.ruleBasis = ruleBasis == null || ruleBasis.isBlank() ? BASIS_KG : ruleBasis;
+    }
+
+    public PricingRule ruleBasis(String ruleBasis) {
+        this.setRuleBasis(ruleBasis);
+        return this;
+    }
+
+    /** Mức theo kích thước — không dùng để tra cước theo cân. */
+    public boolean isSizeBasis() {
+        return BASIS_SIZE.equalsIgnoreCase(this.ruleBasis);
     }
 
     public Route getRoute() {

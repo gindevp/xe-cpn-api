@@ -125,6 +125,21 @@ class SimpleFareCalculatorTest {
         assertThat(b.base()).isEqualByComparingTo("14000");
     }
 
+    /** Mức theo kích thước (cm) nằm chung bảng nhưng không được dùng để tra cước theo cân. */
+    @Test
+    void estimate_ignoresSizeBasisRules() {
+        PricingRule kg = routeRule(1L, "0", "10", "20000", "0");
+        PricingRule size = routeRule(2L, "0", "30", "35000", "0").ruleBasis(PricingRule.BASIS_SIZE);
+        when(pricingRuleRepository.findAll()).thenReturn(List.of(size, kg));
+
+        SimpleFareCalculator.FareBreakdown b = calc.estimate(new BigDecimal("5"), false, false, gp, nb);
+        assertThat(b.base()).isEqualByComparingTo("20000");
+        assertThat(b.pricingRuleId()).isEqualTo(1L);
+
+        when(pricingRuleRepository.findAll()).thenReturn(List.of(size));
+        assertThat(calc.estimate(new BigDecimal("5"), false, false, gp, nb).pricingRuleId()).isNull();
+    }
+
     @Test
     void estimate_prefersBranchOverOfficeRoute() {
         PricingRule officeRule = routeRule(1L, "0", "10", "99999", "0");

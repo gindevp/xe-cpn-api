@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261003170000-1" author="cpn">
+        <comment>Bảng giá theo kích thước phủ bì (chiều lớn nhất): KG = mức theo cân, SIZE = mức theo cm (min_kg/max_kg giữ cm, step_gram giữ bước cm).</comment>
+        <addColumn tableName="pricing_rule">
+            <column name="rule_basis" type="varchar(10)" defaultValue="KG">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

@@ -125,6 +125,7 @@ public class SimpleFareCalculator {
             .findAll()
             .stream()
             .filter(p -> Boolean.TRUE.equals(p.getActive()))
+            .filter(p -> !p.isSizeBasis())
             .filter(p -> p.getEffectiveFrom() == null || !p.getEffectiveFrom().isAfter(now))
             .filter(p -> p.getEffectiveTo() == null || p.getEffectiveTo().isAfter(now))
             .toList();

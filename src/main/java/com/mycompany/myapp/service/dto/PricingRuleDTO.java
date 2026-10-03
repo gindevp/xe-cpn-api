@@ -61,6 +61,10 @@ public class PricingRuleDTO implements Serializable {
     @NotNull
     private Boolean active;
 
+    /** KG (mặc định) hoặc SIZE — mức theo chiều lớn nhất, min/max là cm. */
+    @Size(max = 10)
+    private String ruleBasis;
+
     private RouteDTO route;
 
     private BranchDTO branch;
@@ -183,6 +187,14 @@ public class PricingRuleDTO implements Serializable {
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+    public String getRuleBasis() {
+        return ruleBasis;
+    }
+
+    public void setRuleBasis(String ruleBasis) {
+        this.ruleBasis = ruleBasis;
     }
 
     public RouteDTO getRoute() {
