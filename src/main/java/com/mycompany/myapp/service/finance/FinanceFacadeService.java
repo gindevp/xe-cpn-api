@@ -45,6 +45,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -665,6 +666,7 @@ public class FinanceFacadeService {
             }
         }
         Map<Long, Instant> paidAt = customerPaidAtByOrderIds(orderIds);
+        Map<String, Optional<String>> names = new HashMap<>();
         return rows.map(row -> {
             List<ReceiptOrderLine> lines = linesByReceipt.getOrDefault(row.id(), List.of());
             List<Map<String, Object>> lineViews = new ArrayList<>();
@@ -693,7 +695,11 @@ public class FinanceFacadeService {
                 row.confirmedByUsername(),
                 customerPaidAt != null ? customerPaidAt : row.createdAt(),
                 null,
-                Boolean.TRUE.equals(row.hasConfirmProof())
+                Boolean.TRUE.equals(row.hasConfirmProof()),
+                names.computeIfAbsent("P:" + row.payerCode(), k -> Optional.ofNullable(staffNameOf(row.payerCode(), true))).orElse(null),
+                names
+                    .computeIfAbsent("U:" + row.createdByUsername(), k -> Optional.ofNullable(staffNameOf(row.createdByUsername(), false)))
+                    .orElse(null)
             );
         });
     }
@@ -1140,8 +1146,22 @@ public class FinanceFacadeService {
             r.getConfirmedByUsername(),
             customerPaidAt,
             r.getConfirmProofImage(),
-            r.getConfirmProofImage() != null && !r.getConfirmProofImage().isBlank()
+            r.getConfirmProofImage() != null && !r.getConfirmProofImage().isBlank(),
+            staffNameOf(r.getPayerCode(), true),
+            staffNameOf(r.getCreatedByUsername(), false)
         );
+    }
+
+    private String staffNameOf(String key, boolean orStaffCode) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        String k = key.trim();
+        Optional<StaffProfile> profile = staffProfileRepository.findOneByUserLoginIgnoreCase(k);
+        if (profile.isEmpty() && orStaffCode) {
+            profile = staffProfileRepository.findOneByStaffCodeIgnoreCase(k);
+        }
+        return profile.map(StaffProfile::getDisplayName).filter(n -> !n.isBlank()).orElse(null);
     }
 
     /** Thời điểm nhận tiền khách gần nhất trên đơn (bỏ RECEIPT_* nộp quỹ). */
@@ -1374,7 +1394,10 @@ public class FinanceFacadeService {
         Instant customerPaidAt,
         /** Ảnh chứng từ khi xác nhận thu (data-URL). Danh sách để null — lấy qua GET /api/receipts/{code}/proof-image. */
         String confirmProofImage,
-        boolean hasConfirmProof
+        boolean hasConfirmProof,
+        /** Họ tên hồ sơ nhân viên theo payerCode; null nếu người nộp không có hồ sơ. */
+        String payerDisplayName,
+        String createdByDisplayName
     ) {}
 
     public record DayClosureDTO(
