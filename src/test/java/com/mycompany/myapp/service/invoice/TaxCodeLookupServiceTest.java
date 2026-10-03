@@ -178,6 +178,21 @@ class TaxCodeLookupServiceTest {
     }
 
     @Test
+    void parseXinvoice_household12Digits_mapsOrgType() throws Exception {
+        Map<String, Object> out = TaxCodeLookupService.parseXinvoice(
+            "001091003994",
+            JSON.readTree(
+                "{\"orgType\":\"Hộ kinh doanh cá thể\",\"taxID\":\"001091003994\",\"name\":\"HỘ KINH DOANH NGUYỄN ANH DUY\",\"address\":\"90 ngõ 15 Bùi Quốc Khái, Phường Hoàng Liệt, TP Hà Nội\",\"status\":\"NNT đang hoạt động\"}"
+            )
+        );
+        assertThat(out)
+            .containsEntry("ok", true)
+            .containsEntry("companyName", "HỘ KINH DOANH NGUYỄN ANH DUY")
+            .containsEntry("orgType", "Hộ kinh doanh cá thể")
+            .containsEntry("active", true);
+    }
+
+    @Test
     void parseXinvoice_otherTaxCodeOrNoName_isRejected() throws Exception {
         assertThat(
             TaxCodeLookupService.parseXinvoice("0103179782", JSON.readTree("{\"taxID\":\"0100109106\",\"name\":\"KHÁC\"}"))

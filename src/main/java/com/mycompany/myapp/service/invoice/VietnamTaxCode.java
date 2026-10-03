@@ -1,8 +1,9 @@
 package com.mycompany.myapp.service.invoice;
 
 /**
- * Kiểm tra MST Việt Nam (10 số hoặc 13 số chi nhánh) theo checksum Thông tư 105/2020/TT-BTC.
- * MST điền bừa / sai checksum → không hợp lệ (MISA cũng từ chối).
+ * Kiểm tra MST Việt Nam: 10 số / 13 số chi nhánh theo checksum Thông tư 105/2020/TT-BTC,
+ * hoặc 12 số CCCD chủ hộ kinh doanh / cá nhân (Thông tư 86/2024, từ 01/07/2025 — không có checksum,
+ * 3 số đầu là mã tỉnh 001–096). MST điền bừa / sai checksum → không hợp lệ (MISA cũng từ chối).
  */
 public final class VietnamTaxCode {
 
@@ -20,10 +21,13 @@ public final class VietnamTaxCode {
 
     public static boolean isValid(String raw) {
         String number = compact(raw);
-        if (number.length() != 10 && number.length() != 13) {
+        if (number.isEmpty() || !number.chars().allMatch(Character::isDigit)) {
             return false;
         }
-        if (!number.chars().allMatch(Character::isDigit)) {
+        if (number.length() == 12) {
+            return isPersonalId(number);
+        }
+        if (number.length() != 10 && number.length() != 13) {
             return false;
         }
         // 7 số giữa không được toàn 0
@@ -41,6 +45,12 @@ public final class VietnamTaxCode {
         return number.charAt(9) - '0' == check;
     }
 
+    /** 12 số CCCD: mã tỉnh 001–096. */
+    static boolean isPersonalId(String number) {
+        int province = Integer.parseInt(number.substring(0, 3));
+        return province >= 1 && province <= 96;
+    }
+
     /** Check digit của 9 số đầu; trả về 10 nếu cấu trúc không hợp lệ. */
     static int calcCheckDigit(String digits) {
         int total = 0;
@@ -50,7 +60,7 @@ public final class VietnamTaxCode {
         return 10 - (total % 11);
     }
 
-    /** Chuẩn hoá lưu DB: 10 số hoặc 10-3. */
+    /** Chuẩn hoá lưu DB: 10 số, 10-3, hoặc 12 số CCCD. */
     public static String normalize(String raw) {
         String number = compact(raw);
         if (!isValid(number)) {

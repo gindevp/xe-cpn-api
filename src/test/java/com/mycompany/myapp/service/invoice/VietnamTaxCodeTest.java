@@ -29,4 +29,15 @@ class VietnamTaxCodeTest {
         assertThat(VietnamTaxCode.normalize("0314409058002")).isEqualTo("0314409058-002");
         assertThat(VietnamTaxCode.normalize("0103179782")).isEqualTo("0103179782");
     }
+
+    @Test
+    void acceptsHouseholdPersonalId12Digits() {
+        assertThat(VietnamTaxCode.isValid("001091003994")).isTrue(); // HKD Nguyễn Anh Duy
+        assertThat(VietnamTaxCode.isValid("001 091 003 994")).isTrue();
+        assertThat(VietnamTaxCode.normalize("001.091.003.994")).isEqualTo("001091003994");
+        assertThat(VietnamTaxCode.isValid("000091003994")).isFalse(); // mã tỉnh 000
+        assertThat(VietnamTaxCode.isValid("097091003994")).isFalse(); // mã tỉnh > 096
+        assertThat(VietnamTaxCode.isValid("00109100399")).isFalse(); // 11 số
+        assertThat(VietnamTaxCode.isValid("00109100399a")).isFalse();
+    }
 }

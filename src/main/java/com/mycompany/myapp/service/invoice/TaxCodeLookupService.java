@@ -206,6 +206,10 @@ public class TaxCodeLookupService {
         out.put("taxCode", taxCode);
         out.put("companyName", name);
         out.put("address", clean(body.path("address").asText(null)));
+        String orgType = clean(body.path("orgType").asText(null));
+        if (orgType != null) {
+            out.put("orgType", orgType);
+        }
         String status = clean(body.path("status").asText(null));
         if (status != null) {
             out.put("status", status);
