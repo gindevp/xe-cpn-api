@@ -2,6 +2,7 @@ package com.mycompany.myapp.service.dto.order;
 
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,7 +27,92 @@ public class TrackOrderResponse {
     private BigDecimal goodsFareAmount;
     private BigDecimal deliveryFeeAmount;
     private BigDecimal pickupFeeAmount;
+    /** Chỉ action + giờ của các mốc công khai (không detail / người thao tác). */
     private List<OrderDetailDTO.OrderEventViewDTO> events = new ArrayList<>();
+    private String fromOfficeName;
+    private String toOfficeName;
+    private String routeLabel;
+    private String itineraryLabel;
+    private List<JourneyStep> journey = new ArrayList<>();
+
+    public static class JourneyStep {
+
+        private String key;
+        private String label;
+        private Instant at;
+
+        public JourneyStep() {}
+
+        public JourneyStep(String key, String label, Instant at) {
+            this.key = key;
+            this.label = label;
+            this.at = at;
+        }
+
+        public String getKey() {
+            return key;
+        }
+
+        public void setKey(String key) {
+            this.key = key;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(String label) {
+            this.label = label;
+        }
+
+        public Instant getAt() {
+            return at;
+        }
+
+        public void setAt(Instant at) {
+            this.at = at;
+        }
+    }
+
+    public String getFromOfficeName() {
+        return fromOfficeName;
+    }
+
+    public void setFromOfficeName(String fromOfficeName) {
+        this.fromOfficeName = fromOfficeName;
+    }
+
+    public String getToOfficeName() {
+        return toOfficeName;
+    }
+
+    public void setToOfficeName(String toOfficeName) {
+        this.toOfficeName = toOfficeName;
+    }
+
+    public String getRouteLabel() {
+        return routeLabel;
+    }
+
+    public void setRouteLabel(String routeLabel) {
+        this.routeLabel = routeLabel;
+    }
+
+    public String getItineraryLabel() {
+        return itineraryLabel;
+    }
+
+    public void setItineraryLabel(String itineraryLabel) {
+        this.itineraryLabel = itineraryLabel;
+    }
+
+    public List<JourneyStep> getJourney() {
+        return journey;
+    }
+
+    public void setJourney(List<JourneyStep> journey) {
+        this.journey = journey;
+    }
 
     public boolean isFound() {
         return found;

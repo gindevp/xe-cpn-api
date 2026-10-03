@@ -678,7 +678,25 @@ public class OrderFacadeService {
         res.setGoodsFareAmount(order.getGoodsFareAmount());
         res.setDeliveryFeeAmount(order.getDeliveryFeeAmount());
         res.setPickupFeeAmount(order.getPickupFeeAmount());
-        res.setEvents(mapEvents(order.getId()));
+        Office dest = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
+        res.setFromOfficeName(order.getFromOffice() != null ? order.getFromOffice().getName() : null);
+        res.setToOfficeName(dest != null ? dest.getName() : null);
+        res.setRouteLabel(order.getRouteLabel());
+        res.setItineraryLabel(order.getItineraryLabel());
+        List<OrderEvent> events = order.getId() == null ? List.of() : orderEventRepository.findByOrder_IdOrderByEventAtAsc(order.getId());
+        res.setEvents(
+            events
+                .stream()
+                .filter(e -> CustomerTrackJourney.PUBLIC_EVENT_ACTIONS.contains(e.getAction()))
+                .map(e -> {
+                    OrderDetailDTO.OrderEventViewDTO v = new OrderDetailDTO.OrderEventViewDTO();
+                    v.setAt(e.getEventAt());
+                    v.setAction(e.getAction());
+                    return v;
+                })
+                .toList()
+        );
+        res.setJourney(CustomerTrackJourney.build(order, events));
         return res;
     }
 
