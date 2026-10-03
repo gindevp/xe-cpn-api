@@ -20,7 +20,7 @@ public class OrderEventDTO implements Serializable {
     @Size(max = 100)
     private String action;
 
-    @Size(max = 255)
+    @Size(max = 1000)
     private String detail;
 
     @NotNull

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261003140000-1" author="cpn">
+        <comment>Lịch sử sửa đơn ghi chi tiết từng trường "cũ → mới" — nới detail 255 → 1000.</comment>
+        <modifyDataType tableName="order_event" columnName="detail" newDataType="varchar(1000)"/>
+    </changeSet>
+</databaseChangeLog>

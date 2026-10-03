@@ -793,6 +793,7 @@ public class OrderFacadeService {
             return getByCode(order.getOrderCode());
         }
         String endpointsBefore = itineraryEndpointsKey(order);
+        java.util.Map<String, String> fieldsBefore = OrderEditDiff.snapshot(order);
         if (req.getSenderName() != null) {
             order.setSenderName(req.getSenderName());
         }
@@ -939,6 +940,12 @@ public class OrderFacadeService {
         if (!Boolean.TRUE.equals(req.getSkipHistory())) {
             String eventAction = !isBlank(req.getEventAction()) ? req.getEventAction().trim() : "PATCH";
             String eventDetail = !isBlank(req.getEventDetail()) ? req.getEventDetail().trim() : "Cập nhật thông tin đơn";
+            if ("PATCH".equals(eventAction) || "ORDER_EDIT".equals(eventAction)) {
+                String changes = OrderEditDiff.describe(fieldsBefore, OrderEditDiff.snapshot(order));
+                if (!changes.isEmpty()) {
+                    eventDetail = changes;
+                }
+            }
             appendEvent(order, eventAction, eventDetail, currentActor());
         }
         return getByCode(order.getOrderCode());
@@ -1655,7 +1662,7 @@ public class OrderFacadeService {
         event.setAction(action == null ? "EVENT" : (action.length() > 100 ? action.substring(0, 100) : action));
         if (detail != null && !detail.isBlank()) {
             String d = detail.trim();
-            event.setDetail(d.length() > 255 ? d.substring(0, 255) : d);
+            event.setDetail(d.length() > OrderEvent.DETAIL_MAX ? d.substring(0, OrderEvent.DETAIL_MAX) : d);
         }
         event.setActorUsername(actor == null ? "system" : actor);
         event.setOrder(order);

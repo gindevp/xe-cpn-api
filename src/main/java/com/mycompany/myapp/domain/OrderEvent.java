@@ -30,8 +30,10 @@ public class OrderEvent implements Serializable {
     @Column(name = "action", length = 100, nullable = false)
     private String action;
 
-    @Size(max = 255)
-    @Column(name = "detail", length = 255)
+    public static final int DETAIL_MAX = 1000;
+
+    @Size(max = DETAIL_MAX)
+    @Column(name = "detail", length = DETAIL_MAX)
     private String detail;
 
     @NotNull
