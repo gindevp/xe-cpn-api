@@ -51,6 +51,7 @@ public class SecurityConfiguration {
                     .requestMatchers(mvc.pattern("/api/account/reset-password/init")).permitAll()
                     .requestMatchers(mvc.pattern("/api/account/reset-password/finish")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/guest")).permitAll()
+                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/guest/sender-name")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/drafts")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/track")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/track/invoice")).permitAll()

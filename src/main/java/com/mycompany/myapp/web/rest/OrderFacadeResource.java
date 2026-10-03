@@ -35,6 +35,7 @@ import com.mycompany.myapp.service.invoice.PublicInvoiceService;
 import com.mycompany.myapp.service.order.DeliveryFacadeService;
 import com.mycompany.myapp.service.order.ExceptionFacadeService;
 import com.mycompany.myapp.service.order.OrderFacadeService;
+import com.mycompany.myapp.service.order.PublicSenderLookupService;
 import com.mycompany.myapp.service.trip.TripFacadeService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import jakarta.validation.Valid;
@@ -76,6 +77,7 @@ public class OrderFacadeResource {
     private final MeInvoiceIssueService meInvoiceIssueService;
     private final FinanceFacadeService financeFacadeService;
     private final PublicInvoiceService publicInvoiceService;
+    private final PublicSenderLookupService publicSenderLookupService;
 
     public OrderFacadeResource(
         OrderFacadeService orderFacadeService,
@@ -84,9 +86,11 @@ public class OrderFacadeResource {
         ExceptionFacadeService exceptionFacadeService,
         MeInvoiceIssueService meInvoiceIssueService,
         FinanceFacadeService financeFacadeService,
-        PublicInvoiceService publicInvoiceService
+        PublicInvoiceService publicInvoiceService,
+        PublicSenderLookupService publicSenderLookupService
     ) {
         this.publicInvoiceService = publicInvoiceService;
+        this.publicSenderLookupService = publicSenderLookupService;
         this.financeFacadeService = financeFacadeService;
         this.orderFacadeService = orderFacadeService;
         this.tripFacadeService = tripFacadeService;
@@ -167,6 +171,12 @@ public class OrderFacadeResource {
     public CreateDraftOrderResponse createGuestOrder(@Valid @RequestBody CreateDraftOrderRequest request) {
         LOG.debug("REST request to create public guest order (CONFIRMED)");
         return orderFacadeService.createDraft(request);
+    }
+
+    /** Public /tao-don: khách nhập SĐT của mình → tên người gửi ở đơn gần nhất (giới hạn theo IP). */
+    @PostMapping("/guest/sender-name")
+    public Map<String, Object> guestSenderName(@RequestBody Map<String, String> request, jakarta.servlet.http.HttpServletRequest http) {
+        return publicSenderLookupService.senderName(request != null ? request.get("phone") : null, clientIp(http));
     }
 
     /** @deprecated Prefer POST /api/orders/guest — same behavior (CONFIRMED). Kept for old FE. */

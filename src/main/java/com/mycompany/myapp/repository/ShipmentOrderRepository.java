@@ -142,4 +142,13 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
         """
     )
     List<ShipmentOrder> findInvoiceProfilesByPhone(@Param("phone") String phone, Pageable pageable);
+
+    @Query(
+        """
+        select o.senderName from ShipmentOrder o
+        where o.senderPhone = :phone and o.senderName is not null and o.senderName <> ''
+        order by o.id desc
+        """
+    )
+    List<String> findLatestSenderNames(@Param("phone") String phone, Pageable pageable);
 }
