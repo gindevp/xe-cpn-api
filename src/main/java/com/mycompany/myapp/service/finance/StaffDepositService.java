@@ -6,6 +6,7 @@ import com.mycompany.myapp.domain.Receipt;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
+import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.ReceiptListRow;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ReceiptRepository;
@@ -27,6 +28,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -59,6 +61,7 @@ public class StaffDepositService {
     private final ReceiptOrderLineRepository receiptOrderLineRepository;
     private final StaffProfileRepository staffProfileRepository;
     private final IntegrationConfigRepository integrationConfigRepository;
+    private final OfficeRepository officeRepository;
     private final AuditRecorder auditRecorder;
 
     public StaffDepositService(
@@ -68,6 +71,7 @@ public class StaffDepositService {
         ReceiptOrderLineRepository receiptOrderLineRepository,
         StaffProfileRepository staffProfileRepository,
         IntegrationConfigRepository integrationConfigRepository,
+        OfficeRepository officeRepository,
         AuditRecorder auditRecorder
     ) {
         this.financeFacadeService = financeFacadeService;
@@ -76,6 +80,7 @@ public class StaffDepositService {
         this.receiptOrderLineRepository = receiptOrderLineRepository;
         this.staffProfileRepository = staffProfileRepository;
         this.integrationConfigRepository = integrationConfigRepository;
+        this.officeRepository = officeRepository;
         this.auditRecorder = auditRecorder;
     }
 
@@ -184,6 +189,7 @@ public class StaffDepositService {
         }
         IntegrationConfig cfg = currentConfig();
         StaffProfile me = staffProfileRepository.findOneByUserLoginIgnoreCase(login).orElse(null);
+        Map<String, String> officeIds = new HashMap<>();
         List<MyReceipt> out = new ArrayList<>();
         for (ReceiptListRow r : rows) {
             out.add(
@@ -196,7 +202,7 @@ public class StaffDepositService {
                     r.confirmedByUsername(),
                     Boolean.TRUE.equals(r.hasTransferProof()),
                     Boolean.TRUE.equals(r.hasConfirmProof()),
-                    transferInfo(cfg, me, login, r.receiptCode(), r.officeCode(), r.createdAt(), r.totalAmount())
+                    transferInfo(cfg, me, login, r.receiptCode(), r.officeCode(), r.createdAt(), r.totalAmount(), officeIds)
                 )
             );
         }
@@ -306,9 +312,19 @@ public class StaffDepositService {
                 r.getReceiptCode(),
                 r.getOffice() != null ? r.getOffice().getCode() : null,
                 r.getCreatedAt(),
-                r.getTotalAmount()
+                r.getTotalAmount(),
+                new HashMap<>()
             )
         );
+    }
+
+    /** {MA_VP} = ID văn phòng (cột ID ở Master, office.source_id); VP chưa có ID thì dùng mã VP. */
+    private String officeIdText(String officeCode, StaffProfile me) {
+        Office office = notBlank(officeCode) ? officeRepository.findOneByCode(officeCode).orElse(null) : me != null ? me.getOffice() : null;
+        if (office == null) {
+            return nz(officeCode);
+        }
+        return office.getSourceId() != null ? String.valueOf(office.getSourceId()) : nz(office.getCode());
     }
 
     private TransferInfo transferInfo(
@@ -318,14 +334,15 @@ public class StaffDepositService {
         String receiptCode,
         String officeCode,
         Instant createdAt,
-        BigDecimal amount
+        BigDecimal amount,
+        Map<String, String> officeIds
     ) {
         if (!notBlank(cfg.getDepositBankBin()) || !notBlank(cfg.getDepositAccountNo())) {
             return null;
         }
         String staffCode = me != null && notBlank(me.getStaffCode()) ? me.getStaffCode().trim() : login;
         String staffName = me != null && notBlank(me.getDisplayName()) ? me.getDisplayName().trim() : login;
-        String office = notBlank(officeCode) ? officeCode : me != null && me.getOffice() != null ? me.getOffice().getCode() : "";
+        String office = officeIds.computeIfAbsent(nz(officeCode), code -> officeIdText(code, me));
         String content = renderContent(
             cfg.getDepositContentTemplate(),
             staffCode,
