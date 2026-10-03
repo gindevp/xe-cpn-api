@@ -10,11 +10,11 @@ import org.junit.jupiter.api.Test;
 class MeInvoiceAmountsTest {
 
     @Test
-    void splitGross_example33000() {
-        MeInvoiceAmounts.Split s = MeInvoiceAmounts.splitGross(new BigDecimal("33000"));
-        assertThat(s.gross()).isEqualByComparingTo("33000");
+    void splitGross_vat8_example32400() {
+        MeInvoiceAmounts.Split s = MeInvoiceAmounts.splitGross(new BigDecimal("32400"));
+        assertThat(s.gross()).isEqualByComparingTo("32400");
         assertThat(s.net()).isEqualByComparingTo("30000");
-        assertThat(s.vat()).isEqualByComparingTo("3000");
+        assertThat(s.vat()).isEqualByComparingTo("2400");
         assertThat(s.net().add(s.vat())).isEqualByComparingTo(s.gross());
     }
 
@@ -30,8 +30,8 @@ class MeInvoiceAmountsTest {
 
         MeInvoiceAmounts.Breakdown b = MeInvoiceAmounts.fromOrder(o);
         assertThat(b.gross()).isEqualByComparingTo("33000");
-        assertThat(b.net()).isEqualByComparingTo("30000");
-        assertThat(b.vat()).isEqualByComparingTo("3000");
+        assertThat(b.net()).isEqualByComparingTo("30556");
+        assertThat(b.vat()).isEqualByComparingTo("2444");
         assertThat(b.shipping()).isEqualByComparingTo("20000");
     }
 

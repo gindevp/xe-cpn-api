@@ -7,15 +7,15 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 /**
- * Tách gross (đã gồm VAT 10%) → net + vat cho body MISA meInvoice.
+ * Tách gross (đã gồm VAT 8%) → net + vat cho body MISA meInvoice.
  * <p>
  * Gross = cước vận chuyển + phí thu hộ COD + phí khai báo GT.
  * Cước = cước hàng + phí lấy tận nơi + phí giao tận nơi (không gồm tiền hàng COD).
  */
 public final class MeInvoiceAmounts {
 
-    public static final BigDecimal VAT_FACTOR = new BigDecimal("1.1");
-    public static final String VAT_RATE_NAME = "10%";
+    public static final BigDecimal VAT_FACTOR = new BigDecimal("1.08");
+    public static final String VAT_RATE_NAME = "8%";
     public static final String ITEM_CODE = "DV-VANCHUYEN";
     public static final String UNIT_NAME = "Vận đơn";
 
@@ -110,7 +110,7 @@ public final class MeInvoiceAmounts {
         BigDecimal vat
     ) {}
 
-    /** net = round(gross / 1.1), vat = gross - net (VND, scale 0). */
+    /** net = round(gross / 1.08), vat = gross - net (VND, scale 0). */
     public static Split splitGross(BigDecimal grossInclusiveVat) {
         BigDecimal gross = OrderMoney.nz(grossInclusiveVat).setScale(0, RoundingMode.HALF_UP);
         if (gross.compareTo(BigDecimal.ZERO) <= 0) {
