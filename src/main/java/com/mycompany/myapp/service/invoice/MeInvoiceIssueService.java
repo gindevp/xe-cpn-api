@@ -127,14 +127,16 @@ public class MeInvoiceIssueService {
     /**
      * Xuất HĐ công ty thủ công (popup đơn / màn Giao thành công): lưu thông tin người mua rồi gọi MISA ngay.
      * Cho xuất muộn (sau hạn 3 tiếng) — FE cảnh báo trước. Lỗi nghiệp vụ → 400; lỗi MISA → FAILED (gọi lại được).
+     * Đơn kế toán đã tích bỏ xuất tự động vẫn xuất DN được; MISA chưa xuất thì giữ nguyên tích (không lọt xuất bù).
      */
     @Transactional
     public ShipmentOrder issueManual(String orderCode, IssueInvoiceRequest request, String actor) {
         requireClient();
         ShipmentOrder order = requireOrder(orderCode);
         assertPaymentReached(order);
-        assertNotIssuedOrMarked(order, "không xuất lại");
+        assertNotIssued(order, "không xuất lại");
         dayClosureGuard.assertOrderMutable(order);
+        boolean wasMarked = STATUS_MANUAL.equals(order.getInvoiceStatus());
 
         IssueInvoiceRequest req = request != null ? request : new IssueInvoiceRequest();
         applyBuyer(
@@ -147,6 +149,11 @@ public class MeInvoiceIssueService {
         shipmentOrderRepository.save(order);
 
         publish(order, InvoicePolicy.TYPE_COMPANY);
+        if (wasMarked && !isIssued(order)) {
+            order.setInvoiceStatus(STATUS_MANUAL);
+            order.setInvoiceType(InvoicePolicy.TYPE_PERSONAL);
+            shipmentOrderRepository.save(order);
+        }
         appendEvent(order, "INVOICE_ISSUE", issueDetail(order), actor);
         return order;
     }
@@ -424,6 +431,13 @@ public class MeInvoiceIssueService {
     }
 
     private void assertNotIssuedOrMarked(ShipmentOrder order, String suffix) {
+        assertNotIssued(order, suffix);
+        if (STATUS_MANUAL.equals(order.getInvoiceStatus())) {
+            throw new BadRequestAlertException("Kế toán đã tích bỏ xuất tự động — " + suffix, ENTITY, "invoiceMarked");
+        }
+    }
+
+    private void assertNotIssued(ShipmentOrder order, String suffix) {
         if (isIssued(order)) {
             String no = blankToEmpty(order.getInvoiceNo());
             throw new BadRequestAlertException(
@@ -431,9 +445,6 @@ public class MeInvoiceIssueService {
                 ENTITY,
                 "alreadyIssued"
             );
-        }
-        if (STATUS_MANUAL.equals(order.getInvoiceStatus())) {
-            throw new BadRequestAlertException("Kế toán đã tích bỏ xuất tự động — " + suffix, ENTITY, "invoiceMarked");
         }
     }
 

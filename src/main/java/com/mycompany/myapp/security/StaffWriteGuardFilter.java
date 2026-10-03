@@ -53,9 +53,9 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             staffAccessService.requireScreenWrite(ScreenKey.POD_QUAY, ScreenKey.GIAO_TAN_NHA);
             return;
         }
-        // Xuất HĐĐT MISA thủ công: màn Giao thành công
+        // Xuất HĐĐT MISA thủ công: màn Giao thành công hoặc kế toán (Quản lý hoá đơn)
         if (path.matches(".*/api/orders/[^/]+/invoice/issue/?$")) {
-            staffAccessService.requireScreenWrite(ScreenKey.GIAO_THANH_CONG);
+            staffAccessService.requireScreenWrite(ScreenKey.GIAO_THANH_CONG, ScreenKey.QUAN_LY_HOA_DON);
             return;
         }
         // Tích đã xuất HĐ cá nhân: chỉ kế toán (màn Quản lý hoá đơn)

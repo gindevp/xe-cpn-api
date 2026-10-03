@@ -354,7 +354,6 @@ class MeInvoiceIssueServiceTest {
         assertThatThrownBy(() ->
             service.saveInfo("VT0001ABCD", new MeInvoiceIssueService.InvoiceInfoRequest(true, "0100233488", "A", "B", "a@b.vn"), "u")
         ).isInstanceOf(BadRequestAlertException.class);
-        assertThatThrownBy(() -> service.issueManual("VT0001ABCD", validReq(), "u")).isInstanceOf(BadRequestAlertException.class);
 
         service.markPersonalIssued("VT0001ABCD", false, "ketoan");
         assertThat(order.getInvoiceStatus()).isNull();
@@ -476,6 +475,31 @@ class MeInvoiceIssueServiceTest {
         service.onOrderDelivered(new OrderDeliveredEvent("VT0001ABCD"));
         assertThat(order.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_SKIPPED);
         verify(client, never()).publish(any());
+    }
+
+    @Test
+    void issueManual_markedOrder_issuesCompany() {
+        service.markPersonalIssued("VT0001ABCD", true, "ketoan");
+        publishOk();
+
+        ShipmentOrder out = service.issueManual("VT0001ABCD", validReq(), "ketoan");
+
+        assertThat(out.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
+        assertThat(out.getInvoiceType()).isEqualTo(InvoicePolicy.TYPE_COMPANY);
+        assertThat(out.getInvoiceTaxCode()).isEqualTo("0100233488");
+    }
+
+    @Test
+    void issueManual_markedOrder_misaError_staysMarked_notBackfillable() {
+        service.markPersonalIssued("VT0001ABCD", true, "ketoan");
+        when(client.publish(any(ObjectNode.class))).thenThrow(new IllegalStateException("MISA 500"));
+
+        ShipmentOrder out = service.issueManual("VT0001ABCD", validReq(), "ketoan");
+
+        assertThat(out.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_MANUAL);
+        assertThat(out.getInvoiceType()).isEqualTo(InvoicePolicy.TYPE_PERSONAL);
+        assertThat(out.getInvoiceError()).contains("MISA 500");
+        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("ALREADY");
     }
 
     @Test
