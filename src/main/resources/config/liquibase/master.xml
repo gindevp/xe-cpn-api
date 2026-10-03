@@ -110,5 +110,6 @@
     <include file="config/liquibase/changelog/20261003140000_order_event_detail_1000.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261003170000_pricing_rule_basis.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261003180000_vehicle_event_reason.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261003220000_staff_deposit.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 

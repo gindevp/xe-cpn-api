@@ -699,7 +699,8 @@ public class FinanceFacadeService {
                 names.computeIfAbsent("P:" + row.payerCode(), k -> Optional.ofNullable(staffNameOf(row.payerCode(), true))).orElse(null),
                 names
                     .computeIfAbsent("U:" + row.createdByUsername(), k -> Optional.ofNullable(staffNameOf(row.createdByUsername(), false)))
-                    .orElse(null)
+                    .orElse(null),
+                Boolean.TRUE.equals(row.hasTransferProof())
             );
         });
     }
@@ -740,10 +741,7 @@ public class FinanceFacadeService {
             throw new BadRequestAlertException("receiptCode is required", ENTITY, "receiptCodeRequired");
         }
         String proof = body != null ? body.proofImage() : null;
-        if (proof == null || proof.isBlank()) {
-            throw new BadRequestAlertException("Transaction proof image is required", ENTITY, "receiptProofRequired");
-        }
-        if (proof.length() > 2_500_000) {
+        if (proof != null && proof.length() > 2_500_000) {
             throw new BadRequestAlertException("Proof image too large", ENTITY, "receiptProofTooLarge");
         }
         Receipt receipt = receiptRepository
@@ -751,6 +749,12 @@ public class FinanceFacadeService {
             .orElseThrow(() -> new BadRequestAlertException("Receipt not found", ENTITY, "receiptNotFound"));
         if (receipt.getConfirmedAt() != null) {
             throw new BadRequestAlertException("Receipt already confirmed", ENTITY, "receiptAlreadyConfirmed");
+        }
+        if (proof == null || proof.isBlank()) {
+            proof = receipt.getTransferProofImage();
+        }
+        if (proof == null || proof.isBlank()) {
+            throw new BadRequestAlertException("Transaction proof image is required", ENTITY, "receiptProofRequired");
         }
         receipt.setConfirmedAt(Instant.now());
         receipt.setConfirmedByUsername(actor());
@@ -1146,10 +1150,15 @@ public class FinanceFacadeService {
             r.getConfirmedByUsername(),
             customerPaidAt,
             r.getConfirmProofImage(),
-            r.getConfirmProofImage() != null && !r.getConfirmProofImage().isBlank(),
+            notBlank(r.getConfirmProofImage()) || notBlank(r.getTransferProofImage()),
             staffNameOf(r.getPayerCode(), true),
-            staffNameOf(r.getCreatedByUsername(), false)
+            staffNameOf(r.getCreatedByUsername(), false),
+            notBlank(r.getTransferProofImage())
         );
+    }
+
+    private static boolean notBlank(String s) {
+        return s != null && !s.isBlank();
     }
 
     private String staffNameOf(String key, boolean orStaffCode) {
@@ -1397,7 +1406,9 @@ public class FinanceFacadeService {
         boolean hasConfirmProof,
         /** Họ tên hồ sơ nhân viên theo payerCode; null nếu người nộp không có hồ sơ. */
         String payerDisplayName,
-        String createdByDisplayName
+        String createdByDisplayName,
+        /** NV đã gửi ảnh chuyển khoản từ app — KT xác nhận có thể dùng luôn ảnh này. */
+        boolean hasTransferProof
     ) {}
 
     public record DayClosureDTO(

@@ -43,15 +43,15 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long>, JpaSpec
 
     Optional<Receipt> findOneByReceiptCode(String receiptCode);
 
-    /** Danh sách phiếu thu không đọc cột ảnh chứng từ (LONGTEXT ~50–100KB/phiếu) — chỉ trả cờ có ảnh. */
-    @Query(
-        value = "select new com.mycompany.myapp.repository.ReceiptListRow(r.id, r.receiptCode, r.payerName, r.payerCode, r.totalAmount," +
+    String LIST_ROW_SELECT =
+        "select new com.mycompany.myapp.repository.ReceiptListRow(r.id, r.receiptCode, r.payerName, r.payerCode, r.totalAmount," +
         " r.createdAt, r.createdByUsername, o.code, r.confirmedAt, r.confirmedByUsername," +
-        " case when r.confirmProofImage is null then false else true end)" +
-        " from Receipt r left join r.office o" +
-        LIST_WHERE,
-        countQuery = "select count(r) from Receipt r left join r.office o" + LIST_WHERE
-    )
+        " case when r.confirmProofImage is null and r.transferProofImage is null then false else true end," +
+        " case when r.transferProofImage is null then false else true end)" +
+        " from Receipt r left join r.office o";
+
+    /** Danh sách phiếu thu không đọc cột ảnh chứng từ (LONGTEXT ~50–100KB/phiếu) — chỉ trả cờ có ảnh. */
+    @Query(value = LIST_ROW_SELECT + LIST_WHERE, countQuery = "select count(r) from Receipt r left join r.office o" + LIST_WHERE)
     Page<ReceiptListRow> findListRows(
         @Param("officeCode") String officeCode,
         @Param("createdBy") String createdBy,
@@ -82,6 +82,11 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long>, JpaSpec
         " and (:creatorLike is null or lower(r.createdByUsername) like :creatorLike)" +
         " and (:createdFrom is null or r.createdAt >= :createdFrom) and (:createdTo is null or r.createdAt < :createdTo)";
 
-    @Query("select r.confirmProofImage from Receipt r where r.receiptCode = :code")
+    /** Ảnh KT xác nhận; chưa có thì ảnh chuyển khoản NV gửi. */
+    @Query("select coalesce(r.confirmProofImage, r.transferProofImage) from Receipt r where r.receiptCode = :code")
     Optional<String> findProofImageByCode(@Param("code") String code);
+
+    /** Phiếu NV tự nộp (payerCode = login), mới nhất trước. */
+    @Query(LIST_ROW_SELECT + " where lower(r.payerCode) = lower(:payer) and r.createdAt >= :from order by r.id desc")
+    List<ReceiptListRow> findPayerRowsSince(@Param("payer") String payer, @Param("from") Instant from);
 }

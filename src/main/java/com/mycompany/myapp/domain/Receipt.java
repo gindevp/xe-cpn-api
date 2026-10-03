@@ -61,6 +61,14 @@ public class Receipt implements Serializable {
     @Column(name = "confirm_proof_image")
     private String confirmProofImage;
 
+    /** Ảnh chuyển khoản NV tự gửi khi nộp tiền trên app (data-URL). */
+    @Lob
+    @Column(name = "transfer_proof_image")
+    private String transferProofImage;
+
+    @Column(name = "transfer_proof_at")
+    private Instant transferProofAt;
+
     @ManyToOne(fetch = FetchType.LAZY)
     private Office office;
 
@@ -194,6 +202,22 @@ public class Receipt implements Serializable {
     public Receipt confirmProofImage(String confirmProofImage) {
         this.setConfirmProofImage(confirmProofImage);
         return this;
+    }
+
+    public String getTransferProofImage() {
+        return this.transferProofImage;
+    }
+
+    public void setTransferProofImage(String transferProofImage) {
+        this.transferProofImage = transferProofImage;
+    }
+
+    public Instant getTransferProofAt() {
+        return this.transferProofAt;
+    }
+
+    public void setTransferProofAt(Instant transferProofAt) {
+        this.transferProofAt = transferProofAt;
     }
 
     public Office getOffice() {

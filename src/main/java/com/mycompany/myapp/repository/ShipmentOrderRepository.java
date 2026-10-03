@@ -59,6 +59,12 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
     )
     Optional<ShipmentOrder> findOneByOrderCodeOrDraftCode(@Param("code") String code);
 
+    @Query(
+        "select o from ShipmentOrder o left join fetch o.fromOffice left join fetch o.toOffice left join fetch o.finalToOffice" +
+        " where o.orderCode in :codes"
+    )
+    List<ShipmentOrder> findWithOfficesByOrderCodeIn(@Param("codes") java.util.Collection<String> codes);
+
     /**
      * Mã đơn cùng VP + ngày, để lấy số thứ tự kế tiếp.
      * Không dùng max() SQL vì so chuỗi sẽ sai khi có hậu tố 4 chữ số ("999" > "1000") — số lớn nhất tính trong Java.

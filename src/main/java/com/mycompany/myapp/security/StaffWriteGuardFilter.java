@@ -109,7 +109,8 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         if (
             path.startsWith("/api/admin/maintenance") ||
             path.startsWith("/api/admin/session-policy") ||
-            path.startsWith("/api/admin/invoice-auto-issue")
+            path.startsWith("/api/admin/invoice-auto-issue") ||
+            path.startsWith("/api/admin/deposit-account")
         ) {
             staffAccessService.requireScreenWrite(ScreenKey.BAO_TRI);
             return;
@@ -132,9 +133,12 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         // inventory-checks: mọi NV thao tác được (app Kiểm kho) — không chặn theo screen Y/R
     }
 
-    /** Chấm công: mọi NV kể cả nhóm quyền chỉ đọc — AttendanceService tự chặn hồ sơ inactive / khách hàng. */
+    /**
+     * Chấm công: mọi NV kể cả nhóm quyền chỉ đọc — AttendanceService tự chặn hồ sơ inactive / khách hàng.
+     * Nộp tiền: mọi NV, StaffDepositService chỉ cho thao tác phiếu của chính mình.
+     */
     private static boolean isSelfServiceWrite(String method, String path) {
-        return "POST".equals(method) && "/api/attendance/check-in".equals(path);
+        return "POST".equals(method) && ("/api/attendance/check-in".equals(path) || path.startsWith("/api/my-deposits"));
     }
 
     private static boolean isPublicWrite(String method, String path) {

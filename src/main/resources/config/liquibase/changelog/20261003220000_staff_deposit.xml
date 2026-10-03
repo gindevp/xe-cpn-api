@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261003220000-receipt-transfer-proof" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="receipt" columnName="transfer_proof_image"/>
+            </not>
+        </preConditions>
+        <comment>Ảnh chuyển khoản NV tự gửi khi nộp tiền trên app (KT xác nhận dùng lại)</comment>
+        <addColumn tableName="receipt">
+            <column name="transfer_proof_image" type="longtext"/>
+            <column name="transfer_proof_at" type="datetime"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20261003220000-deposit-account" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="integration_config" columnName="deposit_account_no"/>
+            </not>
+        </preConditions>
+        <comment>Tài khoản nhận tiền NV nộp (VietQR) + mẫu nội dung chuyển khoản</comment>
+        <addColumn tableName="integration_config">
+            <column name="deposit_bank_bin" type="varchar(20)"/>
+            <column name="deposit_bank_name" type="varchar(255)"/>
+            <column name="deposit_account_no" type="varchar(50)"/>
+            <column name="deposit_account_name" type="varchar(255)"/>
+            <column name="deposit_content_template" type="varchar(255)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

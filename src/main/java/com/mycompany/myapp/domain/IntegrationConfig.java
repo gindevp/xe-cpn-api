@@ -148,6 +148,23 @@ public class IntegrationConfig implements Serializable {
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Instant misaAutoIssueSince;
 
+    /** Tài khoản nhận tiền NV nộp — mã BIN ngân hàng theo VietQR. */
+    @Column(name = "deposit_bank_bin", length = 20)
+    private String depositBankBin;
+
+    @Column(name = "deposit_bank_name", length = 255)
+    private String depositBankName;
+
+    @Column(name = "deposit_account_no", length = 50)
+    private String depositAccountNo;
+
+    @Column(name = "deposit_account_name", length = 255)
+    private String depositAccountName;
+
+    /** Mẫu nội dung chuyển khoản, biến: {MA_NV} {TEN_NV} {MA_PHIEU} {MA_VP} {NGAY}. */
+    @Column(name = "deposit_content_template", length = 255)
+    private String depositContentTemplate;
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 
@@ -461,6 +478,46 @@ public class IntegrationConfig implements Serializable {
 
     public void setMisaAutoIssueSince(Instant misaAutoIssueSince) {
         this.misaAutoIssueSince = misaAutoIssueSince;
+    }
+
+    public String getDepositBankBin() {
+        return depositBankBin;
+    }
+
+    public void setDepositBankBin(String depositBankBin) {
+        this.depositBankBin = depositBankBin;
+    }
+
+    public String getDepositBankName() {
+        return depositBankName;
+    }
+
+    public void setDepositBankName(String depositBankName) {
+        this.depositBankName = depositBankName;
+    }
+
+    public String getDepositAccountNo() {
+        return depositAccountNo;
+    }
+
+    public void setDepositAccountNo(String depositAccountNo) {
+        this.depositAccountNo = depositAccountNo;
+    }
+
+    public String getDepositAccountName() {
+        return depositAccountName;
+    }
+
+    public void setDepositAccountName(String depositAccountName) {
+        this.depositAccountName = depositAccountName;
+    }
+
+    public String getDepositContentTemplate() {
+        return depositContentTemplate;
+    }
+
+    public void setDepositContentTemplate(String depositContentTemplate) {
+        this.depositContentTemplate = depositContentTemplate;
     }
 
     @JsonProperty(value = "autocallApiKeyConfigured", access = JsonProperty.Access.READ_ONLY)
