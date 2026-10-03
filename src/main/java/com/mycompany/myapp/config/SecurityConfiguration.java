@@ -53,6 +53,8 @@ public class SecurityConfiguration {
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/guest")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/drafts")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/track")).permitAll()
+                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/track/invoice")).permitAll()
+                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/orders/track/invoice/tax-lookup")).permitAll()
                     // Public create-order / track: đọc master tuyến · lộ trình · VP (chỉ GET)
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/branches")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/itineraries")).permitAll()

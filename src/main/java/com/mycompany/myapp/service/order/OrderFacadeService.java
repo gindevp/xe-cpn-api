@@ -697,6 +697,15 @@ public class OrderFacadeService {
                 .toList()
         );
         res.setJourney(CustomerTrackJourney.build(order, events));
+        String inv = order.getInvoiceStatus();
+        if ("ISSUED".equals(inv) || "DUPLICATE".equals(inv)) {
+            res.setInvoiceState("ISSUED");
+            res.setInvoiceNo(order.getInvoiceNo());
+        } else if ("MANUAL".equals(inv) || "PENDING".equals(inv) || "FAILED".equals(inv)) {
+            res.setInvoiceState("OFFICE");
+        } else {
+            res.setInvoiceState(Boolean.TRUE.equals(order.getInvoiceRequested()) ? "REQUESTED" : "NONE");
+        }
         return res;
     }
 

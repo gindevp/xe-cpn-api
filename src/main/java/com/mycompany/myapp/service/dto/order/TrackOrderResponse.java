@@ -34,6 +34,25 @@ public class TrackOrderResponse {
     private String routeLabel;
     private String itineraryLabel;
     private List<JourneyStep> journey = new ArrayList<>();
+    /** NONE / REQUESTED (đã lưu, chờ tự xuất) / ISSUED / OFFICE (VP xử lý). */
+    private String invoiceState;
+    private String invoiceNo;
+
+    public String getInvoiceState() {
+        return invoiceState;
+    }
+
+    public void setInvoiceState(String invoiceState) {
+        this.invoiceState = invoiceState;
+    }
+
+    public String getInvoiceNo() {
+        return invoiceNo;
+    }
+
+    public void setInvoiceNo(String invoiceNo) {
+        this.invoiceNo = invoiceNo;
+    }
 
     public static class JourneyStep {
 

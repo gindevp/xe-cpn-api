@@ -31,6 +31,7 @@ import com.mycompany.myapp.service.dto.trip.AssignOrdersToTripRequest;
 import com.mycompany.myapp.service.dto.trip.TripSummaryDTO;
 import com.mycompany.myapp.service.finance.FinanceFacadeService;
 import com.mycompany.myapp.service.invoice.MeInvoiceIssueService;
+import com.mycompany.myapp.service.invoice.PublicInvoiceService;
 import com.mycompany.myapp.service.order.DeliveryFacadeService;
 import com.mycompany.myapp.service.order.ExceptionFacadeService;
 import com.mycompany.myapp.service.order.OrderFacadeService;
@@ -74,6 +75,7 @@ public class OrderFacadeResource {
     private final ExceptionFacadeService exceptionFacadeService;
     private final MeInvoiceIssueService meInvoiceIssueService;
     private final FinanceFacadeService financeFacadeService;
+    private final PublicInvoiceService publicInvoiceService;
 
     public OrderFacadeResource(
         OrderFacadeService orderFacadeService,
@@ -81,8 +83,10 @@ public class OrderFacadeResource {
         DeliveryFacadeService deliveryFacadeService,
         ExceptionFacadeService exceptionFacadeService,
         MeInvoiceIssueService meInvoiceIssueService,
-        FinanceFacadeService financeFacadeService
+        FinanceFacadeService financeFacadeService,
+        PublicInvoiceService publicInvoiceService
     ) {
+        this.publicInvoiceService = publicInvoiceService;
         this.financeFacadeService = financeFacadeService;
         this.orderFacadeService = orderFacadeService;
         this.tripFacadeService = tripFacadeService;
@@ -252,6 +256,32 @@ public class OrderFacadeResource {
     @PostMapping("/track")
     public TrackOrderResponse track(@Valid @RequestBody TrackOrderRequest request) {
         return orderFacadeService.track(request);
+    }
+
+    /** Tra cứu công khai: khách (người trả cước) tra MST để xuất HĐ công ty. */
+    @PostMapping("/track/invoice/tax-lookup")
+    public Map<String, Object> trackInvoiceTaxLookup(
+        @RequestBody PublicInvoiceService.LookupRequest request,
+        jakarta.servlet.http.HttpServletRequest http
+    ) {
+        return publicInvoiceService.lookupTaxCode(request, clientIp(http));
+    }
+
+    /** Tra cứu công khai: khách yêu cầu HĐ công ty — chưa tới mốc thì lưu, tới mốc trong 3 tiếng thì xuất MISA ngay. */
+    @PostMapping("/track/invoice")
+    public PublicInvoiceService.SubmitResult trackInvoiceSubmit(
+        @RequestBody PublicInvoiceService.SubmitRequest request,
+        jakarta.servlet.http.HttpServletRequest http
+    ) {
+        return publicInvoiceService.submit(request, clientIp(http));
+    }
+
+    private static String clientIp(jakarta.servlet.http.HttpServletRequest http) {
+        String fwd = http.getHeader("X-Forwarded-For");
+        if (fwd != null && !fwd.isBlank()) {
+            return fwd.split(",")[0].trim();
+        }
+        return http.getRemoteAddr();
     }
 
     /**
