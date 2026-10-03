@@ -93,6 +93,11 @@ public class InvoiceManagementResource {
         return invoiceAutoIssueService.buyerProfile(phone).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
     }
 
+    @GetMapping("/buyer-profiles")
+    public List<Map<String, String>> buyerProfiles(@RequestParam("phone") String phone) {
+        return invoiceAutoIssueService.buyerProfiles(phone);
+    }
+
     public record MarkRequest(List<String> orderCodes, Boolean marked) {}
 
     public record BackfillRequest(List<String> orderCodes) {}

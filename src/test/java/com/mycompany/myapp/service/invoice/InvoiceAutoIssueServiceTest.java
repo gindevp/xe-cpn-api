@@ -120,6 +120,36 @@ class InvoiceAutoIssueServiceTest {
         assertThat(row.invoiceAmount()).isEqualByComparingTo("110000");
     }
 
+    private static ShipmentOrder invoicedBy(String code, String senderPhone, String receiverPhone, String tax, String company) {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setOrderCode(code);
+        o.setPaymentTerm(PaymentTerm.GUI_TRA);
+        o.setSenderPhone(senderPhone);
+        o.setReceiverPhone(receiverPhone);
+        o.setInvoiceTaxCode(tax);
+        o.setInvoiceCompanyName(company);
+        return o;
+    }
+
+    @Test
+    void buyerProfiles_distinctTaxCodes_newestFirst_onlyWhenPhoneIsPayer() {
+        String phone = "0901234567";
+        when(orderRepo.findInvoiceProfilesByPhone(eq(phone), any())).thenReturn(
+            List.of(
+                invoicedBy("O5", phone, "0911", "0101243150", "CTY A moi"),
+                invoicedBy("O4", "0922", phone, "0312345678", "Nguoi nhan khong tra"),
+                invoicedBy("O3", phone, "0933", "0109876543", "CTY B"),
+                invoicedBy("O2", phone, "0944", "0101243150", "CTY A cu")
+            )
+        );
+
+        List<java.util.Map<String, String>> profiles = service.buyerProfiles(phone);
+
+        assertThat(profiles).extracting(m -> m.get("taxCode")).containsExactly("0101243150", "0109876543");
+        assertThat(profiles.get(0).get("companyName")).isEqualTo("CTY A moi");
+        assertThat(service.buyerProfile(phone)).get().extracting(m -> m.get("fromOrderCode")).isEqualTo("O5");
+    }
+
     private static ShipmentOrder senderPaysOrder(String code, OrderStatus status, String paid, String invoiceStatus) {
         ShipmentOrder o = new ShipmentOrder();
         o.setId((long) code.hashCode());

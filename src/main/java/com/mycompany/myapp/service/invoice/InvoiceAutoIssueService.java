@@ -289,25 +289,42 @@ public class InvoiceAutoIssueService {
     /** Thông tin HĐ công ty lần gần nhất mà SĐT này là người trả cước; không có → rỗng. */
     @Transactional(readOnly = true)
     public Optional<Map<String, String>> buyerProfile(String phone) {
+        return buyerProfiles(phone).stream().findFirst();
+    }
+
+    static final int BUYER_PROFILE_SCAN = 100;
+    static final int BUYER_PROFILE_MAX = 5;
+
+    /** Các MST khác nhau SĐT này từng dùng khi là người trả cước, mới nhất trước; mỗi MST lấy thông tin lần gần nhất. */
+    @Transactional(readOnly = true)
+    public List<Map<String, String>> buyerProfiles(String phone) {
         String p = phone == null ? "" : phone.trim();
         if (p.length() < 8) {
-            return Optional.empty();
+            return List.of();
         }
-        return shipmentOrderRepository
-            .findInvoiceProfilesByPhone(p, PageRequest.of(0, 20))
-            .stream()
-            .filter(o -> p.equals(InvoicePolicy.payerPhone(o) == null ? null : InvoicePolicy.payerPhone(o).trim()))
-            .findFirst()
-            .map(o -> {
-                Map<String, String> m = new LinkedHashMap<>();
-                m.put("phone", p);
-                m.put("taxCode", o.getInvoiceTaxCode());
-                m.put("companyName", o.getInvoiceCompanyName());
-                m.put("address", o.getInvoiceCompanyAddress());
-                m.put("email", o.getInvoiceEmail());
-                m.put("fromOrderCode", o.getOrderCode());
-                return m;
-            });
+        Map<String, Map<String, String>> byTax = new LinkedHashMap<>();
+        for (ShipmentOrder o : shipmentOrderRepository.findInvoiceProfilesByPhone(p, PageRequest.of(0, BUYER_PROFILE_SCAN))) {
+            String payer = InvoicePolicy.payerPhone(o);
+            if (payer == null || !p.equals(payer.trim())) {
+                continue;
+            }
+            String tax = o.getInvoiceTaxCode().trim();
+            if (tax.isEmpty() || byTax.containsKey(tax)) {
+                continue;
+            }
+            Map<String, String> m = new LinkedHashMap<>();
+            m.put("phone", p);
+            m.put("taxCode", tax);
+            m.put("companyName", o.getInvoiceCompanyName());
+            m.put("address", o.getInvoiceCompanyAddress());
+            m.put("email", o.getInvoiceEmail());
+            m.put("fromOrderCode", o.getOrderCode());
+            byTax.put(tax, m);
+            if (byTax.size() >= BUYER_PROFILE_MAX) {
+                break;
+            }
+        }
+        return new ArrayList<>(byTax.values());
     }
 
     // ---------------------------------------------------------------- trạng thái xuất bù
