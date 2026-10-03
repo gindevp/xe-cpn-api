@@ -295,6 +295,45 @@ class OrderFacadeServicePaymentTermTest {
     }
 
     @Test
+    void toSenderPays_counterCreatedOrderAtOffice_collectsImmediately() {
+        asDispatcher("VP_PT");
+        order.setPaymentTerm(PaymentTerm.NHAN_TRA);
+
+        service.changePaymentTerm("PT3009TERM", req("GUI_TRA"));
+
+        ArgumentCaptor<OrderPayment> pay = ArgumentCaptor.forClass(OrderPayment.class);
+        verify(orderPaymentRepository).save(pay.capture());
+        assertThat(pay.getValue().getAmount()).isEqualByComparingTo("30000");
+        assertThat(pay.getValue().getNote()).isEqualTo(OrderFacadeService.NOTE_SENDER_PREPAID);
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("30000");
+    }
+
+    @Test
+    void toSenderPays_homePickupNotPickedYet_doesNotCollect() {
+        asDispatcher("VP_PT");
+        order.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        order.setHomePickup(true);
+
+        service.changePaymentTerm("PT3009TERM", req("GUI_TRA"));
+
+        assertThat(order.getPaymentTerm()).isEqualTo(PaymentTerm.GUI_TRA);
+        verify(orderPaymentRepository, never()).save(any());
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void toSenderPays_customerOrderNotWarehoused_doesNotCollect() {
+        asDispatcher("VP_PT");
+        order.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        when(orderEventRepository.existsByOrder_IdAndActionAndActorUsername(1L, "CREATE", "customer")).thenReturn(true);
+
+        service.changePaymentTerm("PT3009TERM", req("GUI_TRA"));
+
+        verify(orderPaymentRepository, never()).save(any());
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("0");
+    }
+
+    @Test
     void dispatcher_otherOffice_isForbidden() {
         asDispatcher("VP_ND");
 

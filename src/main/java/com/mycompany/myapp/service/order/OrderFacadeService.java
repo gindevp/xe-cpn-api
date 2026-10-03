@@ -1450,10 +1450,28 @@ public class OrderFacadeService {
         }
         detail.append(" · Lý do: ").append(reason);
         appendEvent(order, "PAYMENT_TERM_CHANGE", detail.toString(), actor);
-        if (target == PaymentTerm.GUI_TRA && !targetCredit && senderWarehouseDone(order)) {
+        if (target == PaymentTerm.GUI_TRA && !targetCredit && (senderWarehouseDone(order) || goodsAtSenderCounter(order))) {
             collectSenderFareOnWarehouseIn(order);
         }
         return getByCode(order.getOrderCode());
+    }
+
+    /**
+     * Đơn quầy tạo tại VP gửi, hàng còn nằm kho, chưa gán xe: người gửi đang ở quầy → thu được ngay.
+     * Không áp dụng đơn lấy tận nơi chưa lấy / đơn khách tự tạo chưa nhập kho (thu khi nhập kho gửi).
+     */
+    boolean goodsAtSenderCounter(ShipmentOrder order) {
+        if (!atSenderWarehouse(order)) {
+            return false;
+        }
+        if (order.getPickedUpAt() == null && Boolean.TRUE.equals(order.getHomePickup())) {
+            return false;
+        }
+        return (
+            order.getId() == null ||
+            orderEventRepository == null ||
+            !orderEventRepository.existsByOrder_IdAndActionAndActorUsername(order.getId(), "CREATE", "customer")
+        );
     }
 
     /** Đơn khách tự tạo phải được VP gửi xác nhận nhập kho trước khi xếp xe / quét lên xe. */
