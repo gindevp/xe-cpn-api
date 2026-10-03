@@ -47,6 +47,8 @@ public class InvoiceAutoIssueService {
     private static final int BACKFILL_MAX = 2000;
     private static final int LIST_MAX_DAYS = 62;
     private static final List<OrderStatus> NOT_PAID_STATUSES = List.of(OrderStatus.DRAFT, OrderStatus.CANCELLED);
+    /** Màn kế toán vẫn hiện đơn huỷ (gắn nhãn) — chỉ bỏ nháp. */
+    private static final List<OrderStatus> LIST_EXCLUDED_STATUSES = List.of(OrderStatus.DRAFT);
 
     private final MeInvoiceIssueService issueService;
     private final ShipmentOrderRepository shipmentOrderRepository;
@@ -190,10 +192,8 @@ public class InvoiceAutoIssueService {
         Instant end = to.plusDays(1).atStartOfDay(VN).toInstant();
 
         List<InvoiceRow> rows = new ArrayList<>();
-        for (ShipmentOrder o : shipmentOrderRepository.findInvoiceWarehouseInBetween(start, end, NOT_PAID_STATUSES)) {
-            if (!hiddenFromList(o)) {
-                rows.add(toRow(o, o.getPickedUpAt()));
-            }
+        for (ShipmentOrder o : shipmentOrderRepository.findInvoiceWarehouseInBetween(start, end, LIST_EXCLUDED_STATUSES)) {
+            rows.add(toRow(o, o.getPickedUpAt()));
         }
         Map<Long, Instant> delivered = new LinkedHashMap<>();
         for (Object[] r : orderEventRepository.findInvoiceDeliveredBetween(InvoicePolicy.DELIVERED_ACTIONS, start, end)) {
@@ -201,9 +201,7 @@ public class InvoiceAutoIssueService {
         }
         if (!delivered.isEmpty()) {
             for (ShipmentOrder o : shipmentOrderRepository.findAllWithOfficesByIdIn(delivered.keySet())) {
-                if (!hiddenFromList(o)) {
-                    rows.add(toRow(o, delivered.get(o.getId())));
-                }
+                rows.add(toRow(o, delivered.get(o.getId())));
             }
         }
         String office = scopedOfficeCode.orElse(null);
@@ -212,19 +210,6 @@ public class InvoiceAutoIssueService {
             .filter(r -> office == null || office.equals(r.fromOfficeCode()) || office.equals(r.toOfficeCode()))
             .sorted(Comparator.comparing(InvoiceRow::paidAt, Comparator.nullsLast(Comparator.reverseOrder())))
             .toList();
-    }
-
-    /** Đơn đang hoàn / đã hoàn chưa có HĐ: không đưa lên màn kế toán (không tự xuất, không xuất bù). */
-    static boolean hiddenFromList(ShipmentOrder o) {
-        if (!MeInvoiceIssueService.inReturnFlow(o)) {
-            return false;
-        }
-        String st = o.getInvoiceStatus();
-        return !(
-            MeInvoiceIssueService.isIssued(o) ||
-            MeInvoiceIssueService.STATUS_MANUAL.equals(st) ||
-            MeInvoiceIssueService.STATUS_PENDING.equals(st)
-        );
     }
 
     static InvoiceRow toRow(ShipmentOrder o, Instant paidAt) {
@@ -261,7 +246,8 @@ public class InvoiceAutoIssueService {
             o.getInvoiceSeries(),
             o.getInvoiceIssuedAt(),
             o.getInvoiceError(),
-            late
+            late,
+            MeInvoiceIssueService.openIssueType(o)
         );
     }
 
@@ -294,7 +280,8 @@ public class InvoiceAutoIssueService {
         String invoiceSeries,
         Instant invoiceIssuedAt,
         String invoiceError,
-        boolean late
+        boolean late,
+        String openIssueType
     ) {}
 
     // ---------------------------------------------------------------- thông tin công ty theo SĐT

@@ -13,7 +13,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.domain.OrderEvent;
+import com.mycompany.myapp.domain.OrderIssue;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.IssueStatus;
+import com.mycompany.myapp.domain.enumeration.IssueType;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
@@ -365,30 +368,66 @@ class MeInvoiceIssueServiceTest {
         assertThatThrownBy(() -> service.markPersonalIssued("VT0001ABCD", true, "k")).isInstanceOf(BadRequestAlertException.class);
     }
 
-    @Test
-    void backfill_returningOrReturned_skipped_evenWhenPaid() {
+    private void paidSenderOrder(OrderStatus status) {
         order.setPaymentTerm(PaymentTerm.GUI_TRA);
         order.setPickedUpAt(Instant.parse("2026-10-01T02:00:00Z"));
         order.setFareAmount(new BigDecimal("30000"));
         order.setPaidAmount(new BigDecimal("30000"));
-        order.setStatus(OrderStatus.RETURNING);
-        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("RETURNING");
-        order.setStatus(OrderStatus.RETURNED);
-        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("RETURNING");
+        order.setStatus(status);
+    }
+
+    private static OrderIssue issue(IssueType type, IssueStatus status) {
+        OrderIssue i = new OrderIssue();
+        i.setIssueType(type);
+        i.setIssueStatus(status);
+        return i;
+    }
+
+    @Test
+    void backfill_cancelled_skipped() {
+        paidSenderOrder(OrderStatus.CANCELLED);
+        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("CANCELLED");
         verify(client, never()).publish(any());
     }
 
     @Test
-    void autoIssue_returning_skipped_evenWhenPaid() {
-        order.setId(7L);
-        order.setPaymentTerm(PaymentTerm.GUI_TRA);
-        order.setPickedUpAt(Instant.parse("2026-10-01T02:00:00Z"));
-        order.setFareAmount(new BigDecimal("30000"));
-        order.setPaidAmount(new BigDecimal("30000"));
-        order.setStatus(OrderStatus.RETURNING);
-        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
-        assertThat(service.autoIssueOne(7L)).isEqualTo("RETURNING");
+    void backfill_openException_skipped_anyIssueType() {
+        paidSenderOrder(OrderStatus.RETURNING);
+        for (IssueType t : IssueType.values()) {
+            order.setIssue(issue(t, IssueStatus.OPEN));
+            assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("EXCEPTION");
+        }
         verify(client, never()).publish(any());
+    }
+
+    @Test
+    void backfill_returningPaid_noOpenIssue_issues() {
+        paidSenderOrder(OrderStatus.RETURNING);
+        order.setIssue(issue(IssueType.EXCEPTION, IssueStatus.RESOLVED));
+        publishOk();
+        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
+    }
+
+    @Test
+    void autoIssue_openException_skipped_cancelledSkipped() {
+        order.setId(7L);
+        paidSenderOrder(OrderStatus.CONFIRMED);
+        order.setIssue(issue(IssueType.DAMAGED, IssueStatus.OPEN));
+        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        assertThat(service.autoIssueOne(7L)).isEqualTo("EXCEPTION");
+        order.setIssue(null);
+        order.setStatus(OrderStatus.CANCELLED);
+        assertThat(service.autoIssueOne(7L)).isEqualTo("CANCELLED");
+        verify(client, never()).publish(any());
+    }
+
+    @Test
+    void autoIssue_returningPaid_issues() {
+        order.setId(7L);
+        paidSenderOrder(OrderStatus.RETURNED);
+        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        publishOk();
+        assertThat(service.autoIssueOne(7L)).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
     }
 
     @Test

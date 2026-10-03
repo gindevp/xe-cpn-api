@@ -12,7 +12,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.mycompany.myapp.domain.IntegrationConfig;
+import com.mycompany.myapp.domain.OrderIssue;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.IssueStatus;
+import com.mycompany.myapp.domain.enumeration.IssueType;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.OrderEventRepository;
@@ -131,48 +134,39 @@ class InvoiceAutoIssueServiceTest {
     }
 
     @Test
-    void list_hidesReturningOrdersWithoutInvoice_keepsIssuedOnes() {
+    @SuppressWarnings("unchecked")
+    void list_showsCancelledAndExceptionOrders_withOpenIssueType_excludesOnlyDrafts() {
+        ShipmentOrder exception = senderPaysOrder("EXC", OrderStatus.RETURNING, "395000", null);
+        OrderIssue open = new OrderIssue();
+        open.setIssueType(IssueType.LOST);
+        open.setIssueStatus(IssueStatus.OPEN);
+        exception.setIssue(open);
+        ShipmentOrder resolved = senderPaysOrder("RESOLVED", OrderStatus.CONFIRMED, "395000", null);
+        OrderIssue done = new OrderIssue();
+        done.setIssueType(IssueType.EXCEPTION);
+        done.setIssueStatus(IssueStatus.RESOLVED);
+        resolved.setIssue(done);
         when(orderRepo.findInvoiceWarehouseInBetween(any(), any(), any())).thenReturn(
-            List.of(
-                senderPaysOrder("RET_UNPAID", OrderStatus.RETURNING, "0", null),
-                senderPaysOrder("RET_NULLPAID", OrderStatus.RETURNED, null, null),
-                senderPaysOrder("RET_PAID", OrderStatus.RETURNING, "395000", null),
-                senderPaysOrder("RET_ISSUED", OrderStatus.RETURNING, "0", MeInvoiceIssueService.STATUS_ISSUED),
-                senderPaysOrder("RET_MANUAL", OrderStatus.RETURNED, "0", MeInvoiceIssueService.STATUS_MANUAL),
-                senderPaysOrder("NORMAL_UNPAID", OrderStatus.CONFIRMED, "0", null)
-            )
+            List.of(senderPaysOrder("CXL", OrderStatus.CANCELLED, "395000", null), exception, resolved)
         );
         when(eventRepo.findInvoiceDeliveredBetween(any(), any(), any())).thenReturn(List.of());
 
-        List<String> codes = service
-            .list(java.time.LocalDate.parse("2026-10-02"), java.time.LocalDate.parse("2026-10-02"), java.util.Optional.empty())
-            .stream()
-            .map(InvoiceAutoIssueService.InvoiceRow::orderCode)
-            .toList();
-
-        assertThat(codes).containsExactlyInAnyOrder("RET_ISSUED", "RET_MANUAL", "NORMAL_UNPAID");
-    }
-
-    @Test
-    void list_hidesReturnedAfterDelivery() {
-        ShipmentOrder returned = senderPaysOrder("DLV_RET", OrderStatus.RETURNED, "395000", null);
-        returned.setPaymentTerm(PaymentTerm.NHAN_TRA);
-        ShipmentOrder delivered = senderPaysOrder("DLV_OK", OrderStatus.DELIVERED, "395000", null);
-        delivered.setPaymentTerm(PaymentTerm.NHAN_TRA);
-        Instant at = Instant.parse("2026-10-02T03:00:00Z");
-        when(orderRepo.findInvoiceWarehouseInBetween(any(), any(), any())).thenReturn(List.of());
-        when(eventRepo.findInvoiceDeliveredBetween(any(), any(), any())).thenReturn(
-            List.of(new Object[] { returned.getId(), at }, new Object[] { delivered.getId(), at })
+        List<InvoiceAutoIssueService.InvoiceRow> rows = service.list(
+            java.time.LocalDate.parse("2026-10-02"),
+            java.time.LocalDate.parse("2026-10-02"),
+            java.util.Optional.empty()
         );
-        when(orderRepo.findAllWithOfficesByIdIn(any())).thenReturn(List.of(returned, delivered));
 
-        List<String> codes = service
-            .list(java.time.LocalDate.parse("2026-10-02"), java.time.LocalDate.parse("2026-10-02"), java.util.Optional.empty())
-            .stream()
-            .map(InvoiceAutoIssueService.InvoiceRow::orderCode)
-            .toList();
-
-        assertThat(codes).containsExactly("DLV_OK");
+        assertThat(rows)
+            .extracting(InvoiceAutoIssueService.InvoiceRow::orderCode, InvoiceAutoIssueService.InvoiceRow::openIssueType)
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple("CXL", null),
+                org.assertj.core.groups.Tuple.tuple("EXC", "LOST"),
+                org.assertj.core.groups.Tuple.tuple("RESOLVED", null)
+            );
+        ArgumentCaptor<java.util.Collection<OrderStatus>> excluded = ArgumentCaptor.forClass(java.util.Collection.class);
+        verify(orderRepo).findInvoiceWarehouseInBetween(any(), any(), excluded.capture());
+        assertThat(excluded.getValue()).containsExactly(OrderStatus.DRAFT);
     }
 
     @Test

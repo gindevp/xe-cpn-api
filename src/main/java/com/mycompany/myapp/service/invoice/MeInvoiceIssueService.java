@@ -5,7 +5,10 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.domain.OrderEvent;
+import com.mycompany.myapp.domain.OrderIssue;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.IssueStatus;
+import com.mycompany.myapp.domain.enumeration.IssueType;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
@@ -162,8 +165,9 @@ public class MeInvoiceIssueService {
         if (isIssued(order) || STATUS_MANUAL.equals(st) || STATUS_PENDING.equals(st)) {
             return "ALREADY";
         }
-        if (inReturnFlow(order)) {
-            return "RETURNING";
+        String blocked = autoBlockReason(order);
+        if (blocked != null) {
+            return blocked;
         }
         if (!paymentReached(order)) {
             return "NOT_PAID_YET";
@@ -193,8 +197,9 @@ public class MeInvoiceIssueService {
         if (Boolean.TRUE.equals(order.getOnCredit())) {
             return "ON_CREDIT";
         }
-        if (inReturnFlow(order)) {
-            return "RETURNING";
+        String blocked = autoBlockReason(order);
+        if (blocked != null) {
+            return blocked;
         }
         if (!paymentReached(order)) {
             return "NOT_PAID_YET";
@@ -619,9 +624,21 @@ public class MeInvoiceIssueService {
         shipmentOrderRepository.save(order);
     }
 
-    /** Đơn huỷ giao / chuyển hoàn: không tự xuất, không xuất bù (kế toán xử lý tay). */
-    static boolean inReturnFlow(ShipmentOrder order) {
-        return order.getStatus() == OrderStatus.RETURNING || order.getStatus() == OrderStatus.RETURNED;
+    /** Đơn huỷ (đã trả tiền khách) hoặc đang có ngoại lệ mở: không tự xuất, không xuất bù. Null = được xuất. */
+    static String autoBlockReason(ShipmentOrder order) {
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return "CANCELLED";
+        }
+        return openIssueType(order) != null ? "EXCEPTION" : null;
+    }
+
+    /** Loại ngoại lệ đang mở trên đơn (EXCEPTION / LOST / DAMAGED); không có → null. */
+    static String openIssueType(ShipmentOrder order) {
+        OrderIssue issue = order.getIssue();
+        if (issue == null || issue.getIssueStatus() != IssueStatus.OPEN) {
+            return null;
+        }
+        return issue.getIssueType() != null ? issue.getIssueType().name() : IssueType.EXCEPTION.name();
     }
 
     static boolean isIssued(ShipmentOrder order) {

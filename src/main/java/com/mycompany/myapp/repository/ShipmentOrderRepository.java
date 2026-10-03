@@ -75,11 +75,13 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
 
     List<ShipmentOrder> findByCurrentTrip_Id(Long tripId);
 
-    /** Đơn gửi trả chờ tự xuất HĐ: đã nhập kho gửi trong [from, to], chưa có trạng thái HĐ, không công nợ. */
+    /** Đơn gửi trả chờ tự xuất HĐ: đã nhập kho gửi trong [from, to], chưa có trạng thái HĐ, không công nợ, không ngoại lệ mở. */
     @Query(
         """
         select o.id from ShipmentOrder o
+        left join o.issue iss
         where (o.paymentTerm is null or o.paymentTerm = com.mycompany.myapp.domain.enumeration.PaymentTerm.GUI_TRA)
+        and (iss is null or iss.issueStatus <> com.mycompany.myapp.domain.enumeration.IssueStatus.OPEN)
         and o.pickedUpAt >= :from and o.pickedUpAt <= :to
         and o.status not in :excluded
         and (o.invoiceStatus is null or o.invoiceStatus = 'SKIPPED')
