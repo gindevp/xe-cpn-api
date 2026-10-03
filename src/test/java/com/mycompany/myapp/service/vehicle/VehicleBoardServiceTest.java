@@ -36,6 +36,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -235,6 +236,46 @@ class VehicleBoardServiceTest {
         );
         assertThat(item.eventType()).isEqualTo("DEPART");
         assertThat(item.reportedAt()).isNotNull();
+    }
+
+    @Test
+    void departAfterLongDwellRequiresReason() {
+        VehicleOfficeEvent arrived = new VehicleOfficeEvent();
+        arrived.setEventAt(Instant.now().minusSeconds(6 * 60));
+        when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(1L, EventType.DEPART, "C:CH123")).thenReturn(Optional.empty());
+        when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(1L, EventType.ARRIVE, "C:CH123")).thenReturn(Optional.of(arrived));
+        loginAt(ga);
+
+        assertThatThrownBy(() ->
+            service.report(new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, todayAt(9), "  "))
+        )
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("dwellReasonRequired");
+        verify(eventRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void departAfterLongDwellWithReasonSavesReason() {
+        VehicleOfficeEvent arrived = new VehicleOfficeEvent();
+        arrived.setEventAt(Instant.now().minusSeconds(20 * 60));
+        when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(1L, EventType.DEPART, "C:CH123")).thenReturn(Optional.empty());
+        when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(1L, EventType.ARRIVE, "C:CH123")).thenReturn(Optional.of(arrived));
+        ArgumentCaptor<VehicleOfficeEvent> saved = ArgumentCaptor.forClass(VehicleOfficeEvent.class);
+        when(eventRepository.saveAndFlush(saved.capture())).thenAnswer(inv -> inv.getArgument(0));
+        loginAt(ga);
+
+        service.report(
+            new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, todayAt(9), " Chờ hàng ")
+        );
+        assertThat(saved.getValue().getReason()).isEqualTo("Chờ hàng");
+    }
+
+    @Test
+    void dwellOverLimitIsStrictlyAfterFiveMinutes() {
+        Instant a = Instant.parse("2026-10-03T01:00:00Z");
+        assertThat(VehicleBoardService.dwellOverLimit(a, a.plusSeconds(5 * 60))).isFalse();
+        assertThat(VehicleBoardService.dwellOverLimit(a, a.plusSeconds(5 * 60 + 1))).isTrue();
     }
 
     @Test

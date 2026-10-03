@@ -73,6 +73,17 @@ public class VehicleOfficeEvent implements Serializable {
     @Column(name = "reported_by", length = 50)
     private String reportedBy;
 
+    @Column(name = "reason", length = 500)
+    private String reason;
+
+    public String getReason() {
+        return reason;
+    }
+
+    public void setReason(String reason) {
+        this.reason = reason;
+    }
+
     public Long getId() {
         return id;
     }

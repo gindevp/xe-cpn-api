@@ -56,7 +56,8 @@ public final class VehicleBoardDtos {
         Instant plannedDepartAt,
         Instant eventAt,
         String reportedBy,
-        String reportedByName
+        String reportedByName,
+        String reason
     ) {}
 
     public record Report(List<ReportItem> events) {}
@@ -69,6 +70,20 @@ public final class VehicleBoardDtos {
         String vehiclePlate,
         String driverName,
         String routeLabel,
-        Instant plannedDepartAt
-    ) {}
+        Instant plannedDepartAt,
+        String reason
+    ) {
+        public ReportRequest(
+            String eventType,
+            String source,
+            String tripCode,
+            String externalTripId,
+            String vehiclePlate,
+            String driverName,
+            String routeLabel,
+            Instant plannedDepartAt
+        ) {
+            this(eventType, source, tripCode, externalTripId, vehiclePlate, driverName, routeLabel, plannedDepartAt, null);
+        }
+    }
 }

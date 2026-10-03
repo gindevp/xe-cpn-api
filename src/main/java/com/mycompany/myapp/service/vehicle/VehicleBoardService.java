@@ -53,6 +53,8 @@ public class VehicleBoardService {
     static final String ENTITY = "vehicleEvent";
     private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     static final int MAX_REPORT_DAYS = 92;
+    /** Dừng tại VP lâu hơn ngưỡng này thì báo rời phải kèm lý do. */
+    static final int MAX_DWELL_MINUTES = 5;
 
     private final TripRepository tripRepository;
     private final ItineraryRepository itineraryRepository;
@@ -263,11 +265,21 @@ public class VehicleBoardService {
         if (existing.isPresent()) {
             return toItem(c, existing.get());
         }
-        if (
-            type == EventType.DEPART &&
-            eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(office.getId(), EventType.ARRIVE, c.tripKey()).isEmpty()
-        ) {
-            throw new BadRequestAlertException("Chưa báo xe đến VP — báo xe đến trước rồi mới báo xe rời", ENTITY, "arriveFirst");
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        String reason = cut(trimToNull(req.reason()), 500);
+        if (type == EventType.DEPART) {
+            VehicleOfficeEvent arrive = eventRepository
+                .findOneByOffice_IdAndEventTypeAndTripKey(office.getId(), EventType.ARRIVE, c.tripKey())
+                .orElseThrow(() ->
+                    new BadRequestAlertException("Chưa báo xe đến VP — báo xe đến trước rồi mới báo xe rời", ENTITY, "arriveFirst")
+                );
+            if (reason == null && dwellOverLimit(arrive.getEventAt(), now)) {
+                throw new BadRequestAlertException(
+                    "Xe dừng quá " + MAX_DWELL_MINUTES + " phút — nhập lý do trước khi báo xe rời",
+                    ENTITY,
+                    "dwellReasonRequired"
+                );
+            }
         }
         VehicleOfficeEvent e = new VehicleOfficeEvent();
         e.setOffice(office);
@@ -280,8 +292,9 @@ public class VehicleBoardService {
         e.setDriverName(c.driver());
         e.setRouteLabel(c.route());
         e.setPlannedDepartAt(c.departAt());
-        e.setEventAt(Instant.now().truncatedTo(ChronoUnit.SECONDS));
+        e.setEventAt(now);
         e.setReportedBy(SecurityUtils.getCurrentUserLogin().orElse(null));
+        e.setReason(reason);
         try {
             e = eventRepository.saveAndFlush(e);
         } catch (DataIntegrityViolationException dup) {
@@ -346,7 +359,8 @@ public class VehicleBoardService {
                     e.getPlannedDepartAt(),
                     e.getEventAt(),
                     e.getReportedBy(),
-                    e.getReportedBy() == null ? null : names.get(e.getReportedBy().toLowerCase(Locale.ROOT))
+                    e.getReportedBy() == null ? null : names.get(e.getReportedBy().toLowerCase(Locale.ROOT)),
+                    e.getReason()
                 )
             )
             .toList();
@@ -411,6 +425,10 @@ public class VehicleBoardService {
             throw new BadRequestAlertException("Tài khoản chưa gắn văn phòng", ENTITY, "officeMissing");
         }
         return p.getOffice();
+    }
+
+    static boolean dwellOverLimit(Instant arrivedAt, Instant departAt) {
+        return arrivedAt != null && departAt != null && departAt.isAfter(arrivedAt.plus(MAX_DWELL_MINUTES, ChronoUnit.MINUTES));
     }
 
     static boolean departsFrom(Trip trip, Office office) {
