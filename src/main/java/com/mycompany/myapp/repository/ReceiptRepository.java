@@ -62,6 +62,7 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long>, JpaSpec
         @Param("creatorLike") String creatorLike,
         @Param("createdFrom") Instant createdFrom,
         @Param("createdTo") Instant createdTo,
+        @Param("status") String status,
         Pageable pageable
     );
 
@@ -73,16 +74,18 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long>, JpaSpec
         @Param("payerLike") String payerLike,
         @Param("creatorLike") String creatorLike,
         @Param("createdFrom") Instant createdFrom,
-        @Param("createdTo") Instant createdTo
+        @Param("createdTo") Instant createdTo,
+        @Param("status") String status
     );
 
-    /** Tham số *Like đã là "%...%" chữ thường; createdTo loại trừ. */
+    /** Tham số *Like đã là "%...%" chữ thường; createdTo loại trừ; status CONFIRMED (đã thu) / PENDING (chưa thu). */
     String LIST_WHERE =
         " where (:officeCode is null or o.code = :officeCode) and (:createdBy is null or r.createdByUsername = :createdBy)" +
         " and (:codeLike is null or lower(r.receiptCode) like :codeLike)" +
         " and (:payerLike is null or lower(coalesce(r.payerCode, '')) like :payerLike or lower(coalesce(r.payerName, '')) like :payerLike)" +
         " and (:creatorLike is null or lower(r.createdByUsername) like :creatorLike)" +
-        " and (:createdFrom is null or r.createdAt >= :createdFrom) and (:createdTo is null or r.createdAt < :createdTo)";
+        " and (:createdFrom is null or r.createdAt >= :createdFrom) and (:createdTo is null or r.createdAt < :createdTo)" +
+        " and (:status is null or (:status = 'CONFIRMED' and r.confirmedAt is not null) or (:status = 'PENDING' and r.confirmedAt is null))";
 
     /** Ảnh KT xác nhận; chưa có thì ảnh chuyển khoản NV gửi. */
     @Query("select coalesce(r.confirmProofImage, r.transferProofImage) from Receipt r where r.receiptCode = :code")

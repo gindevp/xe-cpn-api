@@ -46,9 +46,10 @@ public class FinanceFacadeResource {
         @RequestParam(required = false) String payer,
         @RequestParam(required = false) String creator,
         @RequestParam(required = false) String day,
+        @RequestParam(required = false) String status,
         Pageable pageable
     ) {
-        var filter = new FinanceFacadeService.ReceiptListFilter(code, payer, creator, day);
+        var filter = new FinanceFacadeService.ReceiptListFilter(code, payer, creator, day, status);
         Page<ReceiptDTO> page = financeFacadeService.listReceipts(officeCode, createdBy, filter, pageable);
         java.math.BigDecimal sum = financeFacadeService.sumReceipts(officeCode, createdBy, filter);
         HttpHeaders headers = PaginationUtil.generatePaginationHttpHeaders(ServletUriComponentsBuilder.fromCurrentRequest(), page);

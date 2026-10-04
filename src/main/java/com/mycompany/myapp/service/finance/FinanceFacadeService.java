@@ -624,9 +624,17 @@ public class FinanceFacadeService {
         return listReceipts(officeCode, createdBy, ReceiptListFilter.NONE, pageable);
     }
 
-    /** Lọc danh sách phiếu thu phía server; {@code day} = ngày lập phiếu (yyyy-MM-dd, giờ VN). */
-    public record ReceiptListFilter(String code, String payer, String creator, String day) {
-        public static final ReceiptListFilter NONE = new ReceiptListFilter(null, null, null, null);
+    /**
+     * Lọc danh sách phiếu thu phía server; {@code day} = ngày lập phiếu (yyyy-MM-dd, giờ VN);
+     * {@code status} = CONFIRMED (đã thu) / PENDING (chưa thu), khác thì bỏ qua.
+     */
+    public record ReceiptListFilter(String code, String payer, String creator, String day, String status) {
+        public static final ReceiptListFilter NONE = new ReceiptListFilter(null, null, null, null, null);
+    }
+
+    private static String statusParam(String status) {
+        String s = status == null ? "" : status.trim().toUpperCase(java.util.Locale.ROOT);
+        return "CONFIRMED".equals(s) || "PENDING".equals(s) ? s : null;
     }
 
     private static String likeParam(String v) {
@@ -662,7 +670,8 @@ public class FinanceFacadeService {
             likeParam(f.payer()),
             likeParam(f.creator()),
             range[0],
-            range[1]
+            range[1],
+            statusParam(f.status())
         );
     }
 
@@ -681,6 +690,7 @@ public class FinanceFacadeService {
             likeParam(f.creator()),
             range[0],
             range[1],
+            statusParam(f.status()),
             paging
         );
         List<Long> receiptIds = rows.getContent().stream().map(ReceiptListRow::id).toList();
