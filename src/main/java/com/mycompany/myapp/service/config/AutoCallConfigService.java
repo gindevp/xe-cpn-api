@@ -6,6 +6,7 @@ import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient.FileResult;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient.Result;
+import com.mycompany.myapp.service.partner.VtechAutoCallClient;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -34,15 +35,25 @@ public class AutoCallConfigService {
 
     private final IntegrationConfigRepository integrationConfigRepository;
     private final HhvnAutoCallClient client;
+    private final VtechAutoCallClient vtechClient;
 
-    public AutoCallConfigService(IntegrationConfigRepository integrationConfigRepository, HhvnAutoCallClient client) {
+    public AutoCallConfigService(
+        IntegrationConfigRepository integrationConfigRepository,
+        HhvnAutoCallClient client,
+        VtechAutoCallClient vtechClient
+    ) {
         this.integrationConfigRepository = integrationConfigRepository;
         this.client = client;
+        this.vtechClient = vtechClient;
     }
 
     /** Gọi GET /audios — nhẹ nhất, xác nhận key + IP whitelist. Key/baseUrl trong body chỉ dùng để thử, không lưu. */
     public Map<String, Object> test(Map<String, String> override) {
         IntegrationConfig cfg = current();
+        String provider = firstNonBlank(override != null ? override.get("autocallProvider") : null, cfg.getAutocallActiveProvider());
+        if (IntegrationConfig.PROVIDER_VTECH.equalsIgnoreCase(provider)) {
+            return testVtech(cfg, override);
+        }
         String apiKey = firstNonBlank(override != null ? override.get("autocallApiKey") : null, cfg.getAutocallApiKey());
         String baseUrl = firstNonBlank(override != null ? override.get("autocallBaseUrl") : null, cfg.getAutocallBaseUrl());
         Map<String, Object> out = new LinkedHashMap<>();
@@ -58,6 +69,32 @@ public class AutoCallConfigService {
         putResult(out, r);
         if (r.ok()) {
             out.put("message", "Kết nối HHVN OK");
+        }
+        return stamp(out);
+    }
+
+    /** Import danh sách rỗng: Vtech kiểm tra key trước validation, nên 400 = key đúng, 401 = key sai; không gọi ai. */
+    private Map<String, Object> testVtech(IntegrationConfig cfg, Map<String, String> override) {
+        String apiKey = firstNonBlank(override != null ? override.get("autocallVtechApiKey") : null, cfg.getAutocallVtechApiKey());
+        String baseUrl = firstNonBlank(override != null ? override.get("autocallVtechBaseUrl") : null, cfg.getAutocallVtechBaseUrl());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("provider", IntegrationConfig.PROVIDER_VTECH);
+        out.put("baseUrl", VtechAutoCallClient.normalizeBaseUrl(baseUrl));
+        if (apiKey == null) {
+            out.put("ok", false);
+            out.put("code", "API_KEY_MISSING");
+            out.put("message", "Chưa có API key Vtech — nhập key rồi Test");
+            return stamp(out);
+        }
+        out.put("mode", "LIVE");
+        Result r = vtechClient.testConnection(baseUrl, apiKey.trim());
+        out.put("ok", r.ok());
+        out.put("httpStatus", r.httpStatus());
+        if (r.ok()) {
+            out.put("message", "Kết nối Vtech OK (key hợp lệ)");
+        } else {
+            out.put("code", r.code());
+            out.put("message", "INVALID_API_KEY".equals(r.code()) ? "API key Vtech không hợp lệ" : humanMessage(r.code(), r.message()));
         }
         return stamp(out);
     }

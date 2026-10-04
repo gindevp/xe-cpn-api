@@ -115,4 +115,47 @@ public class AutoCallResource {
         }
         return ResponseEntity.ok().build();
     }
+
+    /**
+     * Webhook {@code call.completed} của Vtech — không ký; token CPN sinh gửi kèm {@code ?token=} hoặc trường
+     * {@code cpn_token} trong body_extra.
+     */
+    @PostMapping("/api/public/vtech/webhook")
+    public ResponseEntity<Void> vtechWebhook(
+        @RequestParam(value = "token", required = false) String token,
+        @RequestBody(required = false) byte[] rawBody
+    ) {
+        String expected = autoCallService.vtechWebhookToken();
+        if (expected == null) {
+            LOG.warn("Vtech webhook rejected: webhook token not configured");
+            return ResponseEntity.status(503).build();
+        }
+        JsonNode event;
+        try {
+            event = objectMapper.readTree(rawBody == null ? new byte[0] : rawBody);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+        String given = token != null ? token : event != null ? event.path("cpn_token").asText(null) : null;
+        if (!AutoCallService.tokenMatches(expected, given)) {
+            LOG.warn("Vtech webhook rejected: bad token");
+            return ResponseEntity.status(401).build();
+        }
+        try {
+            AutoCallService.VtechWebhookOutcome outcome = autoCallService.applyVtechWebhook(event);
+            if (outcome == AutoCallService.VtechWebhookOutcome.NOT_FOUND) {
+                JsonNode c = event.path("call");
+                LOG.warn(
+                    "Vtech webhook: unknown call id={} ref={} phone={}",
+                    c.path("id").asText(),
+                    c.path("contact").path("extra_data").path("ref_id").asText(),
+                    c.path("contact").path("phone_number").asText()
+                );
+            }
+        } catch (Exception e) {
+            LOG.warn("Vtech webhook processing failed: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok().build();
+    }
 }

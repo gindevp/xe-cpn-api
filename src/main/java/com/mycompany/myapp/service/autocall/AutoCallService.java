@@ -1,10 +1,14 @@
 package com.mycompany.myapp.service.autocall;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mycompany.myapp.domain.AutoCall;
 import com.mycompany.myapp.domain.IntegrationConfig;
+import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.GoodsType;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.AutoCallRepository;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
@@ -13,6 +17,7 @@ import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.service.config.AutoCallConfigService;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient.Result;
+import com.mycompany.myapp.service.partner.VtechAutoCallClient;
 import com.mycompany.myapp.service.realtime.ServerEventService;
 import jakarta.annotation.PreDestroy;
 import java.nio.charset.StandardCharsets;
@@ -26,6 +31,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -83,7 +89,17 @@ public class AutoCallService {
     private final OrderEventRepository orderEventRepository;
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final HhvnAutoCallClient client;
+    private final VtechAutoCallClient vtechClient;
     private final TransactionTemplate transactionTemplate;
+    /** Kết quả gọi thử Vtech (refId CPN-TEST-…) — không có dòng auto_call, giữ trong bộ nhớ cho màn Gọi thử tra lại. */
+    private final Map<String, JsonNode> vtechTestResults = Collections.synchronizedMap(
+        new LinkedHashMap<>(16, 0.75f, false) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, JsonNode> eldest) {
+                return size() > 200;
+            }
+        }
+    );
     private final ExecutorService executor = Executors.newFixedThreadPool(2, r -> {
         Thread t = new Thread(r, "auto-call");
         t.setDaemon(true);
@@ -96,6 +112,7 @@ public class AutoCallService {
         OrderEventRepository orderEventRepository,
         ShipmentOrderRepository shipmentOrderRepository,
         HhvnAutoCallClient client,
+        VtechAutoCallClient vtechClient,
         PlatformTransactionManager transactionManager
     ) {
         this.autoCallRepository = autoCallRepository;
@@ -103,6 +120,7 @@ public class AutoCallService {
         this.orderEventRepository = orderEventRepository;
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.client = client;
+        this.vtechClient = vtechClient;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -127,7 +145,7 @@ public class AutoCallService {
             return;
         }
         IntegrationConfig cfg = currentConfig();
-        if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled()) || !cfg.isAutocallApiKeyConfigured()) {
+        if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled()) || !cfg.isAutocallActiveKeyConfigured()) {
             return;
         }
         autoCallRepository.skipScheduledForOrder(order.getId(), "SUPERSEDED", "Thay bằng lệnh gọi mới");
@@ -138,7 +156,8 @@ public class AutoCallService {
         long seq = autoCallRepository.countByOrder_IdAndCallType(order.getId(), TYPE_GIAO) + 1;
         call.setRefId(buildRefId(order.getOrderCode(), seq));
         call.setTriggerAction(action);
-        call.setSandbox(cfg.getAutocallApiKey().startsWith("xk_test_"));
+        call.setProvider(cfg.getAutocallActiveProvider());
+        call.setSandbox(cfg.isAutocallSandbox());
         call.setCreatedAt(Instant.now());
         String phone = normalizePhone(order.getReceiverPhone());
         if (phone == null) {
@@ -198,15 +217,24 @@ public class AutoCallService {
         }
     }
 
-    /** Gửi (hoặc gửi lại cùng refId) 1 cuộc gọi đang PENDING / ERROR sang HHVN. */
+    /**
+     * Gửi (hoặc gửi lại cùng refId) 1 cuộc gọi đang PENDING / ERROR qua nhà cung cấp đang chọn — cuộc gọi tạo lúc
+     * còn dùng HHVN mà chưa gửi được sẽ đi qua Vtech nếu admin đã chuyển.
+     */
     public void send(Long id) {
         AutoCall call = autoCallRepository.findById(id).orElse(null);
         if (call == null || !("PENDING".equals(call.getStatus()) || "ERROR".equals(call.getStatus()))) {
             return;
         }
         IntegrationConfig cfg = currentConfig();
-        if (cfg == null || !cfg.isAutocallApiKeyConfigured()) {
+        if (cfg == null || !cfg.isAutocallActiveKeyConfigured()) {
             markError(call, "API_KEY_MISSING", "Chưa lưu API key Auto Call");
+            return;
+        }
+        call.setProvider(cfg.getAutocallActiveProvider());
+        call.setSandbox(cfg.isAutocallSandbox());
+        if (cfg.isAutocallVtech()) {
+            sendVtech(call, cfg);
             return;
         }
         ShipmentOrder order = call.getOrder();
@@ -249,6 +277,186 @@ public class AutoCallService {
             return;
         }
         markError(call, "UNEXPECTED_RESPONSE", "HHVN không trả accepted/rejected");
+    }
+
+    /**
+     * Import số vào chiến dịch Vtech. Vtech không trả mã cuộc gọi: thành công → QUEUED, callId để trống tới khi
+     * webhook về (khớp bằng extra_data.ref_id).
+     */
+    private void sendVtech(AutoCall call, IntegrationConfig cfg) {
+        ShipmentOrder order = call.getOrder();
+        Result r = vtechClient.importContact(
+            cfg.getAutocallVtechBaseUrl(),
+            cfg.getAutocallVtechApiKey(),
+            call.getPhone(),
+            order != null ? order.getReceiverName() : null,
+            vtechExtraData(call)
+        );
+        if (!r.ok()) {
+            markError(call, r.code(), AutoCallConfigService.humanMessage(r.code(), r.message()));
+            return;
+        }
+        JsonNode data = r.body() != null ? r.body().path("data") : null;
+        if (data != null && data.path("imported").asInt(0) > 0) {
+            call.setStatus("QUEUED");
+            call.setErrorCode(null);
+            call.setErrorMessage(null);
+            call.setNextRetryAt(null);
+            call.setUpdatedAt(Instant.now());
+            autoCallRepository.save(call);
+            return;
+        }
+        JsonNode errors = data != null ? data.path("errors") : null;
+        if (errors != null && errors.isArray() && !errors.isEmpty()) {
+            markError(call, "VTECH_REJECTED", "Vtech từ chối: " + errors.get(0).path("error").asText("không rõ lý do"));
+            return;
+        }
+        if (data != null && data.path("skipped").asInt(0) > 0) {
+            markError(call, "VTECH_SKIPPED", "Vtech bỏ qua số này (trùng trong chiến dịch)");
+            return;
+        }
+        markError(call, "UNEXPECTED_RESPONSE", "Vtech không trả kết quả import");
+    }
+
+    /** Biến cho kịch bản callbot Vtech + ref_id để khớp webhook. */
+    static Map<String, String> vtechExtraData(AutoCall call) {
+        ShipmentOrder order = call.getOrder();
+        Map<String, String> extra = new LinkedHashMap<>();
+        extra.put("ref_id", call.getRefId());
+        if (order != null) {
+            extra.put("ma_don", order.getOrderCode());
+            extra.put("ten_san_pham", goodsTypeLabel(order.getGoodsType()));
+            extra.put("diem_nhan", officeLabel(order.getToOffice()));
+        }
+        return extra;
+    }
+
+    static String goodsTypeLabel(GoodsType type) {
+        if (type == null) {
+            return "Hàng hoá";
+        }
+        return switch (type) {
+            case THUONG -> "Hàng thường";
+            case DE_VO -> "Hàng dễ vỡ";
+            case DIEN_TU -> "Hàng điện tử";
+            case THUC_PHAM_KHO -> "Thực phẩm khô";
+            case GIAY_TO -> "Giấy tờ";
+            case CONG_KENH -> "Hàng cồng kềnh";
+        };
+    }
+
+    /** "VP Mỹ Đình - 123 Phạm Hùng, Hà Nội". */
+    static String officeLabel(Office office) {
+        if (office == null) {
+            return "";
+        }
+        String name = office.getName() != null ? office.getName().trim() : "";
+        String addr = office.getAddress() != null ? office.getAddress().trim() : "";
+        if (name.isEmpty()) return addr;
+        if (addr.isEmpty()) return name;
+        return name + " - " + addr;
+    }
+
+    public enum VtechWebhookOutcome {
+        APPLIED,
+        TEST,
+        NOT_FOUND,
+        IGNORED,
+    }
+
+    /**
+     * Webhook {@code call.completed} của Vtech: đổi sang dạng Call object HHVN rồi áp như webhook HHVN (dùng chung
+     * kết quả, gọi lại, popup lỗi). Khớp theo extra_data.ref_id; thiếu thì lấy cuộc Vtech đang chờ gần nhất của SĐT.
+     */
+    public VtechWebhookOutcome applyVtechWebhook(JsonNode event) {
+        if (event == null || !"call.completed".equals(event.path("event").asText())) {
+            return VtechWebhookOutcome.IGNORED;
+        }
+        JsonNode vc = event.path("call");
+        String refId = text(vc.path("contact").path("extra_data"), "ref_id");
+        ObjectNode data = toHhvnCall(vc, refId);
+        if (refId != null && refId.startsWith("CPN-TEST-")) {
+            vtechTestResults.put(refId, data);
+            return VtechWebhookOutcome.TEST;
+        }
+        AutoCall call = refId != null ? autoCallRepository.findOneByRefId(refId).orElse(null) : null;
+        if (call == null) {
+            String phone = normalizePhone(text(vc.path("contact"), "phone_number"));
+            if (phone != null) {
+                call = autoCallRepository
+                    .findFirstByProviderAndPhoneAndStatusOrderByCreatedAtDesc(IntegrationConfig.PROVIDER_VTECH, phone, "QUEUED")
+                    .orElse(null);
+            }
+        }
+        if (call == null) {
+            return VtechWebhookOutcome.NOT_FOUND;
+        }
+        data.put("refId", call.getRefId());
+        return applyCallObject(data) ? VtechWebhookOutcome.APPLIED : VtechWebhookOutcome.NOT_FOUND;
+    }
+
+    /** Kết quả gọi thử Vtech đã nhận qua webhook; null nếu chưa về. */
+    public JsonNode vtechTestResult(String refId) {
+        return refId == null ? null : vtechTestResults.get(refId);
+    }
+
+    /**
+     * status Vtech: COMPLETED · BUSY · NO_ANSWER · FAILED · CANCELLED; outcome chi tiết hơn (ưu tiên):
+     * CONNECTED → nghe máy · VOICEMAIL/BUSY/NO_ANSWER/REJECTED → không nghe · INVALID_NUMBER/NETWORK_ERROR → lỗi tổng đài.
+     */
+    static ObjectNode toHhvnCall(JsonNode vc, String refId) {
+        String status = upper(text(vc, "status"));
+        String outcome = upper(text(vc, "outcome"));
+        String result;
+        if ("CANCELLED".equals(status)) {
+            result = "cancelled";
+        } else if (outcome != null && Set.of("CONNECTED").contains(outcome)) {
+            result = "answered";
+        } else if (outcome != null && Set.of("VOICEMAIL", "BUSY", "NO_ANSWER", "REJECTED").contains(outcome)) {
+            result = "not_answered";
+        } else if (outcome != null && Set.of("INVALID_NUMBER", "NETWORK_ERROR").contains(outcome)) {
+            result = "error";
+        } else if ("COMPLETED".equals(status)) {
+            result = "answered";
+        } else if ("BUSY".equals(status) || "NO_ANSWER".equals(status)) {
+            result = "not_answered";
+        } else {
+            result = "error";
+        }
+        String hhvnStatus =
+            switch (result) {
+                case "answered" -> "completed";
+                case "cancelled" -> "cancelled";
+                default -> "failed";
+            };
+        ObjectNode n = JsonNodeFactory.instance.objectNode();
+        if (refId != null) n.put("refId", refId);
+        if (vc.hasNonNull("id")) n.put("callId", truncate("vtech_" + vc.get("id").asText(), 64));
+        n.put("status", hhvnStatus);
+        n.put("result", result);
+        n.put("type", TYPE_GIAO);
+        n.put("phone", text(vc.path("contact"), "phone_number"));
+        n.put("attemptCount", "cancelled".equals(result) ? 0 : 1);
+        n.put("maxAttempts", 1);
+        putIfText(n, "firstCallAt", text(vc, "started_at"));
+        putIfText(n, "answeredAt", text(vc, "answered_at"));
+        putIfText(n, "finishedAt", text(vc, "ended_at"));
+        putIfText(n, "createdAt", text(vc, "started_at"));
+        if (vc.hasNonNull("duration_seconds")) n.put("duration", vc.get("duration_seconds").asInt());
+        putIfText(n, "recordingUrl", text(vc, "recording_url"));
+        putIfText(n, "outcome", text(vc, "outcome"));
+        return n;
+    }
+
+    private static void putIfText(ObjectNode n, String field, String value) {
+        if (value != null && !value.isBlank()) n.put(field, value);
+    }
+
+    @Transactional(readOnly = true)
+    public String vtechWebhookToken() {
+        IntegrationConfig cfg = currentConfig();
+        String s = cfg != null ? cfg.getAutocallVtechWebhookToken() : null;
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     /** Áp Call object của HHVN (webhook hoặc tra cứu). Trả false nếu không tìm thấy cuộc gọi phía CPN. */
@@ -456,7 +664,7 @@ public class AutoCallService {
             cfg == null ||
             !Boolean.TRUE.equals(cfg.getAutocallEnabled()) ||
             !Boolean.TRUE.equals(cfg.getAutocallRetryEnabled()) ||
-            !cfg.isAutocallApiKeyConfigured()
+            !cfg.isAutocallActiveKeyConfigured()
         ) {
             return null;
         }
@@ -478,7 +686,8 @@ public class AutoCallService {
         long seq = autoCallRepository.countByOrder_IdAndCallType(order.getId(), prev.getCallType()) + 1;
         call.setRefId(buildRefId(order.getOrderCode(), seq));
         call.setTriggerAction(TRIGGER_RETRY);
-        call.setSandbox(cfg.getAutocallApiKey().startsWith("xk_test_"));
+        call.setProvider(cfg.getAutocallActiveProvider());
+        call.setSandbox(cfg.isAutocallSandbox());
         call.setCreatedAt(now);
         call.setPhone(phone);
         call.setStatus("PENDING");
@@ -560,6 +769,12 @@ public class AutoCallService {
                 send(call.getId());
                 continue;
             }
+            if (IntegrationConfig.PROVIDER_VTECH.equals(call.getProvider())) {
+                continue;
+            }
+            if (!cfg.isAutocallApiKeyConfigured()) {
+                continue;
+            }
             Result r = client.getCall(cfg.getAutocallBaseUrl(), cfg.getAutocallApiKey(), call.getCallId());
             if (r.ok()) {
                 applyCallObject(unwrapCall(r.body()));
@@ -580,6 +795,10 @@ public class AutoCallService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy cuộc gọi"));
         if (FINAL_STATUSES.contains(call.getStatus()) || "SKIPPED".equals(call.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cuộc gọi đã kết thúc, không huỷ được");
+        }
+        boolean unsent = "PENDING".equals(call.getStatus()) || "ERROR".equals(call.getStatus());
+        if (IntegrationConfig.PROVIDER_VTECH.equals(call.getProvider()) && !unsent) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vtech không hỗ trợ huỷ cuộc gọi đã gửi sang tổng đài");
         }
         if (call.getCallId() == null) {
             if (
@@ -610,7 +829,10 @@ public class AutoCallService {
      * HHVN trả 200 cả khi không huỷ được ({@code cancelled = 0, notCancellable = 1}) — phải đọc số đã huỷ.
      */
     public CancelOutcome cancelAtHhvn(String callId) {
-        IntegrationConfig cfg = requireKeyConfigured();
+        IntegrationConfig cfg = currentConfig();
+        if (cfg == null || !cfg.isAutocallApiKeyConfigured()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chưa lưu API key HHVN");
+        }
         Result r = client.cancelCall(cfg.getAutocallBaseUrl(), cfg.getAutocallApiKey(), callId);
         if (!r.ok()) {
             return new CancelOutcome(false, r.code(), AutoCallConfigService.humanMessage(r.code(), r.message()), null);
@@ -672,6 +894,13 @@ public class AutoCallService {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    public static boolean tokenMatches(String expected, String given) {
+        if (expected == null || given == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), given.trim().getBytes(StandardCharsets.UTF_8));
     }
 
     /** 0912345678 · 84912345678 · +84 912 345 678 → 0912345678; null nếu không phải SĐT VN 10 số. */
@@ -756,6 +985,7 @@ public class AutoCallService {
         payload.put("refId", call.getRefId());
         payload.put("callId", call.getCallId());
         payload.put("sandbox", Boolean.TRUE.equals(call.getSandbox()));
+        payload.put("provider", call.getProvider());
         payload.put("at", Instant.now().toString());
         dispatchAfterCommit(() -> events.autoCallError(payload));
     }
@@ -782,7 +1012,7 @@ public class AutoCallService {
 
     private IntegrationConfig requireKeyConfigured() {
         IntegrationConfig cfg = currentConfig();
-        if (cfg == null || !cfg.isAutocallApiKeyConfigured()) {
+        if (cfg == null || !cfg.isAutocallActiveKeyConfigured()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chưa lưu API key Auto Call");
         }
         return cfg;
@@ -842,7 +1072,8 @@ public class AutoCallService {
         Instant createdAt,
         Integer retryNo,
         Integer retryDay,
-        Instant nextRetryAt
+        Instant nextRetryAt,
+        String provider
     ) {
         static AutoCallView of(AutoCall c) {
             return new AutoCallView(
@@ -864,7 +1095,8 @@ public class AutoCallService {
                 c.getCreatedAt(),
                 c.getRetryNo(),
                 c.getRetryDay(),
-                c.getNextRetryAt()
+                c.getNextRetryAt(),
+                c.getProvider()
             );
         }
     }

@@ -22,6 +22,7 @@ import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient.Result;
+import com.mycompany.myapp.service.partner.VtechAutoCallClient;
 import com.mycompany.myapp.service.realtime.ServerEventService;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -60,6 +61,9 @@ class AutoCallServiceTest {
     private HhvnAutoCallClient client;
 
     @Mock
+    private VtechAutoCallClient vtechClient;
+
+    @Mock
     private PlatformTransactionManager transactionManager;
 
     private final List<Runnable> dispatched = new ArrayList<>();
@@ -73,6 +77,7 @@ class AutoCallServiceTest {
             orderEventRepository,
             shipmentOrderRepository,
             client,
+            vtechClient,
             transactionManager
         ) {
             @Override
@@ -735,5 +740,276 @@ class AutoCallServiceTest {
         assertThat(AutoCallService.verifySignature(secret, ts, raw, "sha256=" + sig, now + 301)).isFalse();
         assertThat(AutoCallService.verifySignature(secret, null, raw, "sha256=" + sig, now)).isFalse();
         assertThat(AutoCallService.verifySignature(secret, ts, raw, null, now)).isFalse();
+    }
+
+    // ---- Vtech ----
+
+    private static final String VTECH_KEY = "tdai_live_secretkey9876";
+
+    private static IntegrationConfig vtechConfig() {
+        IntegrationConfig c = config(true, KEY);
+        c.setAutocallProvider(IntegrationConfig.PROVIDER_VTECH);
+        c.setAutocallVtechApiKey(VTECH_KEY);
+        return c;
+    }
+
+    private static String vtechEvent(String refId, String phone, String status, String outcome) {
+        String extra = refId == null ? "{}" : "{\"ref_id\":\"" + refId + "\",\"ma_don\":\"HN260930-0001\"}";
+        return (
+            "{\"event\":\"call.completed\",\"timestamp\":\"2026-05-20T07:30:00.000Z\",\"campaign_id\":123,\"call\":{" +
+            "\"id\":456789,\"external_call_id\":\"abc\",\"contact\":{\"id\":1,\"phone_number\":\"" +
+            phone +
+            "\",\"name\":\"A\",\"extra_data\":" +
+            extra +
+            "},\"status\":\"" +
+            status +
+            "\",\"outcome\":" +
+            (outcome == null ? "null" : "\"" + outcome + "\"") +
+            ",\"duration_seconds\":125,\"recording_url\":\"https://example.com/r.wav\"," +
+            "\"started_at\":\"2026-05-20T07:28:00.000Z\",\"answered_at\":\"2026-05-20T07:28:05.000Z\"," +
+            "\"ended_at\":\"2026-05-20T07:30:00.000Z\",\"hangup_by\":\"user\"}}"
+        );
+    }
+
+    @Test
+    void vtech_arrivedAtDest_marksProviderVtech_notSandbox_evenWithHhvnTestKeySaved() {
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(vtechConfig()));
+        when(autoCallRepository.countByOrder_IdAndCallType(10L, "giao")).thenReturn(0L);
+        stubSaveAssignsId();
+
+        service.onArrivedAtDest(order("0912345678"), "SCAN_IN");
+
+        ArgumentCaptor<AutoCall> captor = ArgumentCaptor.forClass(AutoCall.class);
+        verify(autoCallRepository).save(captor.capture());
+        assertThat(captor.getValue().getProvider()).isEqualTo("VTECH");
+        assertThat(captor.getValue().getSandbox()).isFalse();
+        assertThat(dispatched).hasSize(1);
+    }
+
+    @Test
+    void vtech_selectedWithoutVtechKey_doesNotCall_evenIfHhvnKeySaved() {
+        IntegrationConfig cfg = vtechConfig();
+        cfg.setAutocallVtechApiKey(null);
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(cfg));
+        service.onArrivedAtDest(order("0912345678"), "SCAN_IN");
+        verify(autoCallRepository, never()).save(any());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void vtech_send_importsContactWithScriptVariables_andQueuesWithoutCallId() throws Exception {
+        AutoCall c = pendingCall();
+        c.getOrder().setReceiverName("Nguyễn Văn B");
+        c.getOrder().setGoodsType(com.mycompany.myapp.domain.enumeration.GoodsType.DIEN_TU);
+        com.mycompany.myapp.domain.Office office = new com.mycompany.myapp.domain.Office();
+        office.setName("VP Mỹ Đình");
+        office.setAddress("123 Phạm Hùng, Hà Nội");
+        c.getOrder().setToOffice(office);
+        when(autoCallRepository.findById(99L)).thenReturn(Optional.of(c));
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(vtechConfig()));
+        when(vtechClient.importContact(any(), eq(VTECH_KEY), eq("0912345678"), eq("Nguyễn Văn B"), anyMap())).thenReturn(
+            new Result(true, 201, null, null, JSON.readTree("{\"data\":{\"total\":1,\"imported\":1,\"skipped\":0,\"errors\":[]}}"))
+        );
+
+        service.send(99L);
+
+        ArgumentCaptor<java.util.Map<String, String>> extra = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(vtechClient).importContact(any(), eq(VTECH_KEY), eq("0912345678"), eq("Nguyễn Văn B"), extra.capture());
+        assertThat(extra.getValue())
+            .containsEntry("ref_id", c.getRefId())
+            .containsEntry("ma_don", "HN260930-0001")
+            .containsEntry("ten_san_pham", "Hàng điện tử")
+            .containsEntry("diem_nhan", "VP Mỹ Đình - 123 Phạm Hùng, Hà Nội");
+        assertThat(c.getStatus()).isEqualTo("QUEUED");
+        assertThat(c.getCallId()).isNull();
+        assertThat(c.getProvider()).isEqualTo("VTECH");
+        verify(client, never()).createCall(any(), any(), any(), any(), any(), anyMap());
+    }
+
+    @Test
+    void vtech_send_rowError_marksError() throws Exception {
+        AutoCall c = pendingCall();
+        when(autoCallRepository.findById(99L)).thenReturn(Optional.of(c));
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(vtechConfig()));
+        when(vtechClient.importContact(any(), any(), any(), any(), anyMap())).thenReturn(
+            new Result(
+                true,
+                201,
+                null,
+                null,
+                JSON.readTree(
+                    "{\"data\":{\"total\":1,\"imported\":0,\"skipped\":0,\"errors\":[{\"row\":1,\"phone_number\":\"x\",\"error\":\"Số điện thoại không hợp lệ\"}]}}"
+                )
+            )
+        );
+
+        service.send(99L);
+
+        assertThat(c.getStatus()).isEqualTo("ERROR");
+        assertThat(c.getErrorCode()).isEqualTo("VTECH_REJECTED");
+        assertThat(c.getErrorMessage()).contains("Số điện thoại không hợp lệ");
+        assertThat(eventActions()).containsExactly("AUTO_CALL_ERROR");
+    }
+
+    @Test
+    void vtech_send_invalidKey_marksError() {
+        AutoCall c = pendingCall();
+        when(autoCallRepository.findById(99L)).thenReturn(Optional.of(c));
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(vtechConfig()));
+        when(vtechClient.importContact(any(), any(), any(), any(), anyMap())).thenReturn(
+            new Result(false, 401, "INVALID_API_KEY", "API key không hợp lệ", null)
+        );
+
+        service.send(99L);
+
+        assertThat(c.getStatus()).isEqualTo("ERROR");
+        assertThat(c.getErrorCode()).isEqualTo("INVALID_API_KEY");
+    }
+
+    @Test
+    void vtech_webhook_connected_completesByRefId_once() throws Exception {
+        AutoCall c = pendingCall();
+        c.setProvider("VTECH");
+        c.setStatus("QUEUED");
+        when(autoCallRepository.findOneByRefId(c.getRefId())).thenReturn(Optional.of(c));
+        String ev = vtechEvent(c.getRefId(), "0912345678", "COMPLETED", "CONNECTED");
+
+        assertThat(service.applyVtechWebhook(JSON.readTree(ev))).isEqualTo(AutoCallService.VtechWebhookOutcome.APPLIED);
+        assertThat(service.applyVtechWebhook(JSON.readTree(ev))).isEqualTo(AutoCallService.VtechWebhookOutcome.APPLIED);
+
+        assertThat(c.getStatus()).isEqualTo("COMPLETED");
+        assertThat(c.getResult()).isEqualTo("answered");
+        assertThat(c.getCallId()).isEqualTo("vtech_456789");
+        assertThat(c.getDurationSec()).isEqualTo(125);
+        assertThat(c.getRecordingUrl()).isEqualTo("https://example.com/r.wav");
+        assertThat(c.getAnsweredAt()).isEqualTo(java.time.Instant.parse("2026-05-20T07:28:05Z"));
+        verify(orderEventRepository, times(1)).save(any());
+    }
+
+    @Test
+    void vtech_webhook_mapsStatusAndOutcome() throws Exception {
+        String[][] cases = {
+            { "COMPLETED", "CONNECTED", "completed", "answered" },
+            { "COMPLETED", "VOICEMAIL", "failed", "not_answered" },
+            { "COMPLETED", null, "completed", "answered" },
+            { "NO_ANSWER", "NO_ANSWER", "failed", "not_answered" },
+            { "BUSY", "BUSY", "failed", "not_answered" },
+            { "NO_ANSWER", null, "failed", "not_answered" },
+            { "FAILED", "REJECTED", "failed", "not_answered" },
+            { "FAILED", "NETWORK_ERROR", "failed", "error" },
+            { "FAILED", "INVALID_NUMBER", "failed", "error" },
+            { "FAILED", null, "failed", "error" },
+            { "CANCELLED", null, "cancelled", "cancelled" },
+        };
+        for (String[] k : cases) {
+            JsonNode vc = JSON.readTree(vtechEvent("R", "0912345678", k[0], k[1])).path("call");
+            JsonNode n = AutoCallService.toHhvnCall(vc, "R");
+            assertThat(n.path("status").asText()).as(k[0] + "/" + k[1]).isEqualTo(k[2]);
+            assertThat(n.path("result").asText()).as(k[0] + "/" + k[1]).isEqualTo(k[3]);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void vtech_webhook_networkError_alertsAdmins_andSchedulesRetry() throws Exception {
+        ServerEventService events = org.mockito.Mockito.mock(ServerEventService.class);
+        service.setServerEventService(events);
+        IntegrationConfig cfg = vtechConfig();
+        cfg.setAutocallRetryEnabled(true);
+        cfg.setAutocallRetryIntervals("60");
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(cfg));
+        AutoCall c = pendingCall();
+        c.setProvider("VTECH");
+        c.setStatus("QUEUED");
+        c.getOrder().setStatus(com.mycompany.myapp.domain.enumeration.OrderStatus.AT_DEST);
+        when(autoCallRepository.findOneByRefId(c.getRefId())).thenReturn(Optional.of(c));
+
+        service.applyVtechWebhook(JSON.readTree(vtechEvent(c.getRefId(), "0912345678", "FAILED", "NETWORK_ERROR")));
+        dispatched.forEach(Runnable::run);
+
+        assertThat(c.getStatus()).isEqualTo("FAILED");
+        assertThat(c.getResult()).isEqualTo("error");
+        assertThat(c.getNextRetryAt()).isNotNull();
+        ArgumentCaptor<java.util.Map<String, Object>> payload = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(events).autoCallError(payload.capture());
+        assertThat(payload.getValue()).containsEntry("kind", "carrier").containsEntry("provider", "VTECH");
+    }
+
+    @Test
+    void vtech_webhook_withoutRefId_fallsBackToLatestQueuedCallOfPhone() throws Exception {
+        AutoCall c = pendingCall();
+        c.setProvider("VTECH");
+        c.setStatus("QUEUED");
+        when(autoCallRepository.findFirstByProviderAndPhoneAndStatusOrderByCreatedAtDesc("VTECH", "0912345678", "QUEUED")).thenReturn(
+            Optional.of(c)
+        );
+        when(autoCallRepository.findOneByRefId(c.getRefId())).thenReturn(Optional.of(c));
+
+        assertThat(service.applyVtechWebhook(JSON.readTree(vtechEvent(null, "84912345678", "NO_ANSWER", "NO_ANSWER")))).isEqualTo(
+            AutoCallService.VtechWebhookOutcome.APPLIED
+        );
+        assertThat(c.getStatus()).isEqualTo("FAILED");
+        assertThat(c.getResult()).isEqualTo("not_answered");
+    }
+
+    @Test
+    void vtech_webhook_unknownCall_andOtherEvents() throws Exception {
+        when(autoCallRepository.findOneByRefId("CPN-GIAO-NOPE")).thenReturn(Optional.empty());
+        when(autoCallRepository.findFirstByProviderAndPhoneAndStatusOrderByCreatedAtDesc(any(), any(), any())).thenReturn(Optional.empty());
+        assertThat(service.applyVtechWebhook(JSON.readTree(vtechEvent("CPN-GIAO-NOPE", "0912345678", "COMPLETED", "CONNECTED")))).isEqualTo(
+            AutoCallService.VtechWebhookOutcome.NOT_FOUND
+        );
+        assertThat(service.applyVtechWebhook(JSON.readTree("{\"event\":\"call.started\"}"))).isEqualTo(
+            AutoCallService.VtechWebhookOutcome.IGNORED
+        );
+    }
+
+    @Test
+    void vtech_webhook_testCall_keptInMemory_notInDb() throws Exception {
+        assertThat(service.applyVtechWebhook(JSON.readTree(vtechEvent("CPN-TEST-1", "0912345678", "COMPLETED", "CONNECTED")))).isEqualTo(
+            AutoCallService.VtechWebhookOutcome.TEST
+        );
+        assertThat(service.vtechTestResult("CPN-TEST-1").path("status").asText()).isEqualTo("completed");
+        assertThat(service.vtechTestResult("CPN-TEST-2")).isNull();
+        verify(autoCallRepository, never()).findOneByRefId(any());
+    }
+
+    @Test
+    void vtech_cancel_sentCall_rejected_unsentCancelsLocally() {
+        AutoCall c = stubOrderCall("QUEUED", null);
+        c.setProvider("VTECH");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.cancel("HN260930-0001", 99L)).hasMessageContaining(
+            "Vtech không hỗ trợ huỷ"
+        );
+        assertThat(c.getStatus()).isEqualTo("QUEUED");
+
+        c.setStatus("ERROR");
+        service.cancel("HN260930-0001", 99L);
+        assertThat(c.getStatus()).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    void vtech_sync_doesNotResendQueuedOrLookupHhvn() {
+        AutoCall c = pendingCall();
+        c.setStatus("QUEUED");
+        c.setProvider("VTECH");
+        when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("HN260930-0001")).thenReturn(Optional.of(c.getOrder()));
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(vtechConfig()));
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(10L)).thenReturn(List.of(c));
+
+        service.sync("HN260930-0001");
+
+        verify(vtechClient, never()).importContact(any(), any(), any(), any(), anyMap());
+        verify(client, never()).getCall(any(), any(), any());
+        assertThat(c.getStatus()).isEqualTo("QUEUED");
+    }
+
+    @Test
+    void tokenMatches_constantTimeExact() {
+        assertThat(AutoCallService.tokenMatches("abc123", "abc123")).isTrue();
+        assertThat(AutoCallService.tokenMatches("abc123", " abc123 ")).isTrue();
+        assertThat(AutoCallService.tokenMatches("abc123", "abc124")).isFalse();
+        assertThat(AutoCallService.tokenMatches("abc123", null)).isFalse();
+        assertThat(AutoCallService.tokenMatches(null, "abc123")).isFalse();
     }
 }

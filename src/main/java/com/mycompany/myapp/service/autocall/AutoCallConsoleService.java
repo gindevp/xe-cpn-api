@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mycompany.myapp.domain.AutoCall;
 import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.repository.AutoCallRepository;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
@@ -14,6 +15,7 @@ import com.mycompany.myapp.service.autocall.AutoCallService.CancelOutcome;
 import com.mycompany.myapp.service.config.AutoCallConfigService;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient.Result;
+import com.mycompany.myapp.service.partner.VtechAutoCallClient;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -58,6 +60,7 @@ public class AutoCallConsoleService {
     private final AutoCallRepository autoCallRepository;
     private final AutoCallService autoCallService;
     private final HhvnAutoCallClient client;
+    private final VtechAutoCallClient vtechClient;
     private final StaffAccessService staffAccessService;
 
     public AutoCallConsoleService(
@@ -65,12 +68,14 @@ public class AutoCallConsoleService {
         AutoCallRepository autoCallRepository,
         AutoCallService autoCallService,
         HhvnAutoCallClient client,
+        VtechAutoCallClient vtechClient,
         StaffAccessService staffAccessService
     ) {
         this.integrationConfigRepository = integrationConfigRepository;
         this.autoCallRepository = autoCallRepository;
         this.autoCallService = autoCallService;
         this.client = client;
+        this.vtechClient = vtechClient;
         this.staffAccessService = staffAccessService;
     }
 
@@ -103,16 +108,22 @@ public class AutoCallConsoleService {
         if (ChronoUnit.DAYS.between(fromDate, toDate) + 1 > MAX_RANGE_DAYS) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Khoảng ngày tối đa " + MAX_RANGE_DAYS + " ngày");
         }
+        String typeFilter = optionalOf(type, CALL_TYPES, "type phải là giao hoặc hoan");
+        String statusFilter = optionalOf(status, CALL_STATUSES, "Trạng thái không hợp lệ");
+        IntegrationConfig active = requireConfigured();
+        if (active.isAutocallVtech()) {
+            return listLocalCalls(fromDate, toDate, resultFilter, phoneQuery, page, limit);
+        }
         Map<String, String> query = new LinkedHashMap<>();
         query.put("from", fromDate.atStartOfDay(VN).format(ISO));
         query.put("to", LocalDateTime.of(toDate, LocalTime.of(23, 59, 59)).atZone(VN).format(ISO));
-        query.put("type", optionalOf(type, CALL_TYPES, "type phải là giao hoặc hoan"));
-        query.put("status", optionalOf(status, CALL_STATUSES, "Trạng thái không hợp lệ"));
+        query.put("type", typeFilter);
+        query.put("status", statusFilter);
         query.put("limit", String.valueOf(HHVN_PAGE_LIMIT));
         int pg = page == null || page < 1 ? 1 : page;
         int lim = limit == null ? 50 : Math.max(1, Math.min(HHVN_PAGE_LIMIT, limit));
 
-        IntegrationConfig cfg = requireConfigured();
+        IntegrationConfig cfg = active;
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("from", fromDate.toString());
         out.put("to", toDate.toString());
@@ -165,6 +176,90 @@ public class AutoCallConsoleService {
         return out;
     }
 
+    /** Vtech không có API danh sách — đọc auto_call phía CPN, trả cùng dạng Call object HHVN cho FE. */
+    private Map<String, Object> listLocalCalls(
+        LocalDate fromDate,
+        LocalDate toDate,
+        String resultFilter,
+        String phoneQuery,
+        Integer page,
+        Integer limit
+    ) {
+        int pg = page == null || page < 1 ? 1 : page;
+        int lim = limit == null ? 50 : Math.max(1, Math.min(HHVN_PAGE_LIMIT, limit));
+        List<JsonNode> all = new ArrayList<>();
+        for (AutoCall c : autoCallRepository.findForConsole(
+            IntegrationConfig.PROVIDER_VTECH,
+            fromDate.atStartOfDay(VN).toInstant(),
+            toDate.plusDays(1).atStartOfDay(VN).toInstant()
+        )) {
+            all.add(toCallNode(c));
+        }
+        if (resultFilter != null) {
+            all.removeIf(c -> !resultFilter.equals(c.path("result").asText("")));
+        }
+        if (phoneQuery != null) {
+            all.removeIf(c -> {
+                String p = phoneDigits(c.path("phone").asText(""));
+                return p == null || !p.contains(phoneQuery);
+            });
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("provider", IntegrationConfig.PROVIDER_VTECH);
+        out.put("from", fromDate.toString());
+        out.put("to", toDate.toString());
+        int start = Math.min(all.size(), (pg - 1) * lim);
+        int end = Math.min(all.size(), start + lim);
+        out.put("data", all.subList(start, end));
+        ObjectNode pagination = JsonNodeFactory.instance.objectNode();
+        pagination.put("page", pg);
+        pagination.put("limit", lim);
+        pagination.put("total", all.size());
+        pagination.put("totalPages", Math.max(1, (all.size() + lim - 1) / lim));
+        out.put("pagination", pagination);
+        return out;
+    }
+
+    /**
+     * Dòng auto_call → dạng Call object HHVN. Chưa gửi / đang chờ kết quả → queued; gửi lỗi → failed + send_error.
+     * callId để trống thì dùng refId (FE cần khoá duy nhất cho mỗi dòng).
+     */
+    static ObjectNode toCallNode(AutoCall c) {
+        ObjectNode n = JsonNodeFactory.instance.objectNode();
+        n.put("callId", c.getCallId() != null ? c.getCallId() : c.getRefId());
+        n.put("refId", c.getRefId());
+        n.put("type", c.getCallType());
+        n.put("phone", c.getPhone());
+        String status = c.getStatus() == null ? "" : c.getStatus();
+        switch (status) {
+            case "COMPLETED" -> n.put("status", "completed");
+            case "FAILED" -> n.put("status", "failed");
+            case "CANCELLED" -> n.put("status", "cancelled");
+            case "ERROR" -> n.put("status", "failed");
+            default -> n.put("status", "queued");
+        }
+        String result = "ERROR".equals(status) ? "send_error" : c.getResult();
+        if (result != null) n.put("result", result);
+        if (c.getAttemptCount() != null) n.put("attemptCount", c.getAttemptCount());
+        n.put("maxAttempts", 1);
+        if (c.getDurationSec() != null) n.put("duration", c.getDurationSec());
+        putInstant(n, "createdAt", c.getCreatedAt());
+        putInstant(n, "firstCallAt", c.getFirstCallAt());
+        putInstant(n, "answeredAt", c.getAnsweredAt());
+        putInstant(n, "finishedAt", c.getFinishedAt());
+        if (c.getRecordingUrl() != null) n.put("recordingUrl", c.getRecordingUrl());
+        if (c.getErrorMessage() != null) n.put("errorMessage", c.getErrorMessage());
+        if (c.getNextRetryAt() != null) putInstant(n, "nextRetryAt", c.getNextRetryAt());
+        if (c.getOrder() != null) n.put("orderCode", c.getOrder().getOrderCode());
+        n.put("provider", c.getProvider());
+        return n;
+    }
+
+    private static void putInstant(ObjectNode n, String field, java.time.Instant at) {
+        if (at != null) n.put(field, at.toString());
+    }
+
     /** Chỉ giữ chữ số, đổi đầu 84 (11 số) về 0; null nếu rỗng. */
     static String phoneDigits(String s) {
         if (s == null) {
@@ -204,6 +299,9 @@ public class AutoCallConsoleService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nhập callId hoặc refId");
         }
         IntegrationConfig cfg = requireConfigured();
+        if (cfg.isAutocallVtech()) {
+            return getLocalCall(key);
+        }
         Result r = key.startsWith("call_")
             ? client.getCall(cfg.getAutocallBaseUrl(), cfg.getAutocallApiKey(), key)
             : client.getCallByRefId(cfg.getAutocallBaseUrl(), cfg.getAutocallApiKey(), key);
@@ -219,6 +317,36 @@ public class AutoCallConsoleService {
             return out;
         }
         out.put("call", withOrderCodes(List.of(call)).get(0));
+        return out;
+    }
+
+    /** Vtech: gọi thử (CPN-TEST-…) đọc kết quả webhook trong bộ nhớ; cuộc gọi của đơn đọc auto_call. */
+    private Map<String, Object> getLocalCall(String key) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        if (key.startsWith("CPN-TEST-")) {
+            JsonNode result = autoCallService.vtechTestResult(key);
+            ObjectNode call;
+            if (result instanceof ObjectNode r) {
+                call = r.deepCopy();
+            } else {
+                call = JsonNodeFactory.instance.objectNode();
+                call.put("status", "queued");
+                call.put("attemptCount", 0);
+            }
+            call.put("callId", key);
+            call.put("refId", key);
+            out.put("call", call);
+            return out;
+        }
+        AutoCall c = autoCallRepository.findOneByRefId(key).or(() -> autoCallRepository.findFirstByCallId(key)).orElse(null);
+        if (c == null) {
+            out.put("ok", false);
+            out.put("code", "NOT_FOUND");
+            out.put("message", "Không tìm thấy cuộc gọi");
+            return out;
+        }
+        out.put("call", toCallNode(c));
         return out;
     }
 
@@ -256,12 +384,15 @@ public class AutoCallConsoleService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "type phải là giao hoặc hoan");
         }
         IntegrationConfig cfg = requireConfigured();
-        boolean sandbox = cfg.getAutocallApiKey().startsWith("xk_test_");
+        boolean sandbox = cfg.isAutocallSandbox();
         if (!sandbox && !confirmLive) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Key LIVE sẽ gọi thật và tính phí — cần xác nhận trước khi gọi");
         }
         String actor = SecurityUtils.getCurrentUserLogin().orElse("system");
         String refId = buildTestRefId();
+        if (cfg.isAutocallVtech()) {
+            return testCallVtech(cfg, normalized, refId, actor);
+        }
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("source", "cpn-test");
         metadata.put("by", actor);
@@ -290,6 +421,42 @@ public class AutoCallConsoleService {
         } else {
             out.put("code", "UNEXPECTED_RESPONSE");
             out.put("message", "HHVN không trả accepted/rejected");
+        }
+        return out;
+    }
+
+    /** callId trả FE = refId (Vtech không có mã cuộc gọi lúc import); kết quả về qua webhook. */
+    private Map<String, Object> testCallVtech(IntegrationConfig cfg, String phone, String refId, String actor) {
+        Map<String, String> extra = new LinkedHashMap<>();
+        extra.put("ref_id", refId);
+        extra.put("ma_don", "GOI-THU");
+        extra.put("ten_san_pham", "Hàng thường");
+        extra.put("diem_nhan", "Văn phòng CPN");
+        Result r = vtechClient.importContact(cfg.getAutocallVtechBaseUrl(), cfg.getAutocallVtechApiKey(), phone, null, extra);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("sandbox", false);
+        out.put("provider", IntegrationConfig.PROVIDER_VTECH);
+        out.put("refId", refId);
+        out.put("phone", phone);
+        out.put("type", "giao");
+        if (!putError(out, r)) {
+            return out;
+        }
+        JsonNode data = r.body() != null ? r.body().path("data") : null;
+        if (data != null && data.path("imported").asInt(0) > 0) {
+            out.put("callId", refId);
+            out.put("status", "queued");
+            LOG.info("Auto call test {} (Vtech) → {} by {}", refId, phone, actor);
+            return out;
+        }
+        out.put("ok", false);
+        JsonNode errors = data != null ? data.path("errors") : null;
+        if (errors != null && errors.isArray() && !errors.isEmpty()) {
+            out.put("code", "VTECH_REJECTED");
+            out.put("message", "Vtech từ chối: " + errors.get(0).path("error").asText("không rõ lý do"));
+        } else {
+            out.put("code", "UNEXPECTED_RESPONSE");
+            out.put("message", "Vtech không trả kết quả import");
         }
         return out;
     }
@@ -353,7 +520,7 @@ public class AutoCallConsoleService {
 
     private IntegrationConfig requireConfigured() {
         IntegrationConfig cfg = integrationConfigRepository.findAll().stream().findFirst().orElse(null);
-        if (cfg == null || !cfg.isAutocallApiKeyConfigured()) {
+        if (cfg == null || !cfg.isAutocallActiveKeyConfigured()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chưa lưu API key Auto Call");
         }
         return cfg;

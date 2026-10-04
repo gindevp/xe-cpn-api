@@ -134,6 +134,8 @@ cpn:
     insecure-ssl: ${CPN_AHAMOVE_INSECURE_SSL:true}
   hhvn:
     insecure-ssl: ${CPN_HHVN_INSECURE_SSL:true}
+  vtech:
+    insecure-ssl: ${CPN_VTECH_INSECURE_SSL:true}
   tax-lookup:
     insecure-ssl: ${CPN_TAX_LOOKUP_INSECURE_SSL:true}
   goong:

@@ -21,6 +21,7 @@ import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.autocall.AutoCallService.CancelOutcome;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient.Result;
+import com.mycompany.myapp.service.partner.VtechAutoCallClient;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,9 @@ class AutoCallConsoleServiceTest {
 
     @Mock
     private HhvnAutoCallClient client;
+
+    @Mock
+    private VtechAutoCallClient vtechClient;
 
     @Mock
     private StaffAccessService staffAccessService;
@@ -276,5 +280,98 @@ class AutoCallConsoleServiceTest {
 
         assertThat(out).containsEntry("ok", false).containsEntry("code", "NOT_CANCELLABLE");
         assertThat(((JsonNode) out.get("call")).path("status").asText()).isEqualTo("failed");
+    }
+
+    // ---- Vtech ----
+
+    private void stubVtech() {
+        IntegrationConfig c = new IntegrationConfig();
+        c.setAutocallApiKey("xk_test_1234");
+        c.setAutocallProvider("VTECH");
+        c.setAutocallVtechApiKey("tdai_key");
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(c));
+    }
+
+    private static com.mycompany.myapp.domain.AutoCall localCall(String ref, String phone, String status, String result, int minutesAgo) {
+        com.mycompany.myapp.domain.ShipmentOrder o = new com.mycompany.myapp.domain.ShipmentOrder();
+        o.setOrderCode("ORD-" + ref);
+        com.mycompany.myapp.domain.AutoCall c = new com.mycompany.myapp.domain.AutoCall();
+        c.setOrder(o);
+        c.setRefId(ref);
+        c.setCallType("giao");
+        c.setPhone(phone);
+        c.setStatus(status);
+        c.setResult(result);
+        c.setProvider("VTECH");
+        c.setCreatedAt(java.time.Instant.now().minusSeconds(minutesAgo * 60L));
+        return c;
+    }
+
+    @Test
+    void listCalls_vtech_readsLocalTable_mapsStatus_filtersResultAndPhone_noHhvn() {
+        stubVtech();
+        com.mycompany.myapp.domain.AutoCall answered = localCall("R1", "0912345678", "COMPLETED", "answered", 1);
+        answered.setCallId("vtech_1");
+        answered.setDurationSec(30);
+        com.mycompany.myapp.domain.AutoCall queued = localCall("R2", "0987654321", "QUEUED", null, 2);
+        com.mycompany.myapp.domain.AutoCall sendErr = localCall("R3", "0912000000", "ERROR", null, 3);
+        com.mycompany.myapp.domain.AutoCall carrier = localCall("R4", "0912999999", "FAILED", "error", 4);
+        when(autoCallRepository.findForConsole(eq("VTECH"), any(), any())).thenReturn(List.of(answered, queued, sendErr, carrier));
+
+        Map<String, Object> all = service.listCalls("2026-09-01", "2026-09-30", null, null, null, null, 1, 50);
+        @SuppressWarnings("unchecked")
+        List<JsonNode> rows = (List<JsonNode>) all.get("data");
+        assertThat(all.get("ok")).isEqualTo(true);
+        assertThat(rows).hasSize(4);
+        assertThat(rows.get(0).path("callId").asText()).isEqualTo("vtech_1");
+        assertThat(rows.get(0).path("status").asText()).isEqualTo("completed");
+        assertThat(rows.get(0).path("orderCode").asText()).isEqualTo("ORD-R1");
+        assertThat(rows.get(1).path("callId").asText()).isEqualTo("R2");
+        assertThat(rows.get(1).path("status").asText()).isEqualTo("queued");
+        assertThat(rows.get(2).path("status").asText()).isEqualTo("failed");
+        assertThat(rows.get(2).path("result").asText()).isEqualTo("send_error");
+
+        Map<String, Object> err = service.listCalls(null, null, null, null, "error", null, 1, 50);
+        @SuppressWarnings("unchecked")
+        List<JsonNode> errRows = (List<JsonNode>) err.get("data");
+        assertThat(errRows).extracting(n -> n.path("refId").asText()).containsExactly("R4");
+
+        Map<String, Object> byPhone = service.listCalls(null, null, null, null, null, "654321", 1, 50);
+        @SuppressWarnings("unchecked")
+        List<JsonNode> phoneRows = (List<JsonNode>) byPhone.get("data");
+        assertThat(phoneRows).extracting(n -> n.path("refId").asText()).containsExactly("R2");
+        verify(client, never()).listCalls(any(), any(), anyMap());
+    }
+
+    @Test
+    void testCall_vtech_requiresConfirm_importsWithTestRef_returnsRefAsCallId() throws Exception {
+        stubVtech();
+        assertThatThrownBy(() -> service.testCall("0912345671", "giao", false)).hasMessageContaining("LIVE");
+
+        when(vtechClient.importContact(any(), eq("tdai_key"), eq("0912345671"), any(), anyMap())).thenReturn(
+            new Result(true, 201, null, null, JSON.readTree("{\"data\":{\"total\":1,\"imported\":1,\"skipped\":0,\"errors\":[]}}"))
+        );
+        Map<String, Object> out = service.testCall("0912345671", "giao", true);
+
+        assertThat(out).containsEntry("ok", true).containsEntry("sandbox", false).containsEntry("provider", "VTECH");
+        assertThat((String) out.get("callId")).startsWith("CPN-TEST-").isEqualTo(out.get("refId"));
+        verify(client, never()).createCall(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void getCall_vtechTest_pendingThenResultFromWebhook() throws Exception {
+        stubVtech();
+        when(autoCallService.vtechTestResult("CPN-TEST-1")).thenReturn(null);
+        JsonNode pending = (JsonNode) service.getCall("CPN-TEST-1").get("call");
+        assertThat(pending.path("status").asText()).isEqualTo("queued");
+        assertThat(pending.path("callId").asText()).isEqualTo("CPN-TEST-1");
+
+        when(autoCallService.vtechTestResult("CPN-TEST-1")).thenReturn(
+            JSON.readTree("{\"callId\":\"vtech_9\",\"status\":\"completed\",\"result\":\"answered\"}")
+        );
+        JsonNode done = (JsonNode) service.getCall("CPN-TEST-1").get("call");
+        assertThat(done.path("status").asText()).isEqualTo("completed");
+        assertThat(done.path("callId").asText()).isEqualTo("CPN-TEST-1");
+        verify(client, never()).getCallByRefId(any(), any(), any());
     }
 }

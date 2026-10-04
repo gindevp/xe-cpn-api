@@ -9,6 +9,7 @@ import com.mycompany.myapp.service.partner.AhamoveAuthClient;
 import com.mycompany.myapp.service.partner.AhamoveAuthClient.AhamoveAuthException;
 import com.mycompany.myapp.service.partner.AhamoveTokenService;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
+import com.mycompany.myapp.service.partner.VtechAutoCallClient;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
@@ -273,6 +274,26 @@ public class ConfigFacadeService {
         if (notBlank(incoming.getAutocallWebhookSecret())) {
             current.setAutocallWebhookSecret(incoming.getAutocallWebhookSecret().trim());
         }
+        if (notBlank(incoming.getAutocallProvider())) {
+            String p = incoming.getAutocallProvider().trim().toUpperCase(java.util.Locale.ROOT);
+            if (!IntegrationConfig.PROVIDER_HHVN.equals(p) && !IntegrationConfig.PROVIDER_VTECH.equals(p)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nhà cung cấp Auto Call phải là HHVN hoặc VTECH");
+            }
+            current.setAutocallProvider(p);
+        }
+        if (notBlank(incoming.getAutocallVtechBaseUrl())) {
+            current.setAutocallVtechBaseUrl(VtechAutoCallClient.normalizeBaseUrl(incoming.getAutocallVtechBaseUrl()));
+        }
+        String vtechKey = AhamoveAuthClient.sanitizeApiKey(incoming.getAutocallVtechApiKey());
+        if (vtechKey != null) {
+            current.setAutocallVtechApiKey(vtechKey);
+        }
+        if (current.isAutocallVtech() && !notBlank(current.getAutocallVtechWebhookToken())) {
+            current.setAutocallVtechWebhookToken(newWebhookToken());
+        }
+        if (current.getAutocallProvider() == null) {
+            current.setAutocallProvider(IntegrationConfig.PROVIDER_HHVN);
+        }
         if (current.getAutocallEnabled() == null) {
             current.setAutocallEnabled(false);
         }
@@ -301,6 +322,15 @@ public class ConfigFacadeService {
         if (current.getAutocallRetryEnabled() == null) {
             current.setAutocallRetryEnabled(false);
         }
+    }
+
+    private static final java.security.SecureRandom TOKEN_RANDOM = new java.security.SecureRandom();
+
+    /** 32 ký tự hex — đủ khó đoán, an toàn khi đặt trong query string. */
+    static String newWebhookToken() {
+        byte[] b = new byte[16];
+        TOKEN_RANDOM.nextBytes(b);
+        return java.util.HexFormat.of().formatHex(b);
     }
 
     static final int MAX_RETRY_COUNT = 10;

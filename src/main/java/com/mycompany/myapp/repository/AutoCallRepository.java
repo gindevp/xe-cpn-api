@@ -18,6 +18,15 @@ public interface AutoCallRepository extends JpaRepository<AutoCall, Long> {
 
     Optional<AutoCall> findFirstByCallId(String callId);
 
+    Optional<AutoCall> findFirstByProviderAndPhoneAndStatusOrderByCreatedAtDesc(String provider, String phone, String status);
+
+    /** Màn Cuộc gọi khi dùng Vtech — Vtech không có API danh sách, đọc từ auto_call phía CPN. */
+    @Query(
+        "select a from AutoCall a join fetch a.order where a.provider = :provider and a.createdAt >= :from " +
+        "and a.createdAt < :to and a.status <> 'SKIPPED' order by a.createdAt desc"
+    )
+    List<AutoCall> findForConsole(@Param("provider") String provider, @Param("from") Instant from, @Param("to") Instant to);
+
     long countByOrder_IdAndCallType(Long orderId, String callType);
 
     List<AutoCall> findByOrder_IdOrderByCreatedAtDesc(Long orderId);

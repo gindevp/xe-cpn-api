@@ -113,5 +113,6 @@
     <include file="config/liquibase/changelog/20261003220000_staff_deposit.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261004110000_office_vehicle_itinerary.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261004140000_pricing_rule_size_dims.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261005090000_autocall_vtech.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 

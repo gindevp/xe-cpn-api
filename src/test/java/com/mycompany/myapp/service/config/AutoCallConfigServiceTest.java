@@ -15,6 +15,7 @@ import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient.Result;
+import com.mycompany.myapp.service.partner.VtechAutoCallClient;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,11 +37,14 @@ class AutoCallConfigServiceTest {
     @Mock
     private HhvnAutoCallClient client;
 
+    @Mock
+    private VtechAutoCallClient vtechClient;
+
     private AutoCallConfigService service;
 
     @BeforeEach
     void setUp() {
-        service = new AutoCallConfigService(repository, client);
+        service = new AutoCallConfigService(repository, client, vtechClient);
     }
 
     private IntegrationConfig saved(String apiKey) {
@@ -164,5 +168,89 @@ class AutoCallConfigServiceTest {
         IntegrationConfig in = new ObjectMapper().readValue("{\"autocallApiKey\":\"xk_test_z\"}", IntegrationConfig.class);
         assertThat(in.getAutocallApiKey()).isEqualTo("xk_test_z");
         assertThat(in.getAutocallEnabled()).isNull();
+    }
+
+    // ---- Vtech ----
+
+    @Test
+    void mergeAutoCall_vtech_switchKeepsBothKeys_generatesTokenOnce() {
+        IntegrationConfig current = saved(KEY);
+        IntegrationConfig incoming = new IntegrationConfig();
+        incoming.setAutocallProvider("vtech");
+        incoming.setAutocallVtechApiKey(" tdai_abc123 ");
+        incoming.setAutocallVtechBaseUrl("https://api.tongdai.ai/api/external/v1/");
+        ConfigFacadeService.mergeAutoCall(current, incoming);
+
+        assertThat(current.getAutocallProvider()).isEqualTo("VTECH");
+        assertThat(current.getAutocallVtechApiKey()).isEqualTo("tdai_abc123");
+        assertThat(current.getAutocallApiKey()).isEqualTo(KEY);
+        assertThat(current.getAutocallVtechBaseUrl()).isEqualTo("https://api.tongdai.ai/api/external/v1");
+        String token = current.getAutocallVtechWebhookToken();
+        assertThat(token).hasSize(32).matches("[0-9a-f]+");
+        assertThat(current.isAutocallSandbox()).isFalse();
+        assertThat(current.getAutocallActiveApiKey()).isEqualTo("tdai_abc123");
+
+        IntegrationConfig back = new IntegrationConfig();
+        back.setAutocallProvider("HHVN");
+        ConfigFacadeService.mergeAutoCall(current, back);
+        assertThat(current.getAutocallProvider()).isEqualTo("HHVN");
+        assertThat(current.getAutocallVtechApiKey()).isEqualTo("tdai_abc123");
+        assertThat(current.getAutocallVtechWebhookToken()).isEqualTo(token);
+        assertThat(current.getAutocallActiveApiKey()).isEqualTo(KEY);
+        assertThat(current.isAutocallSandbox()).isTrue();
+    }
+
+    @Test
+    void mergeAutoCall_invalidProvider_rejected() {
+        IntegrationConfig incoming = new IntegrationConfig();
+        incoming.setAutocallProvider("OTHER");
+        assertThatThrownBy(() -> ConfigFacadeService.mergeAutoCall(saved(KEY), incoming)).isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    void json_vtech_hidesKey_showsSuffixAndToken() throws Exception {
+        IntegrationConfig c = saved(KEY);
+        c.setAutocallProvider("VTECH");
+        c.setAutocallVtechApiKey("tdai_secret_9876");
+        c.setAutocallVtechWebhookToken("tok123");
+        JsonNode node = new ObjectMapper().readTree(new ObjectMapper().writeValueAsString(c));
+        assertThat(node.toString()).doesNotContain("tdai_secret_9876");
+        assertThat(node.get("autocallProvider").asText()).isEqualTo("VTECH");
+        assertThat(node.get("autocallVtechApiKeyConfigured").asBoolean()).isTrue();
+        assertThat(node.get("autocallVtechApiKeySuffix").asText()).isEqualTo("9876");
+        assertThat(node.get("autocallVtechWebhookToken").asText()).isEqualTo("tok123");
+
+        IntegrationConfig in = new ObjectMapper()
+            .readValue("{\"autocallVtechApiKey\":\"k\",\"autocallVtechWebhookToken\":\"hacked\"}", IntegrationConfig.class);
+        assertThat(in.getAutocallVtechApiKey()).isEqualTo("k");
+        assertThat(in.getAutocallVtechWebhookToken()).isNull();
+    }
+
+    @Test
+    void test_vtech_badRequestMeansKeyOk_unauthorizedMeansBadKey() {
+        IntegrationConfig c = saved(KEY);
+        c.setAutocallProvider("VTECH");
+        c.setAutocallVtechApiKey("tdai_good");
+        when(repository.findAll()).thenReturn(List.of(c));
+        when(vtechClient.testConnection(null, "tdai_good")).thenReturn(new Result(true, 400, null, null, null));
+        Map<String, Object> ok = service.test(Map.of());
+        assertThat(ok.get("ok")).isEqualTo(true);
+        assertThat(ok.get("provider")).isEqualTo("VTECH");
+
+        when(vtechClient.testConnection(null, "tdai_bad")).thenReturn(
+            new Result(false, 401, "INVALID_API_KEY", "API key không hợp lệ", null)
+        );
+        Map<String, Object> bad = service.test(Map.of("autocallVtechApiKey", "tdai_bad"));
+        assertThat(bad.get("ok")).isEqualTo(false);
+        assertThat((String) bad.get("message")).isEqualTo("API key Vtech không hợp lệ");
+        verify(client, never()).getAudios(any(), anyString());
+    }
+
+    @Test
+    void test_providerOverride_testsVtechBeforeSaving() {
+        when(repository.findAll()).thenReturn(List.of(saved(KEY)));
+        Map<String, Object> out = service.test(Map.of("autocallProvider", "VTECH"));
+        assertThat(out.get("code")).isEqualTo("API_KEY_MISSING");
+        verify(client, never()).getAudios(any(), anyString());
     }
 }

@@ -98,6 +98,28 @@ public class IntegrationConfig implements Serializable {
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String autocallWebhookSecret;
 
+    /** HHVN | VTECH — nhà cung cấp đang dùng để gửi cuộc gọi; cấu hình mỗi bên lưu riêng. */
+    @Size(max = 10)
+    @Column(name = "autocall_provider", length = 10, nullable = false)
+    private String autocallProvider;
+
+    /** Vtech (tongdai.ai) — API import contact vào chiến dịch callbot. */
+    @Size(max = 255)
+    @Column(name = "autocall_vtech_base_url", length = 255)
+    private String autocallVtechBaseUrl;
+
+    /** Key chiến dịch callbot Vtech — không trả về FE. */
+    @Size(max = 255)
+    @Column(name = "autocall_vtech_api_key", length = 255)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String autocallVtechApiKey;
+
+    /** Vtech không ký webhook — CPN sinh token, Vtech gửi kèm trong URL (?token=) hoặc body_extra. */
+    @Size(max = 64)
+    @Column(name = "autocall_vtech_webhook_token", length = 64)
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String autocallVtechWebhookToken;
+
     /** CPN tự gọi lại khi cuộc gọi không thành công (ngoài lượt gọi lại nội bộ của HHVN). */
     @Column(name = "autocall_retry_enabled", nullable = false)
     private Boolean autocallRetryEnabled;
@@ -449,12 +471,92 @@ public class IntegrationConfig implements Serializable {
         this.autocallCallTo = autocallCallTo;
     }
 
+    public String getAutocallProvider() {
+        return autocallProvider;
+    }
+
+    public void setAutocallProvider(String autocallProvider) {
+        this.autocallProvider = autocallProvider;
+    }
+
+    public String getAutocallVtechBaseUrl() {
+        return autocallVtechBaseUrl;
+    }
+
+    public void setAutocallVtechBaseUrl(String autocallVtechBaseUrl) {
+        this.autocallVtechBaseUrl = autocallVtechBaseUrl;
+    }
+
+    public String getAutocallVtechApiKey() {
+        return autocallVtechApiKey;
+    }
+
+    public void setAutocallVtechApiKey(String autocallVtechApiKey) {
+        this.autocallVtechApiKey = autocallVtechApiKey;
+    }
+
+    public String getAutocallVtechWebhookToken() {
+        return autocallVtechWebhookToken;
+    }
+
+    public void setAutocallVtechWebhookToken(String autocallVtechWebhookToken) {
+        this.autocallVtechWebhookToken = autocallVtechWebhookToken;
+    }
+
+    public static final String PROVIDER_HHVN = "HHVN";
+    public static final String PROVIDER_VTECH = "VTECH";
+
+    @JsonIgnore
+    public boolean isAutocallVtech() {
+        return PROVIDER_VTECH.equals(autocallProvider);
+    }
+
+    /** Nhà cung cấp đang chọn, mặc định HHVN. */
+    @JsonIgnore
+    public String getAutocallActiveProvider() {
+        return isAutocallVtech() ? PROVIDER_VTECH : PROVIDER_HHVN;
+    }
+
+    /** Key của nhà cung cấp đang chọn. */
+    @JsonIgnore
+    public String getAutocallActiveApiKey() {
+        return isAutocallVtech() ? autocallVtechApiKey : autocallApiKey;
+    }
+
+    @JsonIgnore
+    public boolean isAutocallActiveKeyConfigured() {
+        String k = getAutocallActiveApiKey();
+        return k != null && !k.isBlank();
+    }
+
+    /** Chỉ key HHVN xk_test_ là sandbox; Vtech luôn gọi thật. */
+    @JsonIgnore
+    public boolean isAutocallSandbox() {
+        return !isAutocallVtech() && autocallApiKey != null && autocallApiKey.startsWith("xk_test_");
+    }
+
+    @JsonProperty(value = "autocallVtechApiKeyConfigured", access = JsonProperty.Access.READ_ONLY)
+    public boolean isAutocallVtechApiKeyConfigured() {
+        return autocallVtechApiKey != null && !autocallVtechApiKey.isBlank();
+    }
+
+    @JsonProperty(value = "autocallVtechApiKeySuffix", access = JsonProperty.Access.READ_ONLY)
+    public String getAutocallVtechApiKeySuffix() {
+        if (!isAutocallVtechApiKeyConfigured() || autocallVtechApiKey.length() <= 4) {
+            return null;
+        }
+        return autocallVtechApiKey.substring(autocallVtechApiKey.length() - 4);
+    }
+
     /** Không khởi tạo field = false: body PUT thiếu field phải giữ null để merge không tắt Auto Call. */
     @PrePersist
     @PreUpdate
     void defaultAutocallEnabled() {
         if (autocallEnabled == null) {
             autocallEnabled = false;
+        }
+        if (autocallProvider == null) {
+            autocallProvider = PROVIDER_HHVN;
         }
         if (autocallRetryEnabled == null) {
             autocallRetryEnabled = false;
@@ -606,6 +708,8 @@ public class IntegrationConfig implements Serializable {
             ", autocallBaseUrl='" + getAutocallBaseUrl() + "'" +
             ", autocallApiKey='" + (isAutocallApiKeyConfigured() ? "***" : null) + "'" +
             ", autocallWebhookSecret='" + (isAutocallWebhookSecretConfigured() ? "***" : null) + "'" +
+            ", autocallProvider='" + getAutocallProvider() + "'" +
+            ", autocallVtechApiKey='" + (isAutocallVtechApiKeyConfigured() ? "***" : null) + "'" +
             ", updatedAt='" + getUpdatedAt() + "'" +
             "}";
     }

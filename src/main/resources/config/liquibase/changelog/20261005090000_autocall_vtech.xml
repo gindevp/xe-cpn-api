@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261005090000-1" author="cpn">
+        <comment>Auto Call: chọn nhà cung cấp HHVN | VTECH (tongdai.ai) — cấu hình Vtech riêng, chuyển qua lại không mất key.</comment>
+        <addColumn tableName="integration_config">
+            <column name="autocall_provider" type="varchar(10)" defaultValue="HHVN">
+                <constraints nullable="false"/>
+            </column>
+            <column name="autocall_vtech_base_url" type="varchar(255)"/>
+            <column name="autocall_vtech_api_key" type="varchar(255)"/>
+            <column name="autocall_vtech_webhook_token" type="varchar(64)"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20261005090000-2" author="cpn">
+        <comment>Auto Call: cuộc gọi gửi qua nhà cung cấp nào.</comment>
+        <addColumn tableName="auto_call">
+            <column name="provider" type="varchar(10)" defaultValue="HHVN">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

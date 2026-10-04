@@ -56,6 +56,12 @@ public class AutoCall implements Serializable {
     @Column(name = "sandbox", nullable = false)
     private Boolean sandbox = false;
 
+    /** HHVN | VTECH — nhà cung cấp đã (hoặc sẽ) gửi cuộc gọi này. */
+    @NotNull
+    @Size(max = 10)
+    @Column(name = "provider", length = 10, nullable = false)
+    private String provider = "HHVN";
+
     @NotNull
     @Size(max = 20)
     @Column(name = "status", length = 20, nullable = false)
@@ -220,6 +226,14 @@ public class AutoCall implements Serializable {
 
     public void setSandbox(Boolean sandbox) {
         this.sandbox = sandbox;
+    }
+
+    public String getProvider() {
+        return provider;
+    }
+
+    public void setProvider(String provider) {
+        this.provider = provider;
     }
 
     public String getStatus() {

@@ -157,7 +157,7 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         if ("POST".equals(method) && ("/api/orders/track".equals(path) || path.startsWith("/api/orders/track/invoice"))) {
             return true;
         }
-        if ("POST".equals(method) && "/api/public/hhvn/webhook".equals(path)) {
+        if ("POST".equals(method) && ("/api/public/hhvn/webhook".equals(path) || "/api/public/vtech/webhook".equals(path))) {
             return true;
         }
         if ("POST".equals(method) && path.startsWith("/api/account/reset-password")) {
