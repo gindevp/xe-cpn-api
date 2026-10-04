@@ -37,8 +37,10 @@ import com.mycompany.myapp.service.order.OrderFacadeService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -216,6 +218,7 @@ public class TripFacadeService {
         }
         applyItineraryLabel(trip, req.getItineraryLabel());
         applyDriverNameIfPresent(trip, req.getDriverName());
+        Map<Long, Trip> previousTrips = new LinkedHashMap<>();
         for (String code : distinct(req.getOrderCodes())) {
             ShipmentOrder order = requireOrder(code);
             if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.DELIVERED) {
@@ -232,11 +235,41 @@ public class TripFacadeService {
             if (alreadyOnTrip) {
                 continue;
             }
+            Trip previous = order.getCurrentTrip();
+            boolean moving = previous != null && previous.getId() != null && !previous.getId().equals(trip.getId());
+            if (moving) {
+                ForwardStage stage = order.getForwardStage();
+                boolean waiting = stage == ForwardStage.TRANSFER_PENDING || stage == ForwardStage.WH_IN || stage == null;
+                if (!waiting || order.getStatus() == OrderStatus.IN_TRANSIT) {
+                    throw new BadRequestAlertException(
+                        "Đơn " + code + " không ở Đợi trung chuyển giao — không chuyển xe được",
+                        ENTITY,
+                        "reassignStage"
+                    );
+                }
+                assignmentRepository
+                    .findFirstByTrip_IdAndOrder_IdAndAssignmentStatusNot(previous.getId(), order.getId(), AssignmentStatus.REMOVED)
+                    .ifPresent(a -> {
+                        a.setAssignmentStatus(AssignmentStatus.REMOVED);
+                        a.setRemovedAt(Instant.now());
+                        assignmentRepository.save(a);
+                    });
+                previousTrips.put(previous.getId(), previous);
+            }
             ensureActiveAssignment(trip, order);
             order.setCurrentTrip(trip);
             order.setForwardStage(ForwardStage.TRANSFER_PENDING);
             shipmentOrderRepository.save(order);
-            appendOrderEvent(order, "ASSIGN_TRIP", assignDetail(trip), currentActor());
+            if (moving) {
+                String detail = assignDetail(previous) + " → " + assignDetail(trip);
+                appendOrderEvent(order, "REASSIGN_TRIP", detail.length() <= 255 ? detail : detail.substring(0, 255), currentActor());
+            } else {
+                appendOrderEvent(order, "ASSIGN_TRIP", assignDetail(trip), currentActor());
+            }
+        }
+        for (Trip previous : previousTrips.values()) {
+            refreshCounts(previous);
+            tripRepository.save(previous);
         }
         refreshCounts(trip);
         tripRepository.save(trip);
