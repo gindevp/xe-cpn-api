@@ -83,7 +83,23 @@ public class PricingRule implements Serializable {
     @Column(name = "active", nullable = false)
     private Boolean active;
 
-    /** {@link #BASIS_KG} = mức theo cân; {@link #BASIS_SIZE} = mức theo chiều lớn nhất (minKg/maxKg là cm, stepGram là bước cm). */
+    /** Mức SIZE: Dài × Rộng × Cao tối đa (cm) của mức; kiện xoay được nên so theo chiều đã sắp xếp. */
+    @DecimalMin(value = "0")
+    @Column(name = "size_length_cm", precision = 10, scale = 2)
+    private BigDecimal sizeLengthCm;
+
+    @DecimalMin(value = "0")
+    @Column(name = "size_width_cm", precision = 10, scale = 2)
+    private BigDecimal sizeWidthCm;
+
+    @DecimalMin(value = "0")
+    @Column(name = "size_height_cm", precision = 10, scale = 2)
+    private BigDecimal sizeHeightCm;
+
+    /**
+     * {@link #BASIS_KG} = mức theo cân; {@link #BASIS_SIZE} = mức theo Dài × Rộng × Cao (maxKg = cân quy đổi
+     * D×R×C/5000 của mức, stepGram = bước kg tính bằng gram như bảng cân).
+     */
     @Size(max = 10)
     @Column(name = "rule_basis", length = 10, nullable = false)
     private String ruleBasis = BASIS_KG;
@@ -308,6 +324,30 @@ public class PricingRule implements Serializable {
     public PricingRule ruleBasis(String ruleBasis) {
         this.setRuleBasis(ruleBasis);
         return this;
+    }
+
+    public BigDecimal getSizeLengthCm() {
+        return this.sizeLengthCm;
+    }
+
+    public void setSizeLengthCm(BigDecimal sizeLengthCm) {
+        this.sizeLengthCm = sizeLengthCm;
+    }
+
+    public BigDecimal getSizeWidthCm() {
+        return this.sizeWidthCm;
+    }
+
+    public void setSizeWidthCm(BigDecimal sizeWidthCm) {
+        this.sizeWidthCm = sizeWidthCm;
+    }
+
+    public BigDecimal getSizeHeightCm() {
+        return this.sizeHeightCm;
+    }
+
+    public void setSizeHeightCm(BigDecimal sizeHeightCm) {
+        this.sizeHeightCm = sizeHeightCm;
     }
 
     /** Mức theo kích thước — không dùng để tra cước theo cân. */

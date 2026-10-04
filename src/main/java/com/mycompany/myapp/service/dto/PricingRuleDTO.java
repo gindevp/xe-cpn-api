@@ -61,9 +61,42 @@ public class PricingRuleDTO implements Serializable {
     @NotNull
     private Boolean active;
 
-    /** KG (mặc định) hoặc SIZE — mức theo chiều lớn nhất, min/max là cm. */
+    /** KG (mặc định) hoặc SIZE — mức theo Dài × Rộng × Cao, maxKg = cân quy đổi /5000, stepGram = bước kg (gram). */
     @Size(max = 10)
     private String ruleBasis;
+
+    @DecimalMin(value = "0")
+    private BigDecimal sizeLengthCm;
+
+    @DecimalMin(value = "0")
+    private BigDecimal sizeWidthCm;
+
+    @DecimalMin(value = "0")
+    private BigDecimal sizeHeightCm;
+
+    public BigDecimal getSizeLengthCm() {
+        return sizeLengthCm;
+    }
+
+    public void setSizeLengthCm(BigDecimal sizeLengthCm) {
+        this.sizeLengthCm = sizeLengthCm;
+    }
+
+    public BigDecimal getSizeWidthCm() {
+        return sizeWidthCm;
+    }
+
+    public void setSizeWidthCm(BigDecimal sizeWidthCm) {
+        this.sizeWidthCm = sizeWidthCm;
+    }
+
+    public BigDecimal getSizeHeightCm() {
+        return sizeHeightCm;
+    }
+
+    public void setSizeHeightCm(BigDecimal sizeHeightCm) {
+        this.sizeHeightCm = sizeHeightCm;
+    }
 
     private RouteDTO route;
 

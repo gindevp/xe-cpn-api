@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261004140000-1" author="cpn">
+        <comment>Mức giá theo kích thước có đủ Dài × Rộng × Cao tối đa; max_kg = cân quy đổi D×R×C/5000, step_gram = bước kg (gram) như bảng cân.</comment>
+        <addColumn tableName="pricing_rule">
+            <column name="size_length_cm" type="decimal(10,2)"/>
+            <column name="size_width_cm" type="decimal(10,2)"/>
+            <column name="size_height_cm" type="decimal(10,2)"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20261004140000-2" author="cpn">
+        <comment>Mức kích thước cũ (1 chiều, cm): D = R = C = mốc Đến cũ; bước cm cũ bỏ về 0 để nhập lại theo kg.</comment>
+        <update tableName="pricing_rule">
+            <column name="size_length_cm" valueComputed="max_kg"/>
+            <column name="size_width_cm" valueComputed="max_kg"/>
+            <column name="size_height_cm" valueComputed="max_kg"/>
+            <where>rule_basis = 'SIZE'</where>
+        </update>
+        <update tableName="pricing_rule">
+            <column name="max_kg" valueComputed="ROUND(size_length_cm * size_width_cm * size_height_cm / 5000, 2)"/>
+            <column name="min_kg" valueNumeric="0"/>
+            <column name="step_gram" valueNumeric="0"/>
+            <column name="dim_divisor" valueNumeric="5000"/>
+            <where>rule_basis = 'SIZE'</where>
+        </update>
+    </changeSet>
+</databaseChangeLog>
