@@ -4,6 +4,7 @@ import com.mycompany.myapp.service.finance.FinanceFacadeService;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.CreateReceiptRequest;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.DayClosureDTO;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.ReceiptDTO;
+import com.mycompany.myapp.service.finance.StaffDepositService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.LocalDate;
 import java.util.List;
@@ -22,9 +23,11 @@ import tech.jhipster.web.util.PaginationUtil;
 public class FinanceFacadeResource {
 
     private final FinanceFacadeService financeFacadeService;
+    private final StaffDepositService staffDepositService;
 
-    public FinanceFacadeResource(FinanceFacadeService financeFacadeService) {
+    public FinanceFacadeResource(FinanceFacadeService financeFacadeService, StaffDepositService staffDepositService) {
         this.financeFacadeService = financeFacadeService;
+        this.staffDepositService = staffDepositService;
     }
 
     @GetMapping("/api/receipts/candidates")
@@ -51,7 +54,16 @@ public class FinanceFacadeResource {
         HttpHeaders headers = PaginationUtil.generatePaginationHttpHeaders(ServletUriComponentsBuilder.fromCurrentRequest(), page);
         return ResponseEntity.ok()
             .headers(headers)
-            .body(new ListPage(page.getContent(), page.getNumber(), page.getSize(), page.getTotalElements(), sum));
+            .body(
+                new ListPage(
+                    page.getContent(),
+                    page.getNumber(),
+                    page.getSize(),
+                    page.getTotalElements(),
+                    sum,
+                    staffDepositService.transferContents(page.getContent())
+                )
+            );
     }
 
     @GetMapping("/api/receipts/{receiptCode}/proof-image")
@@ -139,5 +151,13 @@ public class FinanceFacadeResource {
         }
     }
 
-    public record ListPage(List<ReceiptDTO> content, int page, int size, long totalElements, java.math.BigDecimal totalAmount) {}
+    /** {@code transferContents}: mã phiếu → nội dung chuyển khoản theo mẫu cấu hình QR nộp tiền. */
+    public record ListPage(
+        List<ReceiptDTO> content,
+        int page,
+        int size,
+        long totalElements,
+        java.math.BigDecimal totalAmount,
+        java.util.Map<String, String> transferContents
+    ) {}
 }

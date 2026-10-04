@@ -304,6 +304,47 @@ public class StaffDepositService {
         return getAccount();
     }
 
+    /** Nội dung chuyển khoản từng phiếu (mã phiếu → nội dung) theo mẫu cấu hình, như QR trên app Nộp tiền của người nộp. */
+    @Transactional(readOnly = true)
+    public Map<String, String> transferContents(List<ReceiptDTO> receipts) {
+        Map<String, String> out = new HashMap<>();
+        if (receipts == null || receipts.isEmpty()) {
+            return out;
+        }
+        String template = integrationConfigRepository
+            .findAll()
+            .stream()
+            .findFirst()
+            .map(IntegrationConfig::getDepositContentTemplate)
+            .orElse(null);
+        Map<String, java.util.Optional<StaffProfile>> payers = new HashMap<>();
+        Map<String, String> officeIds = new HashMap<>();
+        for (ReceiptDTO r : receipts) {
+            String payerKey = nz(r.payerCode()).isEmpty() ? nz(r.payerName()) : nz(r.payerCode());
+            StaffProfile payer = payers.computeIfAbsent(payerKey.toLowerCase(Locale.ROOT), k -> findStaff(payerKey)).orElse(null);
+            String staffCode = payer != null && notBlank(payer.getStaffCode()) ? payer.getStaffCode().trim() : payerKey;
+            String staffName = payer != null && notBlank(payer.getDisplayName())
+                ? payer.getDisplayName().trim()
+                : nz(r.payerDisplayName()).isEmpty() ? nz(r.payerName()) : nz(r.payerDisplayName());
+            String office = officeIds.computeIfAbsent(nz(r.officeCode()), code -> officeIdText(code, null));
+            Instant day = r.customerPaidAt() != null ? r.customerPaidAt() : r.createdAt();
+            out.put(
+                r.receiptCode(),
+                renderContent(template, staffCode, staffName, r.receiptCode(), office, day == null ? Instant.now() : day)
+            );
+        }
+        return out;
+    }
+
+    private java.util.Optional<StaffProfile> findStaff(String key) {
+        if (!notBlank(key)) {
+            return java.util.Optional.empty();
+        }
+        String k = key.trim();
+        java.util.Optional<StaffProfile> p = staffProfileRepository.findOneByUserLoginIgnoreCase(k);
+        return p.isPresent() ? p : staffProfileRepository.findOneByStaffCodeIgnoreCase(k);
+    }
+
     // ---------------------------------------------------------------- helpers
 
     /**
