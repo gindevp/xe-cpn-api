@@ -217,8 +217,13 @@ class AutoCallServiceTest {
         return c;
     }
 
+    private AutoCall withResult(AutoCall c, String result) {
+        c.setResult(result);
+        return c;
+    }
+
     @Test
-    void catchUp_picksOnlyOrdersNeverSentToCarrier() {
+    void catchUp_picksOrdersCustomerNeverAnswered() {
         when(integrationConfigRepository.findAll()).thenReturn(List.of(config(true, KEY)));
         java.time.Instant now = java.time.Instant.now();
         ShipmentOrder none = atDest(1L, "A1", "0912345671", "VP_A");
@@ -235,8 +240,16 @@ class AutoCallServiceTest {
         ShipmentOrder delivering = atDest(12L, "A12", "0912345612", "VP_A");
         delivering.setStatus(com.mycompany.myapp.domain.enumeration.OrderStatus.OUT_FOR_DELIVERY);
         ShipmentOrder otherOffice = atDest(13L, "A13", "0912345613", "VP_B");
+        ShipmentOrder carrierError = atDest(14L, "A14", "0912345614", "VP_A");
+        ShipmentOrder vtechCancelled = atDest(15L, "A15", "0912345615", "VP_A");
+        ShipmentOrder queuedLost = atDest(16L, "A16", "0912345616", "VP_A");
+        ShipmentOrder answeredEarlier = atDest(17L, "A17", "0912345617", "VP_A");
         when(shipmentOrderRepository.findWithOfficesByOrderCodeIn(any())).thenReturn(
             List.of(
+                carrierError,
+                vtechCancelled,
+                queuedLost,
+                answeredEarlier,
                 none,
                 error,
                 skipped,
@@ -265,21 +278,59 @@ class AutoCallServiceTest {
         when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(7L)).thenReturn(List.of(lastCall("COMPLETED", "c7", null, now)));
         when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(8L)).thenReturn(List.of(lastCall("QUEUED", null, null, now)));
         when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(9L)).thenReturn(
-            List.of(lastCall("FAILED", "c9", now.plusSeconds(600), now))
+            List.of(withResult(lastCall("FAILED", "c9", now.plusSeconds(600), now), "not_answered"))
         );
         when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(10L)).thenReturn(List.of(lastCall("CANCELLED", null, null, now)));
         when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(11L)).thenReturn(
             List.of(lastCall("ERROR", null, now.plusSeconds(600), now))
         );
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(14L)).thenReturn(
+            List.of(withResult(lastCall("FAILED", "c14", null, now), "error"), withResult(lastCall("FAILED", "c14a", null, now), "error"))
+        );
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(15L)).thenReturn(
+            List.of(withResult(lastCall("CANCELLED", "vtech_15", null, now), "cancelled"))
+        );
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(16L)).thenReturn(
+            List.of(lastCall("QUEUED", null, null, now.minus(java.time.Duration.ofHours(4))))
+        );
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(17L)).thenReturn(
+            List.of(
+                withResult(lastCall("FAILED", "c17b", null, now), "not_answered"),
+                withResult(lastCall("COMPLETED", "c17a", null, now.minusSeconds(3600)), "answered")
+            )
+        );
 
-        List<String> codes = List.of("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13", "NOPE");
+        List<String> codes = List.of(
+            "A1",
+            "A2",
+            "A3",
+            "A4",
+            "A5",
+            "A6",
+            "A7",
+            "A8",
+            "A9",
+            "A10",
+            "A11",
+            "A12",
+            "A13",
+            "A14",
+            "A15",
+            "A16",
+            "A17",
+            "NOPE"
+        );
         AutoCallService.CatchUpResult r = service.catchUp(codes, "VP_A", true, "dh1");
 
-        assertThat(r.eligible()).containsExactly("A1", "A2", "A3", "A4");
+        assertThat(r.eligible()).containsExactly("A1", "A2", "A3", "A4", "A9", "A11", "A14", "A15", "A16");
         assertThat(r.sent()).isZero();
         assertThat(r.skipped())
             .extracting(AutoCallService.CatchUpSkip::orderCode)
-            .containsExactly("A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13", "NOPE");
+            .containsExactly("A5", "A6", "A7", "A8", "A10", "A12", "A13", "A17", "NOPE");
+        assertThat(r.skipped())
+            .filteredOn(s -> s.orderCode().equals("A17"))
+            .extracting(AutoCallService.CatchUpSkip::reason)
+            .containsExactly("Khách đã nghe máy");
         verify(autoCallRepository, never()).save(any());
         assertThat(dispatched).isEmpty();
     }

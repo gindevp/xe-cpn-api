@@ -208,15 +208,18 @@ public class AutoCallService {
     static final String TRIGGER_CATCH_UP = "CATCH_UP";
     /** Lệnh PENDING chưa có giờ hẹn mà quá ngần này chưa gửi được = kẹt (vd. BE restart giữa chừng). */
     static final Duration STUCK_PENDING_AFTER = Duration.ofMinutes(2);
+    /** Đã gửi tổng đài (QUEUED/…) mà quá ngần này chưa có kết quả = coi như mất, cho gọi bù. */
+    static final Duration STUCK_IN_CARRIER_AFTER = Duration.ofHours(3);
 
     public record CatchUpSkip(String orderCode, String reason) {}
 
     public record CatchUpResult(List<String> eligible, int sent, int scheduled, List<CatchUpSkip> skipped) {}
 
     /**
-     * Gọi bù cho đơn đang nhập kho giao (AT_DEST) chưa có lệnh gọi giao nào tới được tổng đài: chưa có lệnh,
-     * hoặc lệnh gần nhất gửi lỗi / bị bỏ qua / kẹt chưa gửi. Đơn đã gọi (đang chờ, đã có kết quả, đang hẹn gọi lại,
-     * đã huỷ) không gọi bù. {@code scopedOffice} khác null → chỉ đơn có VP nhận hiện tại là VP đó.
+     * Gọi bù cho đơn đang nhập kho giao (AT_DEST) mà khách chưa nghe máy lần nào: chưa có lệnh, lệnh gần nhất
+     * lỗi gửi / lỗi tổng đài / không nghe / bị bỏ qua / tổng đài tự huỷ / kẹt. Lịch gọi lại đang chờ bị thay bằng
+     * cuộc gọi mới. Không gọi bù: khách đã nghe, đang gửi, đang chờ khung giờ, người dùng đã huỷ.
+     * {@code scopedOffice} khác null → chỉ đơn có VP nhận hiện tại là VP đó.
      * {@code dryRun} → chỉ trả danh sách đơn đủ điều kiện.
      */
     public CatchUpResult catchUp(List<String> orderCodes, String scopedOffice, boolean dryRun, String actor) {
@@ -278,30 +281,34 @@ public class AutoCallService {
                 return "Đơn không thuộc VP của bạn";
             }
         }
-        AutoCall last = autoCallRepository
+        List<AutoCall> giao = autoCallRepository
             .findByOrder_IdOrderByCreatedAtDesc(order.getId())
             .stream()
             .filter(c -> TYPE_GIAO.equals(c.getCallType()))
-            .findFirst()
-            .orElse(null);
-        if (last == null) {
+            .toList();
+        if (giao.isEmpty()) {
             return null;
         }
+        if (giao.stream().anyMatch(c -> "answered".equals(c.getResult()) || "COMPLETED".equals(c.getStatus()))) {
+            return "Khách đã nghe máy";
+        }
+        AutoCall last = giao.get(0);
         String st = last.getStatus();
-        if (last.getNextRetryAt() != null) {
-            return "Đã hẹn gọi lúc " + RETRY_AT_FMT.format(last.getNextRetryAt());
-        }
-        if ("ERROR".equals(st) || "SKIPPED".equals(st)) {
-            return null;
-        }
+        Instant created = last.getCreatedAt() != null ? last.getCreatedAt() : now;
         if ("PENDING".equals(st) && last.getCallId() == null) {
-            Instant created = last.getCreatedAt() != null ? last.getCreatedAt() : now;
+            if (last.getNextRetryAt() != null) {
+                return "Đã hẹn gọi lúc " + RETRY_AT_FMT.format(last.getNextRetryAt());
+            }
             return created.isBefore(now.minus(STUCK_PENDING_AFTER)) ? null : "Đang gửi lệnh gọi";
         }
-        if ("CANCELLED".equals(st)) {
-            return "Lệnh gọi đã bị huỷ";
+        if ("ERROR".equals(st) || "SKIPPED".equals(st) || "FAILED".equals(st)) {
+            return null;
         }
-        return "Đã gọi";
+        if ("CANCELLED".equals(st)) {
+            boolean byCarrier = last.getCallId() != null && last.getCallId().startsWith("vtech_");
+            return byCarrier ? null : "Lệnh gọi đã bị huỷ";
+        }
+        return created.isBefore(now.minus(STUCK_IN_CARRIER_AFTER)) ? null : "Tổng đài đang gọi";
     }
 
     protected void dispatchAfterCommit(Runnable task) {
