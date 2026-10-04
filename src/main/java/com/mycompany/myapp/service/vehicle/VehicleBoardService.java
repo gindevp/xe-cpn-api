@@ -2,6 +2,7 @@ package com.mycompany.myapp.service.vehicle;
 
 import com.mycompany.myapp.domain.Itinerary;
 import com.mycompany.myapp.domain.Office;
+import com.mycompany.myapp.domain.OfficeVehicleItinerary;
 import com.mycompany.myapp.domain.Route;
 import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.domain.Trip;
@@ -9,6 +10,8 @@ import com.mycompany.myapp.domain.VehicleOfficeEvent;
 import com.mycompany.myapp.domain.VehicleOfficeEvent.EventType;
 import com.mycompany.myapp.domain.VehicleOfficeEvent.Source;
 import com.mycompany.myapp.repository.ItineraryRepository;
+import com.mycompany.myapp.repository.OfficeRepository;
+import com.mycompany.myapp.repository.OfficeVehicleItineraryRepository;
 import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
 import com.mycompany.myapp.security.ScreenKey;
@@ -62,6 +65,8 @@ public class VehicleBoardService {
     private final AvailableTripSearchService availableTripSearchService;
     private final VthkTripSearchClient vthkClient;
     private final StaffAccessService staffAccessService;
+    private final OfficeVehicleItineraryRepository officeItineraryRepository;
+    private final OfficeRepository officeRepository;
 
     public VehicleBoardService(
         TripRepository tripRepository,
@@ -69,8 +74,12 @@ public class VehicleBoardService {
         VehicleOfficeEventRepository eventRepository,
         AvailableTripSearchService availableTripSearchService,
         VthkTripSearchClient vthkClient,
-        StaffAccessService staffAccessService
+        StaffAccessService staffAccessService,
+        OfficeVehicleItineraryRepository officeItineraryRepository,
+        OfficeRepository officeRepository
     ) {
+        this.officeItineraryRepository = officeItineraryRepository;
+        this.officeRepository = officeRepository;
         this.tripRepository = tripRepository;
         this.itineraryRepository = itineraryRepository;
         this.eventRepository = eventRepository;
@@ -113,7 +122,7 @@ public class VehicleBoardService {
         Set<String> points = officePoints(office);
         if (!points.isEmpty() && vthkClient.isEnabled()) {
             try {
-                appendCrm(candidates, points, today);
+                appendCrm(candidates, points, configuredCodes(office), today);
             } catch (RuntimeException e) {
                 LOG.warn("Vehicle board CRM lookup failed for office {}: {}", office.getCode(), e.getMessage());
                 crmWarning = "Không tải được xe Limousine từ CRM";
@@ -142,27 +151,106 @@ public class VehicleBoardService {
         return new VehicleBoardDtos.Board(office.getCode(), office.getName(), items, crmWarning);
     }
 
-    /** Lộ trình đang hoạt động có điểm đầu hoặc điểm cuối là VP gốc của NV (theo mã "GA-YB"). */
+    /**
+     * Lộ trình VP gốc của NV báo giờ: theo cấu hình của VP; VP chưa cấu hình thì mọi lộ trình đang hoạt động có điểm đầu
+     * hoặc điểm cuối là điểm của VP (theo mã "GA-YB").
+     */
     @Transactional(readOnly = true)
     public List<VehicleBoardDtos.ItineraryOption> officeItineraries() {
         Office office = homeOffice();
-        Set<String> points = officePoints(office);
-        if (points.isEmpty()) {
+        if (officePoints(office).isEmpty()) {
             throw new BadRequestAlertException(
                 "Văn phòng " + office.getName() + " chưa cấu hình điểm lộ trình",
                 ENTITY,
                 "itineraryPointMissing"
             );
         }
+        return reportItineraries(office);
+    }
+
+    private List<VehicleBoardDtos.ItineraryOption> reportItineraries(Office office) {
+        Set<String> configured = configuredCodes(office);
         List<VehicleBoardDtos.ItineraryOption> out = new ArrayList<>();
-        for (Itinerary it : itineraryRepository.findFiltered(null, true)) {
-            String[] ends = itineraryEnds(it.getCode());
-            if (ends != null && (points.contains(ends[0]) || points.contains(ends[1]))) {
+        for (Itinerary it : pointItineraries(office)) {
+            if (configured.isEmpty() || configured.contains(it.getCode())) {
                 out.add(new VehicleBoardDtos.ItineraryOption(it.getCode(), firstNonBlank(it.getName(), it.getCode())));
             }
         }
-        out.sort(Comparator.comparing(VehicleBoardDtos.ItineraryOption::name, Comparator.nullsLast(Comparator.naturalOrder())));
         return out;
+    }
+
+    /** Lộ trình đang hoạt động có điểm đầu hoặc điểm cuối là điểm của VP, sắp theo tên. */
+    private List<Itinerary> pointItineraries(Office office) {
+        Set<String> points = officePoints(office);
+        List<Itinerary> out = new ArrayList<>();
+        if (points.isEmpty()) {
+            return out;
+        }
+        for (Itinerary it : itineraryRepository.findFiltered(null, true)) {
+            String[] ends = itineraryEnds(it.getCode());
+            if (ends != null && (points.contains(ends[0]) || points.contains(ends[1]))) {
+                out.add(it);
+            }
+        }
+        out.sort(Comparator.comparing(it -> firstNonBlank(it.getName(), it.getCode()), Comparator.nullsLast(Comparator.naturalOrder())));
+        return out;
+    }
+
+    private Set<String> configuredCodes(Office office) {
+        return office.getId() == null ? Set.of() : new HashSet<>(officeItineraryRepository.findCodesByOfficeId(office.getId()));
+    }
+
+    /** Danh mục VP: lộ trình VP báo giờ (chọn trong các lộ trình qua điểm của VP). */
+    @Transactional(readOnly = true)
+    public VehicleBoardDtos.ItineraryConfig itineraryConfig(Long officeId) {
+        staffAccessService.requireScreenRead(ScreenKey.MASTER);
+        Office office = officeById(officeId);
+        Set<String> configured = configuredCodes(office);
+        List<VehicleBoardDtos.ConfigOption> options = pointItineraries(office)
+            .stream()
+            .map(it ->
+                new VehicleBoardDtos.ConfigOption(
+                    it.getCode(),
+                    firstNonBlank(it.getName(), it.getCode()),
+                    configured.contains(it.getCode())
+                )
+            )
+            .toList();
+        return new VehicleBoardDtos.ItineraryConfig(office.getId(), office.getName(), options);
+    }
+
+    /** Ghi: screen Master (StaffWriteGuardFilter, prefix /api/offices). Danh sách rỗng = bỏ cấu hình, hiện mọi lộ trình qua điểm VP. */
+    public VehicleBoardDtos.ItineraryConfig saveItineraryConfig(Long officeId, VehicleBoardDtos.ItineraryConfigRequest req) {
+        Office office = officeById(officeId);
+        Set<String> allowed = new HashSet<>();
+        pointItineraries(office).forEach(it -> allowed.add(it.getCode()));
+        Set<String> codes = new LinkedHashSet<>();
+        if (req != null && req.itineraryCodes() != null) {
+            for (String raw : req.itineraryCodes()) {
+                String code = trimToNull(raw);
+                if (code == null) {
+                    continue;
+                }
+                if (!allowed.contains(code)) {
+                    throw new BadRequestAlertException(
+                        "Lộ trình " + code + " không đi qua điểm của văn phòng",
+                        ENTITY,
+                        "itineraryNotRelated"
+                    );
+                }
+                codes.add(code);
+            }
+        }
+        officeItineraryRepository.deleteByOfficeId(office.getId());
+        officeItineraryRepository.flush();
+        codes.forEach(c -> officeItineraryRepository.save(new OfficeVehicleItinerary(office.getId(), c)));
+        return itineraryConfig(officeId);
+    }
+
+    private Office officeById(Long officeId) {
+        return officeRepository
+            .findById(officeId)
+            .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy văn phòng", ENTITY, "officeNotFound"));
     }
 
     /** Mọi xe CRM của lộ trình xuất bến hôm nay (giờ VN), kèm giờ đã báo đến/rời tại VP gốc của NV. */
@@ -177,6 +265,10 @@ public class VehicleBoardService {
         String[] ends = itineraryEnds(itinerary.getCode());
         if (!points.isEmpty() && (ends == null || !(points.contains(ends[0]) || points.contains(ends[1])))) {
             throw new BadRequestAlertException("Lộ trình không đi qua văn phòng của bạn", ENTITY, "itineraryNotRelated");
+        }
+        Set<String> configured = configuredCodes(office);
+        if (!configured.isEmpty() && !configured.contains(itinerary.getCode())) {
+            throw new BadRequestAlertException("Lộ trình không thuộc danh sách báo giờ của văn phòng", ENTITY, "itineraryNotRelated");
         }
         LocalDate today = LocalDate.now(VN);
         List<AvailableTripDTO> trips = availableTripSearchService.searchWindow(itinerary, today.atStartOfDay(), today.atTime(23, 59, 59));
@@ -364,10 +456,13 @@ public class VehicleBoardService {
                 )
             )
             .toList();
-        return new VehicleBoardDtos.Report(items);
+        List<VehicleBoardDtos.ItineraryOption> itineraries = office == null
+            ? List.of()
+            : officeRepository.findOneByCode(office).map(this::reportItineraries).orElse(List.of());
+        return new VehicleBoardDtos.Report(items, itineraries);
     }
 
-    private void appendCrm(List<Candidate> candidates, Set<String> points, LocalDate today) {
+    private void appendCrm(List<Candidate> candidates, Set<String> points, Set<String> configured, LocalDate today) {
         Set<String> tripPlates = new HashSet<>();
         for (Candidate c : candidates) {
             if (c.plate() != null) {
@@ -377,7 +472,7 @@ public class VehicleBoardService {
         Set<String> seen = new HashSet<>();
         for (Itinerary it : itineraryRepository.findFiltered(null, true)) {
             String[] ends = itineraryEnds(it.getCode());
-            if (ends == null) {
+            if (ends == null || (!configured.isEmpty() && !configured.contains(it.getCode()))) {
                 continue;
             }
             EventType type;

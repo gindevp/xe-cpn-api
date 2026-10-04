@@ -7,7 +7,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/vehicle-events")
+@RequestMapping("/api")
 public class VehicleEventResource {
 
     private final VehicleBoardService vehicleBoardService;
@@ -16,23 +16,38 @@ public class VehicleEventResource {
         this.vehicleBoardService = vehicleBoardService;
     }
 
-    @GetMapping("/board")
+    /** Danh mục VP: lộ trình VP báo giờ xe đến/đi. */
+    @GetMapping("/offices/{officeId}/vehicle-itineraries")
+    public VehicleBoardDtos.ItineraryConfig itineraryConfig(@PathVariable Long officeId) {
+        return vehicleBoardService.itineraryConfig(officeId);
+    }
+
+    /** Ghi: screen Master (StaffWriteGuardFilter, prefix /api/offices). */
+    @PutMapping("/offices/{officeId}/vehicle-itineraries")
+    public VehicleBoardDtos.ItineraryConfig saveItineraryConfig(
+        @PathVariable Long officeId,
+        @RequestBody VehicleBoardDtos.ItineraryConfigRequest body
+    ) {
+        return vehicleBoardService.saveItineraryConfig(officeId, body);
+    }
+
+    @GetMapping("/vehicle-events/board")
     public VehicleBoardDtos.Board board() {
         return vehicleBoardService.board();
     }
 
     /** Theo dõi quản trị (screen bao-gio-xe). officeCode bỏ trống = toàn hệ thống. */
-    @GetMapping("/itineraries")
+    @GetMapping("/vehicle-events/itineraries")
     public java.util.List<VehicleBoardDtos.ItineraryOption> itineraries() {
         return vehicleBoardService.officeItineraries();
     }
 
-    @GetMapping("/day-trips")
+    @GetMapping("/vehicle-events/day-trips")
     public VehicleBoardDtos.DayBoard dayTrips(@RequestParam String itineraryCode) {
         return vehicleBoardService.dayTrips(itineraryCode);
     }
 
-    @GetMapping("/report")
+    @GetMapping("/vehicle-events/report")
     public VehicleBoardDtos.Report reportList(
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
@@ -42,7 +57,7 @@ public class VehicleEventResource {
     }
 
     /** Ghi: NV có quyền Lên hàng hoặc Xuống hàng (StaffWriteGuardFilter). Báo lại cùng chuyến trả về giờ đã ghi. */
-    @PostMapping
+    @PostMapping("/vehicle-events")
     public VehicleBoardDtos.Item report(@RequestBody VehicleBoardDtos.ReportRequest body) {
         return vehicleBoardService.report(body);
     }

@@ -20,6 +20,8 @@ import com.mycompany.myapp.domain.Vehicle;
 import com.mycompany.myapp.domain.VehicleOfficeEvent;
 import com.mycompany.myapp.domain.VehicleOfficeEvent.EventType;
 import com.mycompany.myapp.repository.ItineraryRepository;
+import com.mycompany.myapp.repository.OfficeRepository;
+import com.mycompany.myapp.repository.OfficeVehicleItineraryRepository;
 import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
 import com.mycompany.myapp.security.StaffAccessService;
@@ -63,6 +65,12 @@ class VehicleBoardServiceTest {
     @Mock
     private StaffAccessService staffAccessService;
 
+    @Mock
+    private OfficeVehicleItineraryRepository officeItineraryRepository;
+
+    @Mock
+    private OfficeRepository officeRepository;
+
     private VehicleBoardService service;
     private Office ga;
     private Office yb;
@@ -75,7 +83,9 @@ class VehicleBoardServiceTest {
             eventRepository,
             availableTripSearchService,
             vthkClient,
-            staffAccessService
+            staffAccessService,
+            officeItineraryRepository,
+            officeRepository
         );
         ga = office(1L, "GA");
         yb = office(2L, "YB");
@@ -349,6 +359,60 @@ class VehicleBoardServiceTest {
         loginAt(yb);
 
         assertThatThrownBy(() -> service.dayTrips("GA-TB")).isInstanceOf(BadRequestAlertException.class);
+    }
+
+    @Test
+    void officeItinerariesFollowOfficeConfig() {
+        ga.setItineraryPoint("GA");
+        when(itineraryRepository.findFiltered(null, true)).thenReturn(
+            List.of(itinerary("GA-NB", "GA - NB"), itinerary("GA-YB", "GA - YB"), itinerary("NB-GA", "NB - GA"))
+        );
+        when(officeItineraryRepository.findCodesByOfficeId(1L)).thenReturn(List.of("GA-NB"));
+        loginAt(ga);
+
+        assertThat(service.officeItineraries()).extracting(VehicleBoardDtos.ItineraryOption::code).containsExactly("GA-NB");
+    }
+
+    @Test
+    void dayTripsRejectsItineraryOutsideOfficeConfig() {
+        ga.setItineraryPoint("GA");
+        when(availableTripSearchService.resolveItinerary("GA-YB")).thenReturn(itinerary("GA-YB", "GA - YB"));
+        when(officeItineraryRepository.findCodesByOfficeId(1L)).thenReturn(List.of("GA-NB"));
+        loginAt(ga);
+
+        assertThatThrownBy(() -> service.dayTrips("GA-YB")).isInstanceOf(BadRequestAlertException.class);
+    }
+
+    @Test
+    void saveConfigRejectsItineraryNotThroughOfficePoint() {
+        ga.setItineraryPoint("GA");
+        when(officeRepository.findById(1L)).thenReturn(Optional.of(ga));
+        when(itineraryRepository.findFiltered(null, true)).thenReturn(
+            List.of(itinerary("GA-NB", "GA - NB"), itinerary("YB-HD", "YB - HĐ"))
+        );
+
+        assertThatThrownBy(() -> service.saveItineraryConfig(1L, new VehicleBoardDtos.ItineraryConfigRequest(List.of("YB-HD")))
+        ).isInstanceOf(BadRequestAlertException.class);
+        verify(officeItineraryRepository, never()).deleteByOfficeId(any());
+    }
+
+    @Test
+    void saveConfigReplacesSelection() {
+        ga.setItineraryPoint("GA");
+        when(officeRepository.findById(1L)).thenReturn(Optional.of(ga));
+        when(itineraryRepository.findFiltered(null, true)).thenReturn(
+            List.of(itinerary("GA-NB", "GA - NB"), itinerary("GA-YB", "GA - YB"))
+        );
+        when(officeItineraryRepository.findCodesByOfficeId(1L)).thenReturn(List.of("GA-NB"));
+
+        VehicleBoardDtos.ItineraryConfig cfg = service.saveItineraryConfig(
+            1L,
+            new VehicleBoardDtos.ItineraryConfigRequest(List.of("GA-NB", " "))
+        );
+
+        verify(officeItineraryRepository).deleteByOfficeId(1L);
+        verify(officeItineraryRepository).save(any());
+        assertThat(cfg.options()).extracting(VehicleBoardDtos.ConfigOption::selected).containsExactly(true, false);
     }
 
     @Test
