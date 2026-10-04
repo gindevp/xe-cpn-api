@@ -41,4 +41,21 @@ class VtechAutoCallClientTest {
         assertThat(VtechAutoCallClient.normalizeBaseUrl(null)).isEqualTo("https://api.tongdai.ai/api/external/v1");
         assertThat(VtechAutoCallClient.normalizeBaseUrl(" https://x.ai/v1/ ")).isEqualTo("https://x.ai/v1");
     }
+
+    @Test
+    void normalizeBaseUrl_stripsPastedImportPath() {
+        assertThat(VtechAutoCallClient.normalizeBaseUrl("https://api.tongdai.ai/api/external/v1/contacts/import")).isEqualTo(
+            "https://api.tongdai.ai/api/external/v1"
+        );
+        assertThat(VtechAutoCallClient.normalizeBaseUrl("https://api.tongdai.ai/api/external/v1/contacts/import/")).isEqualTo(
+            "https://api.tongdai.ai/api/external/v1"
+        );
+    }
+
+    @Test
+    void toResult_notFound_explainsBaseUrl() {
+        Result r = client.toResult(404, "");
+        assertThat(r.code()).isEqualTo("HTTP_404");
+        assertThat(r.message()).contains("Base URL").contains("https://api.tongdai.ai/api/external/v1");
+    }
 }

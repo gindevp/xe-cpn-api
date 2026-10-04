@@ -25,6 +25,7 @@ import org.springframework.stereotype.Component;
 public class VtechAutoCallClient {
 
     public static final String DEFAULT_BASE_URL = "https://api.tongdai.ai/api/external/v1";
+    private static final String IMPORT_PATH = "/contacts/import";
 
     private static final Logger LOG = LoggerFactory.getLogger(VtechAutoCallClient.class);
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(30);
@@ -72,7 +73,16 @@ public class VtechAutoCallClient {
 
     public static String normalizeBaseUrl(String baseUrl) {
         String b = baseUrl == null || baseUrl.isBlank() ? DEFAULT_BASE_URL : baseUrl.trim();
-        return b.endsWith("/") ? b.substring(0, b.length() - 1) : b;
+        while (b.endsWith("/")) {
+            b = b.substring(0, b.length() - 1);
+        }
+        if (b.toLowerCase(java.util.Locale.ROOT).endsWith(IMPORT_PATH)) {
+            b = b.substring(0, b.length() - IMPORT_PATH.length());
+        }
+        while (b.endsWith("/")) {
+            b = b.substring(0, b.length() - 1);
+        }
+        return b.isEmpty() ? DEFAULT_BASE_URL : b;
     }
 
     private Result post(String baseUrl, String apiKey, Map<String, Object> body) {
@@ -116,6 +126,9 @@ public class VtechAutoCallClient {
         }
         JsonNode err = json != null && json.has("error") && json.get("error").isObject() ? json.get("error") : json;
         String message = err != null && err.hasNonNull("message") ? err.get("message").asText() : truncate(rawBody);
+        if (status == 404 && (message == null || message.isBlank())) {
+            message = "Sai Base URL Vtech (HTTP 404) — dùng " + DEFAULT_BASE_URL;
+        }
         String code = status == 401 || status == 403
             ? "INVALID_API_KEY"
             : err != null && err.hasNonNull("code") ? err.get("code").asText() : "HTTP_" + status;
