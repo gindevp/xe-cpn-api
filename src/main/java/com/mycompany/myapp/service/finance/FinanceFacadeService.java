@@ -743,7 +743,7 @@ public class FinanceFacadeService {
     }
 
     /** Cùng quy tắc {@link #resolveCustomerPaidAtForOrder} nhưng cho cả lô đơn (2 query). */
-    private Map<Long, Instant> customerPaidAtByOrderIds(Set<Long> orderIds) {
+    Map<Long, Instant> customerPaidAtByOrderIds(Set<Long> orderIds) {
         Map<Long, Instant> out = new HashMap<>();
         if (orderIds.isEmpty()) {
             return out;

@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class StaffDepositServiceTest {
@@ -65,6 +66,16 @@ class StaffDepositServiceTest {
         assertThat(m.get("A1").portion()).isNull();
         assertThat(m.get("A1").collectedAt()).isEqualTo(early);
         assertThat(m.get("D4").portion()).isEqualTo("DELIVERY");
+    }
+
+    @Test
+    void receiptDateIsLatestCustomerPaymentElseCreatedAt() {
+        Instant created = Instant.parse("2026-10-04T05:00:00Z");
+        Instant paid1 = Instant.parse("2026-10-02T09:00:00Z");
+        Instant paid2 = Instant.parse("2026-10-03T16:30:00Z");
+        assertThat(StaffDepositService.receiptDate(Set.of(1L, 2L, 3L), Map.of(1L, paid1, 2L, paid2), created)).isEqualTo(paid2);
+        assertThat(StaffDepositService.receiptDate(Set.of(3L), Map.of(1L, paid1), created)).isEqualTo(created);
+        assertThat(StaffDepositService.renderContent("{MA_NV} {NGAY}", "nv", "A", "PT", "VP", paid2)).isEqualTo("NV 031026");
     }
 
     private static CandidateDTO cand(String code, String due, String portion, String owner, Instant at) {

@@ -29,10 +29,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
@@ -184,25 +186,34 @@ public class StaffDepositService {
             return List.of();
         }
         Map<Long, Long> counts = new LinkedHashMap<>();
+        Map<Long, Set<Long>> orderIdsByReceipt = new HashMap<>();
         for (var l : receiptOrderLineRepository.findByReceiptIdsWithOrder(rows.stream().map(ReceiptListRow::id).toList())) {
             counts.merge(l.getReceipt().getId(), 1L, Long::sum);
+            if (l.getOrder() != null && l.getOrder().getId() != null) {
+                orderIdsByReceipt.computeIfAbsent(l.getReceipt().getId(), k -> new HashSet<>()).add(l.getOrder().getId());
+            }
         }
+        Set<Long> allOrderIds = new HashSet<>();
+        orderIdsByReceipt.values().forEach(allOrderIds::addAll);
+        Map<Long, Instant> paidAt = financeFacadeService.customerPaidAtByOrderIds(allOrderIds);
         IntegrationConfig cfg = currentConfig();
         StaffProfile me = staffProfileRepository.findOneByUserLoginIgnoreCase(login).orElse(null);
         Map<String, String> officeIds = new HashMap<>();
         List<MyReceipt> out = new ArrayList<>();
         for (ReceiptListRow r : rows) {
+            Instant receiptDate = receiptDate(orderIdsByReceipt.getOrDefault(r.id(), Set.of()), paidAt, r.createdAt());
             out.add(
                 new MyReceipt(
                     r.receiptCode(),
                     r.totalAmount(),
                     r.createdAt(),
+                    receiptDate,
                     counts.getOrDefault(r.id(), 0L).intValue(),
                     r.confirmedAt(),
                     r.confirmedByUsername(),
                     Boolean.TRUE.equals(r.hasTransferProof()),
                     Boolean.TRUE.equals(r.hasConfirmProof()),
-                    transferInfo(cfg, me, login, r.receiptCode(), r.officeCode(), r.createdAt(), r.totalAmount(), officeIds)
+                    transferInfo(cfg, me, login, r.receiptCode(), r.officeCode(), receiptDate, r.totalAmount(), officeIds)
                 )
             );
         }
@@ -295,11 +306,34 @@ public class StaffDepositService {
 
     // ---------------------------------------------------------------- helpers
 
+    /**
+     * "Ngày phiếu thu" như màn Danh sách phiếu thu web: lần khách trả tiền muộn nhất trong các đơn của phiếu, chưa có thì
+     * ngày lập phiếu.
+     */
+    static Instant receiptDate(Set<Long> orderIds, Map<Long, Instant> paidAt, Instant createdAt) {
+        Instant latest = null;
+        for (Long id : orderIds) {
+            Instant p = paidAt.get(id);
+            if (p != null && (latest == null || p.isAfter(latest))) {
+                latest = p;
+            }
+        }
+        return latest != null ? latest : createdAt;
+    }
+
     private MyReceipt toMyReceipt(Receipt r, int orderCount, IntegrationConfig cfg, StaffProfile me) {
+        Set<Long> orderIds = new HashSet<>();
+        for (var l : receiptOrderLineRepository.findByReceipt_Id(r.getId())) {
+            if (l.getOrder() != null && l.getOrder().getId() != null) {
+                orderIds.add(l.getOrder().getId());
+            }
+        }
+        Instant receiptDate = receiptDate(orderIds, financeFacadeService.customerPaidAtByOrderIds(orderIds), r.getCreatedAt());
         return new MyReceipt(
             r.getReceiptCode(),
             r.getTotalAmount(),
             r.getCreatedAt(),
+            receiptDate,
             orderCount,
             r.getConfirmedAt(),
             r.getConfirmedByUsername(),
@@ -311,7 +345,7 @@ public class StaffDepositService {
                 currentLogin(),
                 r.getReceiptCode(),
                 r.getOffice() != null ? r.getOffice().getCode() : null,
-                r.getCreatedAt(),
+                receiptDate,
                 r.getTotalAmount(),
                 new HashMap<>()
             )
@@ -464,6 +498,8 @@ public class StaffDepositService {
         String receiptCode,
         BigDecimal totalAmount,
         Instant createdAt,
+        /** Ngày phiếu thu như web (ngày khách trả tiền); dùng cho "Ngày nộp" trên app và {NGAY} trong nội dung CK. */
+        Instant receiptDate,
         int orderCount,
         Instant confirmedAt,
         String confirmedBy,
