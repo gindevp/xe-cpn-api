@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261004230000-inventory-check-session-key" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="inventory_check" columnName="session_key"/>
+            </not>
+        </preConditions>
+        <comment>Mã phiên kiểm kho trên app — ghép ảnh kiện đã upload trong lúc quét</comment>
+        <addColumn tableName="inventory_check">
+            <column name="session_key" type="varchar(64)"/>
+        </addColumn>
+        <createIndex tableName="inventory_check" indexName="ix_inventory_check_session">
+            <column name="session_key"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20261004230000-inventory-check-photo" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="inventory_check_photo"/>
+            </not>
+        </preConditions>
+        <comment>Ảnh kiện chụp khi quét kiểm kho (bằng chứng đối soát)</comment>
+        <createTable tableName="inventory_check_photo">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="session_key" type="varchar(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="office_code" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="order_code" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="package_seq" type="int">
+                <constraints nullable="false"/>
+            </column>
+            <column name="photo_url" type="longtext">
+                <constraints nullable="false"/>
+            </column>
+            <column name="captured_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="captured_by_username" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <createIndex tableName="inventory_check_photo" indexName="ix_inventory_check_photo_session_order">
+            <column name="session_key"/>
+            <column name="order_code"/>
+        </createIndex>
+        <createIndex tableName="inventory_check_photo" indexName="ix_inventory_check_photo_captured">
+            <column name="captured_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

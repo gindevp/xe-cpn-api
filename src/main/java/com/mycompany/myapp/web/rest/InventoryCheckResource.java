@@ -37,4 +37,20 @@ public class InventoryCheckResource {
         InventoryCheckDTO created = inventoryCheckService.create(request);
         return ResponseEntity.created(new URI("/api/inventory-checks/" + created.getId())).body(created);
     }
+
+    @PostMapping("/photos")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void uploadPhoto(@RequestBody InventoryCheckService.UploadPhotoRequest request) {
+        inventoryCheckService.uploadPhoto(request);
+    }
+
+    @GetMapping("/{id}/photo-orders")
+    public List<InventoryCheckService.PhotoOrderCount> photoOrders(@PathVariable Long id) {
+        return inventoryCheckService.photoOrders(id);
+    }
+
+    @GetMapping("/{id}/photos")
+    public List<InventoryCheckService.PhotoDTO> photos(@PathVariable Long id, @RequestParam String orderCode) {
+        return inventoryCheckService.photos(id, orderCode);
+    }
 }

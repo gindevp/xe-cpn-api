@@ -71,6 +71,18 @@ public class InventoryCheck implements Serializable {
     @Column(name = "missing_codes_json")
     private String missingCodesJson;
 
+    @Size(max = 64)
+    @Column(name = "session_key", length = 64)
+    private String sessionKey;
+
+    public String getSessionKey() {
+        return sessionKey;
+    }
+
+    public void setSessionKey(String sessionKey) {
+        this.sessionKey = sessionKey;
+    }
+
     public Long getId() {
         return id;
     }

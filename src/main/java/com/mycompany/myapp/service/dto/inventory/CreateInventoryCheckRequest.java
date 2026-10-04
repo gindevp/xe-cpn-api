@@ -24,6 +24,18 @@ public class CreateInventoryCheckRequest {
     /** ISO-8601 optional; default now. */
     private String checkedAt;
 
+    /** Mã phiên quét trên app — ảnh kiện upload trong phiên mang cùng mã. */
+    @Size(max = 64)
+    private String sessionKey;
+
+    public String getSessionKey() {
+        return sessionKey;
+    }
+
+    public void setSessionKey(String sessionKey) {
+        this.sessionKey = sessionKey;
+    }
+
     public String getOfficeCode() {
         return officeCode;
     }
