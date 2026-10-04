@@ -729,7 +729,8 @@ public class FinanceFacadeService {
                 names
                     .computeIfAbsent("U:" + row.createdByUsername(), k -> Optional.ofNullable(staffNameOf(row.createdByUsername(), false)))
                     .orElse(null),
-                Boolean.TRUE.equals(row.hasTransferProof())
+                Boolean.TRUE.equals(row.hasTransferProof()),
+                row.confirmNote()
             );
         });
     }
@@ -785,15 +786,20 @@ public class FinanceFacadeService {
         if (proof == null || proof.isBlank()) {
             throw new BadRequestAlertException("Transaction proof image is required", ENTITY, "receiptProofRequired");
         }
+        String note = body != null && notBlank(body.note()) ? body.note().trim() : null;
+        if (note != null && note.length() > 1000) {
+            throw new BadRequestAlertException("Confirm note too long", ENTITY, "receiptNoteTooLong");
+        }
         receipt.setConfirmedAt(Instant.now());
         receipt.setConfirmedByUsername(actor());
         receipt.setConfirmProofImage(proof.trim());
+        receipt.setConfirmNote(note);
         receipt = receiptRepository.save(receipt);
         auditRecorder.record(
             "RECEIPT_CONFIRM",
             AUDIT_RECEIPT,
             receipt.getReceiptCode(),
-            "Người nộp: " + receipt.getPayerName() + " · " + money(receipt.getTotalAmount())
+            "Người nộp: " + receipt.getPayerName() + " · " + money(receipt.getTotalAmount()) + (note != null ? " · ND: " + note : "")
         );
         return toReceiptDto(receipt, receiptOrderLineRepository.findByReceipt_Id(receipt.getId()));
     }
@@ -822,6 +828,7 @@ public class FinanceFacadeService {
         receipt.setConfirmedAt(null);
         receipt.setConfirmedByUsername(null);
         receipt.setConfirmProofImage(null);
+        receipt.setConfirmNote(null);
         receipt = receiptRepository.save(receipt);
         auditRecorder.record(
             "RECEIPT_UNCONFIRM",
@@ -1187,7 +1194,8 @@ public class FinanceFacadeService {
             notBlank(r.getConfirmProofImage()) || notBlank(r.getTransferProofImage()),
             staffNameOf(r.getPayerCode(), true),
             staffNameOf(r.getCreatedByUsername(), false),
-            notBlank(r.getTransferProofImage())
+            notBlank(r.getTransferProofImage()),
+            r.getConfirmNote()
         );
     }
 
@@ -1419,7 +1427,7 @@ public class FinanceFacadeService {
 
     public record CreateReceiptRequest(String payerName, String payerCode, String officeCode, List<ReceiptLineRequest> lines) {}
 
-    public record ConfirmReceiptRequest(String proofImage) {}
+    public record ConfirmReceiptRequest(String proofImage, String note) {}
 
     public record ReceiptDTO(
         Long id,
@@ -1442,7 +1450,9 @@ public class FinanceFacadeService {
         String payerDisplayName,
         String createdByDisplayName,
         /** NV đã gửi ảnh chuyển khoản từ app — KT xác nhận có thể dùng luôn ảnh này. */
-        boolean hasTransferProof
+        boolean hasTransferProof,
+        /** Nội dung nhập khi xác nhận thu (cấn trừ, ghi chú). */
+        String confirmNote
     ) {}
 
     public record DayClosureDTO(

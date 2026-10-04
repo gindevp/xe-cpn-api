@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261004193000-receipt-confirm-note" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="receipt" columnName="confirm_note"/>
+            </not>
+        </preConditions>
+        <comment>Nội dung AD/KT nhập khi xác nhận thu (cấn trừ, ghi chú)</comment>
+        <addColumn tableName="receipt">
+            <column name="confirm_note" type="varchar(1000)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

@@ -49,7 +49,7 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long>, JpaSpec
         "select new com.mycompany.myapp.repository.ReceiptListRow(r.id, r.receiptCode, r.payerName, r.payerCode, r.totalAmount," +
         " r.createdAt, r.createdByUsername, o.code, r.confirmedAt, r.confirmedByUsername," +
         " case when r.confirmProofImage is null and r.transferProofImage is null then false else true end," +
-        " case when r.transferProofImage is null then false else true end)" +
+        " case when r.transferProofImage is null then false else true end, r.confirmNote)" +
         " from Receipt r left join r.office o";
 
     /** Danh sách phiếu thu không đọc cột ảnh chứng từ (LONGTEXT ~50–100KB/phiếu) — chỉ trả cờ có ảnh. */

@@ -61,6 +61,11 @@ public class Receipt implements Serializable {
     @Column(name = "confirm_proof_image")
     private String confirmProofImage;
 
+    /** Nội dung AD/KT nhập khi xác nhận thu (cấn trừ, ghi chú). */
+    @Size(max = 1000)
+    @Column(name = "confirm_note", length = 1000)
+    private String confirmNote;
+
     /** Ảnh chuyển khoản NV tự gửi khi nộp tiền trên app (data-URL). */
     @Lob
     @Column(name = "transfer_proof_image")
@@ -197,6 +202,14 @@ public class Receipt implements Serializable {
 
     public void setConfirmProofImage(String confirmProofImage) {
         this.confirmProofImage = confirmProofImage;
+    }
+
+    public String getConfirmNote() {
+        return this.confirmNote;
+    }
+
+    public void setConfirmNote(String confirmNote) {
+        this.confirmNote = confirmNote;
     }
 
     public Receipt confirmProofImage(String confirmProofImage) {

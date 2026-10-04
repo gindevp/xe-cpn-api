@@ -15,5 +15,6 @@ public record ReceiptListRow(
     Instant confirmedAt,
     String confirmedByUsername,
     Boolean hasConfirmProof,
-    Boolean hasTransferProof
+    Boolean hasTransferProof,
+    String confirmNote
 ) {}

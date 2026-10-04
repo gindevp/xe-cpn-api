@@ -358,6 +358,48 @@ class FinanceFacadeServiceReceiptCodTest {
     }
 
     @Test
+    void confirmReceipt_savesNote_andUnconfirmClearsIt() {
+        Receipt receipt = new Receipt();
+        receipt.setId(7L);
+        receipt.setReceiptCode("PT-7");
+        receipt.setPayerName("NV A");
+        receipt.setTotalAmount(new BigDecimal("80000"));
+        when(receiptRepository.findOneByReceiptCode("PT-7")).thenReturn(Optional.of(receipt));
+        when(receiptOrderLineRepository.findByReceipt_Id(any())).thenReturn(List.of());
+
+        ReceiptDTO dto = service.confirmReceipt(
+            "PT-7",
+            new FinanceFacadeService.ConfirmReceiptRequest("data:img", "  Cấn trừ 20k đơn X  ")
+        );
+
+        assertThat(dto.confirmNote()).isEqualTo("Cấn trừ 20k đơn X");
+        verify(auditRecorder).record(
+            eq("RECEIPT_CONFIRM"),
+            eq("Receipt"),
+            eq("PT-7"),
+            org.mockito.ArgumentMatchers.contains("Cấn trừ 20k")
+        );
+
+        service.unconfirmReceipt("PT-7");
+        assertThat(receipt.getConfirmNote()).isNull();
+    }
+
+    @Test
+    void confirmReceipt_rejectsNoteOver1000() {
+        Receipt receipt = new Receipt();
+        receipt.setReceiptCode("PT-8");
+        when(receiptRepository.findOneByReceiptCode("PT-8")).thenReturn(Optional.of(receipt));
+
+        assertThatThrownBy(() ->
+            service.confirmReceipt("PT-8", new FinanceFacadeService.ConfirmReceiptRequest("data:img", "x".repeat(1001)))
+        )
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("receiptNoteTooLong");
+        verify(receiptRepository, never()).save(any());
+    }
+
+    @Test
     void cancelReceipt_reversesOnlyReceiptPaymentsAndAudits() {
         when(staffAccessService.isSystemAdmin()).thenReturn(true);
         Instant at = Instant.parse("2025-05-01T03:00:00Z");
