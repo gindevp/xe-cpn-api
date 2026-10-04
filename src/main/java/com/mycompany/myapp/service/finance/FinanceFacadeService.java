@@ -40,6 +40,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -745,12 +746,33 @@ public class FinanceFacadeService {
         });
     }
 
+    /** Ảnh KT xác nhận (ảnh đầu + ảnh thêm); chưa xác nhận thì ảnh chuyển khoản NV gửi. */
     @Transactional(readOnly = true)
-    public String receiptProofImage(String receiptCode) {
+    public List<String> receiptProofImages(String receiptCode) {
         if (receiptCode == null || receiptCode.isBlank()) {
             throw new BadRequestAlertException("receiptCode is required", ENTITY, "receiptCodeRequired");
         }
-        return receiptRepository.findProofImageByCode(receiptCode.trim()).orElse(null);
+        Receipt r = receiptRepository.findOneByReceiptCode(receiptCode.trim()).orElse(null);
+        if (r == null) {
+            return List.of();
+        }
+        if (notBlank(r.getConfirmProofImage())) {
+            List<String> out = new ArrayList<>();
+            out.add(r.getConfirmProofImage());
+            out.addAll(splitProofExtra(r.getConfirmProofExtra()));
+            return out;
+        }
+        return notBlank(r.getTransferProofImage()) ? List.of(r.getTransferProofImage()) : List.of();
+    }
+
+    static final int MAX_CONFIRM_PROOFS = 5;
+    private static final int MAX_PROOF_LENGTH = 2_500_000;
+
+    static List<String> splitProofExtra(String extra) {
+        if (extra == null || extra.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(extra.split("\n")).map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 
     /** Cùng quy tắc {@link #resolveCustomerPaidAtForOrder} nhưng cho cả lô đơn (2 query). */
@@ -780,8 +802,17 @@ public class FinanceFacadeService {
         if (receiptCode == null || receiptCode.isBlank()) {
             throw new BadRequestAlertException("receiptCode is required", ENTITY, "receiptCodeRequired");
         }
-        String proof = body != null ? body.proofImage() : null;
-        if (proof != null && proof.length() > 2_500_000) {
+        List<String> proofs = new ArrayList<>();
+        if (body != null && body.proofImages() != null) {
+            body.proofImages().stream().filter(FinanceFacadeService::notBlank).map(String::trim).forEach(proofs::add);
+        }
+        if (proofs.isEmpty() && body != null && notBlank(body.proofImage())) {
+            proofs.add(body.proofImage().trim());
+        }
+        if (proofs.size() > MAX_CONFIRM_PROOFS) {
+            throw new BadRequestAlertException("Too many proof images", ENTITY, "receiptProofTooMany");
+        }
+        if (proofs.stream().anyMatch(p -> p.length() > MAX_PROOF_LENGTH)) {
             throw new BadRequestAlertException("Proof image too large", ENTITY, "receiptProofTooLarge");
         }
         Receipt receipt = receiptRepository
@@ -790,19 +821,22 @@ public class FinanceFacadeService {
         if (receipt.getConfirmedAt() != null) {
             throw new BadRequestAlertException("Receipt already confirmed", ENTITY, "receiptAlreadyConfirmed");
         }
-        if (proof == null || proof.isBlank()) {
-            proof = receipt.getTransferProofImage();
+        if (proofs.isEmpty() && notBlank(receipt.getTransferProofImage())) {
+            proofs.add(receipt.getTransferProofImage().trim());
         }
-        if (proof == null || proof.isBlank()) {
+        if (proofs.isEmpty()) {
             throw new BadRequestAlertException("Transaction proof image is required", ENTITY, "receiptProofRequired");
         }
+        String proof = proofs.get(0);
+        List<String> extra = proofs.subList(1, proofs.size());
         String note = body != null && notBlank(body.note()) ? body.note().trim() : null;
         if (note != null && note.length() > 1000) {
             throw new BadRequestAlertException("Confirm note too long", ENTITY, "receiptNoteTooLong");
         }
         receipt.setConfirmedAt(Instant.now());
         receipt.setConfirmedByUsername(actor());
-        receipt.setConfirmProofImage(proof.trim());
+        receipt.setConfirmProofImage(proof);
+        receipt.setConfirmProofExtra(extra.isEmpty() ? null : String.join("\n", extra));
         receipt.setConfirmNote(note);
         receipt = receiptRepository.save(receipt);
         auditRecorder.record(
@@ -838,6 +872,7 @@ public class FinanceFacadeService {
         receipt.setConfirmedAt(null);
         receipt.setConfirmedByUsername(null);
         receipt.setConfirmProofImage(null);
+        receipt.setConfirmProofExtra(null);
         receipt.setConfirmNote(null);
         receipt = receiptRepository.save(receipt);
         auditRecorder.record(
@@ -1437,7 +1472,8 @@ public class FinanceFacadeService {
 
     public record CreateReceiptRequest(String payerName, String payerCode, String officeCode, List<ReceiptLineRequest> lines) {}
 
-    public record ConfirmReceiptRequest(String proofImage, String note) {}
+    /** proofImages (tối đa 5) ưu tiên hơn proofImage (1 ảnh, client cũ). */
+    public record ConfirmReceiptRequest(String proofImage, String note, List<String> proofImages) {}
 
     public record ReceiptDTO(
         Long id,

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261004203000-receipt-confirm-proof-extra" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="receipt" columnName="confirm_proof_extra"/>
+            </not>
+        </preConditions>
+        <comment>Ảnh giao dịch thêm khi xác nhận thu (ngoài ảnh đầu ở confirm_proof_image), cách nhau bởi xuống dòng</comment>
+        <addColumn tableName="receipt">
+            <column name="confirm_proof_extra" type="longtext"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

@@ -68,9 +68,9 @@ public class FinanceFacadeResource {
     }
 
     @GetMapping("/api/receipts/{receiptCode}/proof-image")
-    public Map<String, String> proofImage(@PathVariable String receiptCode) {
-        String image = financeFacadeService.receiptProofImage(receiptCode);
-        return image == null ? Map.of() : Map.of("image", image);
+    public Map<String, Object> proofImage(@PathVariable String receiptCode) {
+        java.util.List<String> images = financeFacadeService.receiptProofImages(receiptCode);
+        return images.isEmpty() ? Map.of() : Map.of("image", images.get(0), "images", images);
     }
 
     @PostMapping("/api/receipts")

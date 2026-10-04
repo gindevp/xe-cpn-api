@@ -369,7 +369,7 @@ class FinanceFacadeServiceReceiptCodTest {
 
         ReceiptDTO dto = service.confirmReceipt(
             "PT-7",
-            new FinanceFacadeService.ConfirmReceiptRequest("data:img", "  Cấn trừ 20k đơn X  ")
+            new FinanceFacadeService.ConfirmReceiptRequest("data:img", "  Cấn trừ 20k đơn X  ", null)
         );
 
         assertThat(dto.confirmNote()).isEqualTo("Cấn trừ 20k đơn X");
@@ -385,13 +385,57 @@ class FinanceFacadeServiceReceiptCodTest {
     }
 
     @Test
+    void confirmReceipt_multipleProofs_storedAndReturned_unconfirmClears() {
+        Receipt receipt = new Receipt();
+        receipt.setId(9L);
+        receipt.setReceiptCode("PT-9");
+        receipt.setPayerName("NV A");
+        receipt.setTotalAmount(new BigDecimal("80000"));
+        receipt.setTransferProofImage("data:staff");
+        when(receiptRepository.findOneByReceiptCode("PT-9")).thenReturn(Optional.of(receipt));
+        when(receiptOrderLineRepository.findByReceipt_Id(any())).thenReturn(List.of());
+
+        service.confirmReceipt(
+            "PT-9",
+            new FinanceFacadeService.ConfirmReceiptRequest(null, null, List.of("data:a", " ", "data:b", "data:c"))
+        );
+
+        assertThat(receipt.getConfirmProofImage()).isEqualTo("data:a");
+        assertThat(receipt.getConfirmProofExtra()).isEqualTo("data:b\ndata:c");
+        assertThat(service.receiptProofImages("PT-9")).containsExactly("data:a", "data:b", "data:c");
+
+        service.unconfirmReceipt("PT-9");
+        assertThat(receipt.getConfirmProofImage()).isNull();
+        assertThat(receipt.getConfirmProofExtra()).isNull();
+        assertThat(service.receiptProofImages("PT-9")).containsExactly("data:staff");
+    }
+
+    @Test
+    void confirmReceipt_rejectsMoreThanFiveProofs() {
+        Receipt receipt = new Receipt();
+        receipt.setReceiptCode("PT-10");
+        lenient().when(receiptRepository.findOneByReceiptCode("PT-10")).thenReturn(Optional.of(receipt));
+
+        assertThatThrownBy(() ->
+            service.confirmReceipt(
+                "PT-10",
+                new FinanceFacadeService.ConfirmReceiptRequest(null, null, List.of("1", "2", "3", "4", "5", "6"))
+            )
+        )
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("receiptProofTooMany");
+        verify(receiptRepository, never()).save(any());
+    }
+
+    @Test
     void confirmReceipt_rejectsNoteOver1000() {
         Receipt receipt = new Receipt();
         receipt.setReceiptCode("PT-8");
         when(receiptRepository.findOneByReceiptCode("PT-8")).thenReturn(Optional.of(receipt));
 
         assertThatThrownBy(() ->
-            service.confirmReceipt("PT-8", new FinanceFacadeService.ConfirmReceiptRequest("data:img", "x".repeat(1001)))
+            service.confirmReceipt("PT-8", new FinanceFacadeService.ConfirmReceiptRequest("data:img", "x".repeat(1001), null))
         )
             .isInstanceOf(BadRequestAlertException.class)
             .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())

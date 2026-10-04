@@ -61,6 +61,11 @@ public class Receipt implements Serializable {
     @Column(name = "confirm_proof_image")
     private String confirmProofImage;
 
+    /** Ảnh giao dịch thêm khi xác nhận thu (ngoài confirmProofImage), cách nhau bởi '\n'. */
+    @Lob
+    @Column(name = "confirm_proof_extra")
+    private String confirmProofExtra;
+
     /** Nội dung AD/KT nhập khi xác nhận thu (cấn trừ, ghi chú). */
     @Size(max = 1000)
     @Column(name = "confirm_note", length = 1000)
@@ -202,6 +207,14 @@ public class Receipt implements Serializable {
 
     public void setConfirmProofImage(String confirmProofImage) {
         this.confirmProofImage = confirmProofImage;
+    }
+
+    public String getConfirmProofExtra() {
+        return this.confirmProofExtra;
+    }
+
+    public void setConfirmProofExtra(String confirmProofExtra) {
+        this.confirmProofExtra = confirmProofExtra;
     }
 
     public String getConfirmNote() {

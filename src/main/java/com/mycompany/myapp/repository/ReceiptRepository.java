@@ -87,10 +87,6 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long>, JpaSpec
         " and (:createdFrom is null or r.createdAt >= :createdFrom) and (:createdTo is null or r.createdAt < :createdTo)" +
         " and (:status is null or (:status = 'CONFIRMED' and r.confirmedAt is not null) or (:status = 'PENDING' and r.confirmedAt is null))";
 
-    /** Ảnh KT xác nhận; chưa có thì ảnh chuyển khoản NV gửi. */
-    @Query("select coalesce(r.confirmProofImage, r.transferProofImage) from Receipt r where r.receiptCode = :code")
-    Optional<String> findProofImageByCode(@Param("code") String code);
-
     /** Phiếu NV tự nộp (payerCode = login), mới nhất trước. */
     @Query(LIST_ROW_SELECT + " where lower(r.payerCode) = lower(:payer) and r.createdAt >= :from order by r.id desc")
     List<ReceiptListRow> findPayerRowsSince(@Param("payer") String payer, @Param("from") Instant from);
