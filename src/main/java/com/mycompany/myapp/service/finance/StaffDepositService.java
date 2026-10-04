@@ -89,7 +89,7 @@ public class StaffDepositService {
     @Transactional(readOnly = true)
     public List<MyCandidate> myCandidates() {
         String login = currentLogin();
-        Map<String, Merged> merged = mergeOwn(financeFacadeService.candidates(scopeOffice(login), null), login);
+        Map<String, Merged> merged = mergeOwn(financeFacadeService.candidatesInvolving(login), login);
         if (merged.isEmpty()) {
             return List.of();
         }
@@ -152,7 +152,7 @@ public class StaffDepositService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chưa chọn đơn để nộp");
         }
         String login = currentLogin();
-        Map<String, Merged> own = mergeOwn(financeFacadeService.candidates(scopeOffice(login), null), login);
+        Map<String, Merged> own = mergeOwn(financeFacadeService.candidatesInvolving(login), login);
         List<ReceiptLineRequest> lines = new ArrayList<>();
         for (String raw : orderCodes.stream().filter(s -> s != null && !s.isBlank()).map(String::trim).distinct().toList()) {
             Merged m = own.get(raw);
@@ -414,14 +414,6 @@ public class StaffDepositService {
     }
 
     /** Giống màn Phiếu thu web của NV thường: chỉ đơn thuộc VP được gán; tài khoản toàn hệ thống thì không lọc. */
-    private String scopeOffice(String login) {
-        return staffProfileRepository
-            .findOneByUserLoginIgnoreCase(login)
-            .filter(p -> !Boolean.TRUE.equals(p.getScopeAllOffices()) && p.getOffice() != null)
-            .map(p -> p.getOffice().getCode())
-            .orElse(null);
-    }
-
     private IntegrationConfig currentConfig() {
         return integrationConfigRepository.findAll().stream().findFirst().orElseGet(IntegrationConfig::new);
     }

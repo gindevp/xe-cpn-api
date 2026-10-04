@@ -60,7 +60,15 @@ public final class VehicleBoardDtos {
         String reason
     ) {}
 
-    public record Report(List<ReportItem> events) {}
+    /** {@code itineraries}: lộ trình báo giờ của VP đang xem (rỗng khi xem toàn hệ thống). */
+    public record Report(List<ReportItem> events, List<ItineraryOption> itineraries) {}
+
+    /** Cấu hình lộ trình báo giờ của VP: mọi lộ trình qua điểm của VP, {@code selected} = VP báo giờ lộ trình đó. */
+    public record ItineraryConfig(Long officeId, String officeName, List<ConfigOption> options) {}
+
+    public record ConfigOption(String code, String name, boolean selected) {}
+
+    public record ItineraryConfigRequest(List<String> itineraryCodes) {}
 
     public record ReportRequest(
         String eventType,

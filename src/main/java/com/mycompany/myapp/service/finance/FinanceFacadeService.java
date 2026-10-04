@@ -120,6 +120,22 @@ public class FinanceFacadeService {
 
     @Transactional(readOnly = true)
     public List<CandidateDTO> candidates(String officeCode, String keyword) {
+        return candidates(officeCode, keyword, null);
+    }
+
+    /**
+     * Tiền NV đang giữ ở mọi VP (NV đổi VP vẫn thấy tiền VP cũ). Chỉ quét đơn NV có dính vào — người giữ tiền luôn
+     * suy ra từ actor sự kiện / người thu / NV lấy hàng; lọc đúng chủ nợ do bên gọi làm.
+     */
+    @Transactional(readOnly = true)
+    public List<CandidateDTO> candidatesInvolving(String login) {
+        if (login == null || login.isBlank()) {
+            return List.of();
+        }
+        return candidates(null, null, login.trim().toLowerCase());
+    }
+
+    private List<CandidateDTO> candidates(String officeCode, String keyword, String involvedLogin) {
         // Mỗi đơn tối đa 2 dòng: phần VP gửi (SENDER) và phần giao (DELIVERY) — xem ReceiptSettlement.
         Specification<ShipmentOrder> spec = (root, q, cb) -> {
             var status = root.get("status");
@@ -150,6 +166,19 @@ public class FinanceFacadeService {
                 var atFrom = cb.equal(root.get("fromOffice").get("code"), scoped);
                 var atTo = cb.or(cb.equal(to.get("code"), scoped), cb.equal(fin.get("code"), scoped));
                 return cb.or(atFrom, cb.and(cb.equal(root.get("status"), OrderStatus.DELIVERED), atTo));
+            });
+        }
+        if (involvedLogin != null) {
+            spec = spec.and((root, q, cb) -> {
+                var ev = q.subquery(Long.class);
+                var e = ev.from(OrderEvent.class);
+                ev.select(e.get("id")).where(cb.equal(e.get("order"), root), cb.equal(cb.lower(e.get("actorUsername")), involvedLogin));
+                var pay = q.subquery(Long.class);
+                var p = pay.from(OrderPayment.class);
+                pay
+                    .select(p.get("id"))
+                    .where(cb.equal(p.get("order"), root), cb.equal(cb.lower(p.get("collectorUsername")), involvedLogin));
+                return cb.or(cb.equal(cb.lower(root.get("pickupStaffUsername")), involvedLogin), cb.exists(ev), cb.exists(pay));
             });
         }
         if (keyword != null && !keyword.isBlank()) {
