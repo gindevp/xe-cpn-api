@@ -626,11 +626,16 @@ public class FinanceFacadeService {
     }
 
     /**
-     * Lọc danh sách phiếu thu phía server; {@code day} = ngày lập phiếu (yyyy-MM-dd, giờ VN);
+     * Lọc danh sách phiếu thu phía server theo ngày lập phiếu (yyyy-MM-dd, giờ VN): khoảng {@code dayFrom}–{@code dayTo}
+     * (gồm cả 2 đầu, thiếu 1 đầu thì để mở); {@code day} = 1 ngày (client cũ), dùng khi không gửi khoảng.
      * {@code status} = CONFIRMED (đã thu) / PENDING (chưa thu), khác thì bỏ qua.
      */
-    public record ReceiptListFilter(String code, String payer, String creator, String day, String status) {
-        public static final ReceiptListFilter NONE = new ReceiptListFilter(null, null, null, null, null);
+    public record ReceiptListFilter(String code, String payer, String creator, String day, String status, String dayFrom, String dayTo) {
+        public static final ReceiptListFilter NONE = new ReceiptListFilter(null, null, null, null, null, null, null);
+
+        public ReceiptListFilter(String code, String payer, String creator, String day, String status) {
+            this(code, payer, creator, day, status, null, null);
+        }
     }
 
     private static String statusParam(String status) {
@@ -642,13 +647,33 @@ public class FinanceFacadeService {
         return v == null || v.isBlank() ? null : "%" + v.trim().toLowerCase() + "%";
     }
 
-    private static Instant[] receiptDayRange(ReceiptListFilter f) {
-        if (f.day() == null || f.day().isBlank()) {
-            return new Instant[] { null, null };
+    static Instant[] receiptDayRange(ReceiptListFilter f) {
+        java.time.LocalDate from = parseDay(f.dayFrom());
+        java.time.LocalDate to = parseDay(f.dayTo());
+        if (from == null && to == null) {
+            from = to = parseDay(f.day());
         }
-        java.time.LocalDate d = java.time.LocalDate.parse(f.day().trim());
+        if (from != null && to != null && to.isBefore(from)) {
+            java.time.LocalDate tmp = from;
+            from = to;
+            to = tmp;
+        }
         java.time.ZoneId vn = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
-        return new Instant[] { d.atStartOfDay(vn).toInstant(), d.plusDays(1).atStartOfDay(vn).toInstant() };
+        return new Instant[] {
+            from == null ? null : from.atStartOfDay(vn).toInstant(),
+            to == null ? null : to.plusDays(1).atStartOfDay(vn).toInstant(),
+        };
+    }
+
+    private static java.time.LocalDate parseDay(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return java.time.LocalDate.parse(raw.trim());
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new BadRequestAlertException("Invalid date: " + raw, "receipt", "invalidDate");
+        }
     }
 
     private static String officeParam(String officeCode) {
