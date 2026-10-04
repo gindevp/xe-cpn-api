@@ -119,6 +119,7 @@ public class OrderFacadeResource {
         @RequestParam(required = false) String updatedTo,
         @RequestParam(required = false) String successOfficeCode,
         @RequestParam(required = false) Boolean homeDelivery,
+        @RequestParam(defaultValue = "false") boolean searchAllOffices,
         Pageable pageable
     ) {
         LOG.debug("REST request to get orders facade list");
@@ -141,7 +142,8 @@ public class OrderFacadeResource {
                 updatedFrom,
                 updatedTo,
                 successOfficeCode,
-                homeDelivery
+                homeDelivery,
+                searchAllOffices
             ),
             pageable
         );

@@ -185,7 +185,8 @@ public class OrderFacadeService {
      * {@code openOrUpdatedWithinDays} = đơn chưa kết thúc hoặc cập nhật trong N ngày gần nhất (tập làm việc của màn vận hành);
      * {@code updatedFrom/updatedTo} = khoảng ngày cập nhật (yyyy-MM-dd, giờ VN);
      * {@code successOfficeCode} = VP thao tác thành công (DELIVERED → VP nhận, RETURNED → VP gửi);
-     * {@code homeDelivery} = giao tận nơi.
+     * {@code homeDelivery} = giao tận nơi;
+     * {@code searchAllOffices} = ô tìm đơn: có từ khoá thì NV thấy đơn mọi VP (danh sách nghiệp vụ vẫn theo VP).
      */
     public record OrderListExtra(
         String anyOfficeCode,
@@ -194,9 +195,10 @@ public class OrderFacadeService {
         String updatedFrom,
         String updatedTo,
         String successOfficeCode,
-        Boolean homeDelivery
+        Boolean homeDelivery,
+        boolean searchAllOffices
     ) {
-        public static final OrderListExtra NONE = new OrderListExtra(null, null, null, null, null, null, null);
+        public static final OrderListExtra NONE = new OrderListExtra(null, null, null, null, null, null, null, false);
     }
 
     private static final List<OrderStatus> TERMINAL_STATUSES = List.of(OrderStatus.DELIVERED, OrderStatus.CANCELLED, OrderStatus.RETURNED);
@@ -319,7 +321,8 @@ public class OrderFacadeService {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("itineraryLabel"), it));
         }
         String scoped = staffAccessService.scopedOfficeCode().orElse(null);
-        if (scoped != null) {
+        boolean crossOfficeSearch = ex.searchAllOffices() && keyword != null && !keyword.isBlank();
+        if (scoped != null && !crossOfficeSearch) {
             spec = spec.and((root, q, cb) ->
                 cb.or(
                     cb.equal(root.get("fromOffice").get("code"), scoped),
