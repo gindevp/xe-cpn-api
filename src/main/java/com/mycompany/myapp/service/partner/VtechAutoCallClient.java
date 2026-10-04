@@ -9,11 +9,14 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -30,12 +33,30 @@ public class VtechAutoCallClient {
     private static final Logger LOG = LoggerFactory.getLogger(VtechAutoCallClient.class);
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(30);
 
+    /** Vtech chặn ~100 request/phút/key (ThrottlerException) — giữ dưới ngưỡng, dư thì xếp hàng chờ. */
+    static final int DEFAULT_MAX_PER_MINUTE = 90;
+    private static final long WINDOW_NANOS = Duration.ofMinutes(1).toNanos();
+    private static final int THROTTLE_RETRIES = 4;
+    private static final Duration THROTTLE_BACKOFF = Duration.ofSeconds(20);
+
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final int maxPerMinute;
+    private final Deque<Long> sentAt = new ArrayDeque<>();
 
-    public VtechAutoCallClient(ObjectMapper objectMapper, @Value("${cpn.vtech.insecure-ssl:false}") boolean insecureSsl) {
+    @Autowired
+    public VtechAutoCallClient(
+        ObjectMapper objectMapper,
+        @Value("${cpn.vtech.insecure-ssl:false}") boolean insecureSsl,
+        @Value("${cpn.vtech.max-per-minute:" + DEFAULT_MAX_PER_MINUTE + "}") int maxPerMinute
+    ) {
         this.objectMapper = objectMapper;
         this.httpClient = PartnerHttpClients.build(Duration.ofSeconds(15), insecureSsl);
+        this.maxPerMinute = Math.max(1, maxPerMinute);
+    }
+
+    public VtechAutoCallClient(ObjectMapper objectMapper, boolean insecureSsl) {
+        this(objectMapper, insecureSsl, DEFAULT_MAX_PER_MINUTE);
     }
 
     /**
@@ -55,7 +76,60 @@ public class VtechAutoCallClient {
         body.put("contacts", List.of(contact));
         body.put("skip_duplicates", false);
         body.put("normalize_phone", false);
-        return post(baseUrl, apiKey, body);
+        Result r = null;
+        for (int attempt = 0; attempt <= THROTTLE_RETRIES; attempt++) {
+            if (attempt > 0 && !sleep(THROTTLE_BACKOFF.toMillis())) {
+                break;
+            }
+            if (!acquireSlot()) {
+                return new Result(false, 0, "INTERRUPTED", "Dừng gửi Vtech (server đang tắt)", null);
+            }
+            r = post(baseUrl, apiKey, body);
+            if (!isThrottled(r)) {
+                return r;
+            }
+            LOG.info("Vtech throttled, retry {}/{}", attempt + 1, THROTTLE_RETRIES);
+        }
+        return r;
+    }
+
+    static boolean isThrottled(Result r) {
+        if (r == null || r.ok()) {
+            return false;
+        }
+        String msg = r.message() == null ? "" : r.message();
+        return r.httpStatus() == 429 || msg.contains("ThrottlerException") || msg.contains("Too Many Requests");
+    }
+
+    /** Chờ tới khi trong 60s gần nhất có ít hơn {@code maxPerMinute} request. False nếu thread bị ngắt. */
+    private boolean acquireSlot() {
+        while (true) {
+            long waitMs;
+            synchronized (sentAt) {
+                long now = System.nanoTime();
+                while (!sentAt.isEmpty() && now - sentAt.peekFirst() >= WINDOW_NANOS) {
+                    sentAt.pollFirst();
+                }
+                if (sentAt.size() < maxPerMinute) {
+                    sentAt.addLast(now);
+                    return true;
+                }
+                waitMs = (WINDOW_NANOS - (now - sentAt.peekFirst())) / 1_000_000 + 10;
+            }
+            if (!sleep(waitMs)) {
+                return false;
+            }
+        }
+    }
+
+    private static boolean sleep(long ms) {
+        try {
+            Thread.sleep(Math.max(10, ms));
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     /**

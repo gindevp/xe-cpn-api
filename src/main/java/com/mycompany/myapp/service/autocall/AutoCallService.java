@@ -748,7 +748,7 @@ public class AutoCallService {
             for (Long id : autoCallRepository.findDueRetryIds(Instant.now())) {
                 Long newId = transactionTemplate.execute(s -> fireRetry(id, Instant.now()));
                 if (newId != null) {
-                    sendInNewTransaction(newId);
+                    executor.execute(() -> sendInNewTransaction(newId));
                 }
             }
         } catch (Exception e) {

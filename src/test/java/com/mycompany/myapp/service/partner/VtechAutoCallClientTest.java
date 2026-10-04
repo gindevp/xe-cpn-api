@@ -53,6 +53,18 @@ class VtechAutoCallClientTest {
     }
 
     @Test
+    void isThrottled_detectsVtechThrottlerPayload() {
+        Result throttled = client.toResult(
+            500,
+            "{\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"ThrottlerException: Too Many Requests\"}}"
+        );
+        assertThat(VtechAutoCallClient.isThrottled(throttled)).isTrue();
+        assertThat(VtechAutoCallClient.isThrottled(client.toResult(429, ""))).isTrue();
+        assertThat(VtechAutoCallClient.isThrottled(client.toResult(401, "{\"error\":{\"message\":\"API key không hợp lệ\"}}"))).isFalse();
+        assertThat(VtechAutoCallClient.isThrottled(client.toResult(201, "{}"))).isFalse();
+    }
+
+    @Test
     void toResult_notFound_explainsBaseUrl() {
         Result r = client.toResult(404, "");
         assertThat(r.code()).isEqualTo("HTTP_404");
