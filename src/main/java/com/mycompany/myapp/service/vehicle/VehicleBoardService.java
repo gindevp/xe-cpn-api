@@ -200,6 +200,18 @@ public class VehicleBoardService {
         return office.getId() == null ? Set.of() : new HashSet<>(officeItineraryRepository.findCodesByOfficeId(office.getId()));
     }
 
+    /** Trang khách tạo đơn: mã VP → lộ trình VP báo giờ (chỉ VP đã cấu hình). */
+    @Transactional(readOnly = true)
+    public Map<String, List<String>> allOfficeItineraries() {
+        Map<String, List<String>> out = new java.util.TreeMap<>();
+        for (Object[] row : officeItineraryRepository.findAllOfficeCodePairs()) {
+            if (row[0] != null && row[1] != null) {
+                out.computeIfAbsent(row[0].toString(), k -> new ArrayList<>()).add(row[1].toString());
+            }
+        }
+        return out;
+    }
+
     /** Danh mục VP: lộ trình VP báo giờ (chọn trong các lộ trình qua điểm của VP). */
     @Transactional(readOnly = true)
     public VehicleBoardDtos.ItineraryConfig itineraryConfig(Long officeId) {

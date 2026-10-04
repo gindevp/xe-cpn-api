@@ -416,6 +416,16 @@ class VehicleBoardServiceTest {
     }
 
     @Test
+    void allOfficeItinerariesGroupsByOfficeCode() {
+        when(officeItineraryRepository.findAllOfficeCodePairs()).thenReturn(
+            List.of(new Object[] { "VP_PV", "GA-NB" }, new Object[] { "VP_PV", "GA-TB" }, new Object[] { "VP_NB", "GA-NB" })
+        );
+        assertThat(service.allOfficeItineraries())
+            .containsEntry("VP_PV", List.of("GA-NB", "GA-TB"))
+            .containsEntry("VP_NB", List.of("GA-NB"));
+    }
+
+    @Test
     void itineraryCodeEnds() {
         assertThat(VehicleBoardService.itineraryEnds("GA-YB")).containsExactly("GA", "YB");
         assertThat(VehicleBoardService.itineraryEnds("HĐ-TB")).containsExactly("HD", "TB");

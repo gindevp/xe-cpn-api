@@ -60,6 +60,7 @@ public class SecurityConfiguration {
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/branches")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/itineraries")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/offices")).permitAll()
+                    .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/offices/vehicle-itineraries")).permitAll()
                     // Public create-order: đọc bảng giá / phụ phí để tạm tính cước như NV (chỉ GET)
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/pricing-rules")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/product-price-rules")).permitAll()

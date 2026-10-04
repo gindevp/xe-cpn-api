@@ -16,6 +16,12 @@ public class VehicleEventResource {
         this.vehicleBoardService = vehicleBoardService;
     }
 
+    /** Public (trang khách tạo đơn): mã VP → lộ trình VP báo giờ; VP không có trong map = chưa giới hạn. */
+    @GetMapping("/offices/vehicle-itineraries")
+    public java.util.Map<String, java.util.List<String>> allOfficeItineraries() {
+        return vehicleBoardService.allOfficeItineraries();
+    }
+
     /** Danh mục VP: lộ trình VP báo giờ xe đến/đi. */
     @GetMapping("/offices/{officeId}/vehicle-itineraries")
     public VehicleBoardDtos.ItineraryConfig itineraryConfig(@PathVariable Long officeId) {
