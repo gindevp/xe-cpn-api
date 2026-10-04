@@ -148,6 +148,16 @@ public class AutoCallService {
         if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled()) || !cfg.isAutocallActiveKeyConfigured()) {
             return;
         }
+        createGiaoCall(order, cfg, action, "");
+    }
+
+    enum GiaoCallOutcome {
+        SENT,
+        SCHEDULED,
+        INVALID_PHONE,
+    }
+
+    private GiaoCallOutcome createGiaoCall(ShipmentOrder order, IntegrationConfig cfg, String action, String eventPrefix) {
         autoCallRepository.skipScheduledForOrder(order.getId(), "SUPERSEDED", "Thay bằng lệnh gọi mới");
         autoCallRepository.clearRetriesForOrder(order.getId());
         AutoCall call = new AutoCall();
@@ -166,8 +176,8 @@ public class AutoCallService {
             call.setErrorCode("INVALID_PHONE");
             call.setErrorMessage("SĐT người nhận không hợp lệ");
             autoCallRepository.save(call);
-            appendEvent(order, "AUTO_CALL_SKIPPED", "Không gọi được: SĐT người nhận không hợp lệ");
-            return;
+            appendEvent(order, "AUTO_CALL_SKIPPED", eventPrefix + "Không gọi được: SĐT người nhận không hợp lệ");
+            return GiaoCallOutcome.INVALID_PHONE;
         }
         call.setPhone(phone);
         call.setStatus("PENDING");
@@ -178,12 +188,12 @@ public class AutoCallService {
             appendEvent(
                 order,
                 "AUTO_CALL_REQUEST",
-                sandboxPrefix(call) + "Gọi giao → " + phone + " · ngoài khung giờ gọi, hẹn gọi lúc " + RETRY_AT_FMT.format(at)
+                sandboxPrefix(call) + eventPrefix + "Gọi giao → " + phone + " · ngoài khung giờ gọi, hẹn gọi lúc " + RETRY_AT_FMT.format(at)
             );
-            return;
+            return GiaoCallOutcome.SCHEDULED;
         }
         autoCallRepository.save(call);
-        appendEvent(order, "AUTO_CALL_REQUEST", sandboxPrefix(call) + "Gọi giao → " + phone);
+        appendEvent(order, "AUTO_CALL_REQUEST", sandboxPrefix(call) + eventPrefix + "Gọi giao → " + phone);
         Long id = call.getId();
         dispatchAfterCommit(() -> {
             try {
@@ -192,6 +202,106 @@ public class AutoCallService {
                 LOG.warn("Auto call {} not dispatched (stays PENDING): {}", id, e.getMessage());
             }
         });
+        return GiaoCallOutcome.SENT;
+    }
+
+    static final String TRIGGER_CATCH_UP = "CATCH_UP";
+    /** Lệnh PENDING chưa có giờ hẹn mà quá ngần này chưa gửi được = kẹt (vd. BE restart giữa chừng). */
+    static final Duration STUCK_PENDING_AFTER = Duration.ofMinutes(2);
+
+    public record CatchUpSkip(String orderCode, String reason) {}
+
+    public record CatchUpResult(List<String> eligible, int sent, int scheduled, List<CatchUpSkip> skipped) {}
+
+    /**
+     * Gọi bù cho đơn đang nhập kho giao (AT_DEST) chưa có lệnh gọi giao nào tới được tổng đài: chưa có lệnh,
+     * hoặc lệnh gần nhất gửi lỗi / bị bỏ qua / kẹt chưa gửi. Đơn đã gọi (đang chờ, đã có kết quả, đang hẹn gọi lại,
+     * đã huỷ) không gọi bù. {@code scopedOffice} khác null → chỉ đơn có VP nhận hiện tại là VP đó.
+     * {@code dryRun} → chỉ trả danh sách đơn đủ điều kiện.
+     */
+    public CatchUpResult catchUp(List<String> orderCodes, String scopedOffice, boolean dryRun, String actor) {
+        IntegrationConfig cfg = currentConfig();
+        if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Auto Call đang tắt");
+        }
+        if (!cfg.isAutocallActiveKeyConfigured()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chưa lưu API key Auto Call");
+        }
+        List<String> codes = orderCodes == null
+            ? List.of()
+            : orderCodes.stream().filter(c -> c != null && !c.isBlank()).map(String::trim).distinct().toList();
+        if (codes.size() > 500) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tối đa 500 đơn mỗi lần");
+        }
+        Map<String, ShipmentOrder> byCode = new LinkedHashMap<>();
+        if (!codes.isEmpty()) {
+            for (ShipmentOrder o : shipmentOrderRepository.findWithOfficesByOrderCodeIn(codes)) {
+                byCode.put(o.getOrderCode(), o);
+            }
+        }
+        Instant now = Instant.now();
+        List<String> eligible = new ArrayList<>();
+        List<CatchUpSkip> skipped = new ArrayList<>();
+        int sent = 0;
+        int scheduled = 0;
+        for (String code : codes) {
+            ShipmentOrder order = byCode.get(code);
+            String reason = catchUpBlockReason(order, scopedOffice, now);
+            if (reason != null) {
+                skipped.add(new CatchUpSkip(code, reason));
+                continue;
+            }
+            eligible.add(code);
+            if (dryRun) {
+                continue;
+            }
+            String who = actor == null || actor.isBlank() ? "" : " (" + actor + ")";
+            switch (createGiaoCall(order, cfg, TRIGGER_CATCH_UP, "Gọi bù" + who + " · ")) {
+                case SENT -> sent++;
+                case SCHEDULED -> scheduled++;
+                case INVALID_PHONE -> skipped.add(new CatchUpSkip(code, "SĐT người nhận không hợp lệ"));
+            }
+        }
+        return new CatchUpResult(eligible, sent, scheduled, skipped);
+    }
+
+    private String catchUpBlockReason(ShipmentOrder order, String scopedOffice, Instant now) {
+        if (order == null) {
+            return "Không tìm thấy đơn";
+        }
+        if (order.getStatus() != OrderStatus.AT_DEST) {
+            return "Đơn không ở nhập kho giao";
+        }
+        if (scopedOffice != null) {
+            Office to = order.getToOffice();
+            if (to == null || !scopedOffice.equalsIgnoreCase(to.getCode())) {
+                return "Đơn không thuộc VP của bạn";
+            }
+        }
+        AutoCall last = autoCallRepository
+            .findByOrder_IdOrderByCreatedAtDesc(order.getId())
+            .stream()
+            .filter(c -> TYPE_GIAO.equals(c.getCallType()))
+            .findFirst()
+            .orElse(null);
+        if (last == null) {
+            return null;
+        }
+        String st = last.getStatus();
+        if (last.getNextRetryAt() != null) {
+            return "Đã hẹn gọi lúc " + RETRY_AT_FMT.format(last.getNextRetryAt());
+        }
+        if ("ERROR".equals(st) || "SKIPPED".equals(st)) {
+            return null;
+        }
+        if ("PENDING".equals(st) && last.getCallId() == null) {
+            Instant created = last.getCreatedAt() != null ? last.getCreatedAt() : now;
+            return created.isBefore(now.minus(STUCK_PENDING_AFTER)) ? null : "Đang gửi lệnh gọi";
+        }
+        if ("CANCELLED".equals(st)) {
+            return "Lệnh gọi đã bị huỷ";
+        }
+        return "Đã gọi";
     }
 
     protected void dispatchAfterCommit(Runnable task) {

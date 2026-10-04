@@ -2,6 +2,8 @@ package com.mycompany.myapp.web.rest;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mycompany.myapp.security.SecurityUtils;
+import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.autocall.AutoCallConsoleService;
 import com.mycompany.myapp.service.autocall.AutoCallService;
 import com.mycompany.myapp.service.autocall.AutoCallService.AutoCallView;
@@ -21,11 +23,32 @@ public class AutoCallResource {
     private final AutoCallService autoCallService;
     private final AutoCallConsoleService consoleService;
     private final ObjectMapper objectMapper;
+    private final StaffAccessService staffAccessService;
 
-    public AutoCallResource(AutoCallService autoCallService, AutoCallConsoleService consoleService, ObjectMapper objectMapper) {
+    public AutoCallResource(
+        AutoCallService autoCallService,
+        AutoCallConsoleService consoleService,
+        ObjectMapper objectMapper,
+        StaffAccessService staffAccessService
+    ) {
         this.autoCallService = autoCallService;
         this.consoleService = consoleService;
         this.objectMapper = objectMapper;
+        this.staffAccessService = staffAccessService;
+    }
+
+    public record CatchUpRequest(List<String> orderCodes, Boolean dryRun) {}
+
+    /** Gọi bù Auto Call cho đơn nhập kho giao chưa gọi được. {@code dryRun=true} → chỉ trả đơn đủ điều kiện. */
+    @PostMapping("/api/auto-calls/catch-up")
+    public AutoCallService.CatchUpResult catchUp(@RequestBody CatchUpRequest req) {
+        String scoped = staffAccessService.isSystemAdmin() ? null : staffAccessService.scopedOfficeCode().orElse(null);
+        return autoCallService.catchUp(
+            req != null ? req.orderCodes() : List.of(),
+            scoped,
+            req != null && Boolean.TRUE.equals(req.dryRun()),
+            SecurityUtils.getCurrentUserLogin().orElse(null)
+        );
     }
 
     @GetMapping("/api/orders/{code}/auto-calls")

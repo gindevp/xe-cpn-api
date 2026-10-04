@@ -193,6 +193,154 @@ class AutoCallServiceTest {
         assertThat(dispatched).isEmpty();
     }
 
+    // ---- gọi bù ----
+
+    private ShipmentOrder atDest(long id, String code, String phone, String toOffice) {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setId(id);
+        o.setOrderCode(code);
+        o.setReceiverPhone(phone);
+        o.setStatus(com.mycompany.myapp.domain.enumeration.OrderStatus.AT_DEST);
+        com.mycompany.myapp.domain.Office off = new com.mycompany.myapp.domain.Office();
+        off.setCode(toOffice);
+        o.setToOffice(off);
+        return o;
+    }
+
+    private AutoCall lastCall(String status, String callId, java.time.Instant nextRetryAt, java.time.Instant createdAt) {
+        AutoCall c = new AutoCall();
+        c.setCallType("giao");
+        c.setStatus(status);
+        c.setCallId(callId);
+        c.setNextRetryAt(nextRetryAt);
+        c.setCreatedAt(createdAt);
+        return c;
+    }
+
+    @Test
+    void catchUp_picksOnlyOrdersNeverSentToCarrier() {
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(config(true, KEY)));
+        java.time.Instant now = java.time.Instant.now();
+        ShipmentOrder none = atDest(1L, "A1", "0912345671", "VP_A");
+        ShipmentOrder error = atDest(2L, "A2", "0912345672", "VP_A");
+        ShipmentOrder skipped = atDest(3L, "A3", "0912345673", "VP_A");
+        ShipmentOrder stuck = atDest(4L, "A4", "0912345674", "VP_A");
+        ShipmentOrder inFlight = atDest(5L, "A5", "0912345675", "VP_A");
+        ShipmentOrder scheduled = atDest(6L, "A6", "0912345676", "VP_A");
+        ShipmentOrder answered = atDest(7L, "A7", "0912345677", "VP_A");
+        ShipmentOrder queued = atDest(8L, "A8", "0912345678", "VP_A");
+        ShipmentOrder retrying = atDest(9L, "A9", "0912345679", "VP_A");
+        ShipmentOrder cancelled = atDest(10L, "A10", "0912345670", "VP_A");
+        ShipmentOrder errorWithRetry = atDest(11L, "A11", "0912345611", "VP_A");
+        ShipmentOrder delivering = atDest(12L, "A12", "0912345612", "VP_A");
+        delivering.setStatus(com.mycompany.myapp.domain.enumeration.OrderStatus.OUT_FOR_DELIVERY);
+        ShipmentOrder otherOffice = atDest(13L, "A13", "0912345613", "VP_B");
+        when(shipmentOrderRepository.findWithOfficesByOrderCodeIn(any())).thenReturn(
+            List.of(
+                none,
+                error,
+                skipped,
+                stuck,
+                inFlight,
+                scheduled,
+                answered,
+                queued,
+                retrying,
+                cancelled,
+                errorWithRetry,
+                delivering,
+                otherOffice
+            )
+        );
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(any())).thenReturn(List.of());
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(2L)).thenReturn(List.of(lastCall("ERROR", null, null, now)));
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(3L)).thenReturn(List.of(lastCall("SKIPPED", null, null, now)));
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(4L)).thenReturn(
+            List.of(lastCall("PENDING", null, null, now.minusSeconds(600)))
+        );
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(5L)).thenReturn(List.of(lastCall("PENDING", null, null, now)));
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(6L)).thenReturn(
+            List.of(lastCall("PENDING", null, now.plusSeconds(3600), now))
+        );
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(7L)).thenReturn(List.of(lastCall("COMPLETED", "c7", null, now)));
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(8L)).thenReturn(List.of(lastCall("QUEUED", null, null, now)));
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(9L)).thenReturn(
+            List.of(lastCall("FAILED", "c9", now.plusSeconds(600), now))
+        );
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(10L)).thenReturn(List.of(lastCall("CANCELLED", null, null, now)));
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(11L)).thenReturn(
+            List.of(lastCall("ERROR", null, now.plusSeconds(600), now))
+        );
+
+        List<String> codes = List.of("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13", "NOPE");
+        AutoCallService.CatchUpResult r = service.catchUp(codes, "VP_A", true, "dh1");
+
+        assertThat(r.eligible()).containsExactly("A1", "A2", "A3", "A4");
+        assertThat(r.sent()).isZero();
+        assertThat(r.skipped())
+            .extracting(AutoCallService.CatchUpSkip::orderCode)
+            .containsExactly("A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13", "NOPE");
+        verify(autoCallRepository, never()).save(any());
+        assertThat(dispatched).isEmpty();
+    }
+
+    @Test
+    void catchUp_createsNewCalls_respectingWindow_andInvalidPhone() {
+        IntegrationConfig cfg = config(true, KEY);
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(cfg));
+        when(shipmentOrderRepository.findWithOfficesByOrderCodeIn(any())).thenReturn(
+            List.of(atDest(1L, "A1", "0912345671", "VP_A"), atDest(2L, "A2", "abc", "VP_A"))
+        );
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(any())).thenReturn(List.of());
+        stubSaveAssignsId();
+
+        AutoCallService.CatchUpResult r = service.catchUp(List.of("A1", "A2"), null, false, "dh1");
+
+        assertThat(r.eligible()).containsExactly("A1", "A2");
+        assertThat(r.sent()).isEqualTo(1);
+        assertThat(r.skipped()).extracting(AutoCallService.CatchUpSkip::reason).containsExactly("SĐT người nhận không hợp lệ");
+        ArgumentCaptor<AutoCall> saved = ArgumentCaptor.forClass(AutoCall.class);
+        verify(autoCallRepository, times(2)).save(saved.capture());
+        assertThat(saved.getAllValues().get(0).getTriggerAction()).isEqualTo("CATCH_UP");
+        assertThat(saved.getAllValues().get(0).getStatus()).isEqualTo("PENDING");
+        assertThat(dispatched).hasSize(1);
+        ArgumentCaptor<OrderEvent> ev = ArgumentCaptor.forClass(OrderEvent.class);
+        verify(orderEventRepository, times(2)).save(ev.capture());
+        assertThat(ev.getAllValues().get(0).getDetail()).contains("Gọi bù (dh1) · Gọi giao → 0912345671");
+    }
+
+    @Test
+    void catchUp_outsideWindow_schedules() {
+        IntegrationConfig cfg = config(true, KEY);
+        java.time.ZonedDateTime vn = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+        String from = vn.plusHours(2).toLocalTime().withSecond(0).withNano(0).toString().substring(0, 5);
+        String to = vn.plusHours(3).toLocalTime().withSecond(0).withNano(0).toString().substring(0, 5);
+        cfg.setAutocallCallFrom(from);
+        cfg.setAutocallCallTo(to);
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(cfg));
+        when(shipmentOrderRepository.findWithOfficesByOrderCodeIn(any())).thenReturn(List.of(atDest(1L, "A1", "0912345671", "VP_A")));
+        when(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(any())).thenReturn(List.of());
+        stubSaveAssignsId();
+
+        AutoCallService.CatchUpResult r = service.catchUp(List.of("A1"), null, false, null);
+
+        assertThat(r.scheduled()).isEqualTo(1);
+        assertThat(r.sent()).isZero();
+        assertThat(dispatched).isEmpty();
+    }
+
+    @Test
+    void catchUp_disabledOrNoKey_rejected() {
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(config(false, KEY)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.catchUp(List.of("A1"), null, true, null)).hasMessageContaining(
+            "Auto Call đang tắt"
+        );
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(config(true, null)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.catchUp(List.of("A1"), null, true, null)).hasMessageContaining(
+            "API key"
+        );
+    }
+
     @Test
     void normalizePhone_acceptsVietnamFormats() {
         assertThat(AutoCallService.normalizePhone("0912345678")).isEqualTo("0912345678");
@@ -894,6 +1042,9 @@ class AutoCallServiceTest {
             { "COMPLETED", null, "completed", "answered" },
             { "NO_ANSWER", "NO_ANSWER", "failed", "not_answered" },
             { "BUSY", "BUSY", "failed", "not_answered" },
+            { "BUSY", null, "failed", "not_answered" },
+            { "NO_ANSWER", "VOICEMAIL", "failed", "not_answered" },
+            { "NO_ANSWER", "REJECTED", "failed", "not_answered" },
             { "NO_ANSWER", null, "failed", "not_answered" },
             { "FAILED", "REJECTED", "failed", "not_answered" },
             { "FAILED", "NETWORK_ERROR", "failed", "error" },
@@ -962,6 +1113,21 @@ class AutoCallServiceTest {
         assertThat(service.applyVtechWebhook(JSON.readTree("{\"event\":\"call.started\"}"))).isEqualTo(
             AutoCallService.VtechWebhookOutcome.IGNORED
         );
+    }
+
+    @Test
+    void vtech_webhook_docSamplePayload_withNullsAndBodyExtra() throws Exception {
+        String ev =
+            "{\"event\":\"call.completed\",\"timestamp\":\"2026-05-20T07:30:00.000Z\",\"campaign_id\":123,\"cpn_token\":\"t\"," +
+            "\"call\":{\"id\":456789,\"external_call_id\":null,\"contact\":{\"id\":88888,\"phone_number\":\"0901234567\",\"name\":null," +
+            "\"extra_data\":{\"ref_id\":\"CPN-TEST-DOC\",\"ten_san_pham\":\"x\"}},\"status\":\"NO_ANSWER\",\"outcome\":null," +
+            "\"duration_seconds\":null,\"recording_url\":null,\"started_at\":\"2026-05-20T07:28:00.000Z\",\"answered_at\":null," +
+            "\"ended_at\":\"2026-05-20T07:28:30.000Z\",\"hangup_by\":null}}";
+        assertThat(service.applyVtechWebhook(JSON.readTree(ev))).isEqualTo(AutoCallService.VtechWebhookOutcome.TEST);
+        JsonNode r = service.vtechTestResult("CPN-TEST-DOC");
+        assertThat(r.path("status").asText()).isEqualTo("failed");
+        assertThat(r.path("result").asText()).isEqualTo("not_answered");
+        assertThat(r.path("callId").asText()).isEqualTo("vtech_456789");
     }
 
     @Test

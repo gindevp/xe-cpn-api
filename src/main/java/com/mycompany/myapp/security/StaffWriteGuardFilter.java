@@ -130,6 +130,11 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             staffAccessService.requireScreenWrite(ScreenKey.HANG_CHO_LEN_XE, ScreenKey.QUET_NHAP);
             return;
         }
+        // Gọi Auto Call bù: tab Nhập kho giao
+        if (path.startsWith("/api/auto-calls/catch-up")) {
+            staffAccessService.requireScreenWrite(ScreenKey.NHAP_KHO_LUAN_CHUYEN);
+            return;
+        }
         // inventory-checks: mọi NV thao tác được (app Kiểm kho) — không chặn theo screen Y/R
     }
 
