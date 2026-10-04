@@ -43,6 +43,8 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long>, JpaSpec
 
     Optional<Receipt> findOneByReceiptCode(String receiptCode);
 
+    boolean existsByReceiptCode(String receiptCode);
+
     String LIST_ROW_SELECT =
         "select new com.mycompany.myapp.repository.ReceiptListRow(r.id, r.receiptCode, r.payerName, r.payerCode, r.totalAmount," +
         " r.createdAt, r.createdByUsername, o.code, r.confirmedAt, r.confirmedByUsername," +

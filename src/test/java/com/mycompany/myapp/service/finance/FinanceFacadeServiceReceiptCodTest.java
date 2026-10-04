@@ -174,6 +174,22 @@ class FinanceFacadeServiceReceiptCodTest {
     }
 
     @Test
+    void createReceipt_skipsCodeStillUsedAfterDeletedReceipt() {
+        when(receiptRepository.countByReceiptCodeStartingWith(any())).thenReturn(5L);
+        when(receiptRepository.existsByReceiptCode(org.mockito.ArgumentMatchers.endsWith("-006"))).thenReturn(true);
+        CreateReceiptRequest req = new CreateReceiptRequest(
+            "NV A",
+            null,
+            null,
+            List.of(new ReceiptLineRequest("GP-COD-001", new BigDecimal("50000"), null))
+        );
+
+        ReceiptDTO dto = service.createReceipt(req);
+
+        assertThat(dto.receiptCode()).endsWith("-007");
+    }
+
+    @Test
     void createReceipt_rejectsAboveFareDuePlusCod() {
         CreateReceiptRequest req = new CreateReceiptRequest(
             "NV A",

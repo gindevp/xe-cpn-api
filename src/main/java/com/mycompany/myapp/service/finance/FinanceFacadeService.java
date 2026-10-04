@@ -1116,8 +1116,13 @@ public class FinanceFacadeService {
         String oc = office != null ? office.getCode() : "XX";
         String stamp = LocalDate.now(VN).format(DateTimeFormatter.ofPattern("yyMMdd"));
         String prefix = "PT" + oc + stamp;
+        // Phiếu trong ngày có thể đã bị xoá → count+1 có thể trùng mã còn tồn tại.
         long seq = receiptRepository.countByReceiptCodeStartingWith(prefix) + 1;
-        return prefix + "-" + String.format("%03d", seq);
+        String code = prefix + "-" + String.format("%03d", seq);
+        while (receiptRepository.existsByReceiptCode(code)) {
+            code = prefix + "-" + String.format("%03d", ++seq);
+        }
+        return code;
     }
 
     /**
