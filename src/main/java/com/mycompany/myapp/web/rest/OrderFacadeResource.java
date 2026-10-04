@@ -120,9 +120,15 @@ public class OrderFacadeResource {
         @RequestParam(required = false) String successOfficeCode,
         @RequestParam(required = false) Boolean homeDelivery,
         @RequestParam(defaultValue = "false") boolean searchAllOffices,
+        @RequestParam(required = false) String cancelRequests,
         Pageable pageable
     ) {
         LOG.debug("REST request to get orders facade list");
+        OrderFacadeService.CancelRequestMode cancelMode = "only".equalsIgnoreCase(cancelRequests)
+            ? OrderFacadeService.CancelRequestMode.ONLY
+            : "include".equalsIgnoreCase(cancelRequests)
+                ? OrderFacadeService.CancelRequestMode.INCLUDE
+                : OrderFacadeService.CancelRequestMode.HIDE;
         Page<OrderSummaryDTO> page = orderFacadeService.list(
             status,
             fromOfficeCode,
@@ -143,7 +149,8 @@ public class OrderFacadeResource {
                 updatedTo,
                 successOfficeCode,
                 homeDelivery,
-                searchAllOffices
+                searchAllOffices,
+                cancelMode
             ),
             pageable
         );
@@ -410,6 +417,16 @@ public class OrderFacadeResource {
     public OrderDetailDTO resolveIssue(@PathVariable String orderCode, @RequestBody(required = false) Map<String, String> body) {
         String note = body != null ? body.get("resolutionNote") : null;
         return exceptionFacadeService.resolveIssue(orderCode, note);
+    }
+
+    @PostMapping("/{orderCode}/cancel-request/approve")
+    public OrderDetailDTO approveCancelRequest(@PathVariable String orderCode, @RequestBody(required = false) Map<String, String> body) {
+        return exceptionFacadeService.approveCancelRequest(orderCode, body != null ? body.get("note") : null);
+    }
+
+    @PostMapping("/{orderCode}/cancel-request/reject")
+    public OrderDetailDTO rejectCancelRequest(@PathVariable String orderCode, @RequestBody(required = false) Map<String, String> body) {
+        return exceptionFacadeService.rejectCancelRequest(orderCode, body != null ? body.get("note") : null);
     }
 
     @GetMapping("/{orderCode}/issues")

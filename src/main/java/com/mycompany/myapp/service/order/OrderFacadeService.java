@@ -186,7 +186,8 @@ public class OrderFacadeService {
      * {@code updatedFrom/updatedTo} = khoảng ngày cập nhật (yyyy-MM-dd, giờ VN);
      * {@code successOfficeCode} = VP thao tác thành công (DELIVERED → VP nhận, RETURNED → VP gửi);
      * {@code homeDelivery} = giao tận nơi;
-     * {@code searchAllOffices} = ô tìm đơn: có từ khoá thì NV thấy đơn mọi VP (danh sách nghiệp vụ vẫn theo VP).
+     * {@code searchAllOffices} = ô tìm đơn: có từ khoá thì NV thấy đơn mọi VP (danh sách nghiệp vụ vẫn theo VP);
+     * {@code cancelRequests} = đơn chờ duyệt huỷ: HIDE ẩn (trừ khi tìm theo từ khoá / mã), ONLY chỉ lấy các đơn đó.
      */
     public record OrderListExtra(
         String anyOfficeCode,
@@ -196,9 +197,26 @@ public class OrderFacadeService {
         String updatedTo,
         String successOfficeCode,
         Boolean homeDelivery,
-        boolean searchAllOffices
+        boolean searchAllOffices,
+        CancelRequestMode cancelRequests
     ) {
-        public static final OrderListExtra NONE = new OrderListExtra(null, null, null, null, null, null, null, false);
+        public static final OrderListExtra NONE = new OrderListExtra(
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            false,
+            CancelRequestMode.INCLUDE
+        );
+    }
+
+    public enum CancelRequestMode {
+        HIDE,
+        INCLUDE,
+        ONLY,
     }
 
     private static final List<OrderStatus> TERMINAL_STATUSES = List.of(OrderStatus.DELIVERED, OrderStatus.CANCELLED, OrderStatus.RETURNED);
@@ -319,6 +337,13 @@ public class OrderFacadeService {
         if (itineraryLabel != null && !itineraryLabel.isBlank()) {
             String it = itineraryLabel.trim();
             spec = spec.and((root, q, cb) -> cb.equal(root.get("itineraryLabel"), it));
+        }
+        CancelRequestMode cancelMode = ex.cancelRequests() == null ? CancelRequestMode.INCLUDE : ex.cancelRequests();
+        boolean lookup = (keyword != null && !keyword.isBlank()) || (codes != null && !codes.isEmpty());
+        if (cancelMode == CancelRequestMode.ONLY) {
+            spec = spec.and((root, q, cb) -> pendingCancelRequest(root, q, cb));
+        } else if (cancelMode == CancelRequestMode.HIDE && !lookup) {
+            spec = spec.and((root, q, cb) -> cb.not(pendingCancelRequest(root, q, cb)));
         }
         String scoped = staffAccessService.scopedOfficeCode().orElse(null);
         boolean crossOfficeSearch = ex.searchAllOffices() && keyword != null && !keyword.isBlank();
@@ -459,6 +484,23 @@ public class OrderFacadeService {
         }
         LocalDate d = LocalDate.parse(day.trim());
         return d.plusDays(1).atStartOfDay(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant();
+    }
+
+    private static jakarta.persistence.criteria.Predicate pendingCancelRequest(
+        jakarta.persistence.criteria.Root<ShipmentOrder> root,
+        jakarta.persistence.criteria.CriteriaQuery<?> q,
+        jakarta.persistence.criteria.CriteriaBuilder cb
+    ) {
+        jakarta.persistence.criteria.Subquery<Long> sub = q.subquery(Long.class);
+        jakarta.persistence.criteria.Root<com.mycompany.myapp.domain.OrderIssue> i = sub.from(com.mycompany.myapp.domain.OrderIssue.class);
+        sub
+            .select(i.get("id"))
+            .where(
+                cb.equal(i.get("order"), root),
+                cb.equal(i.get("issueType"), com.mycompany.myapp.domain.enumeration.IssueType.CANCEL_REQUEST),
+                cb.equal(i.get("issueStatus"), IssueStatus.OPEN)
+            );
+        return cb.exists(sub);
     }
 
     /** VP nhận thật: finalToOffice khi có (đơn qua hub), ngược lại toOffice. */
@@ -1506,6 +1548,14 @@ public class OrderFacadeService {
 
     /** Đơn khách tự tạo phải được VP gửi xác nhận nhập kho trước khi xếp xe / quét lên xe. */
     public void assertSenderWarehouseReceived(ShipmentOrder order) {
+        var issue = order.getIssue();
+        if (
+            issue != null &&
+            issue.getIssueStatus() == IssueStatus.OPEN &&
+            issue.getIssueType() == com.mycompany.myapp.domain.enumeration.IssueType.CANCEL_REQUEST
+        ) {
+            throw new BadRequestAlertException("Đơn " + order.getOrderCode() + " đang chờ admin duyệt huỷ", ENTITY, "cancelRequestPending");
+        }
         if (order.getStatus() != OrderStatus.CONFIRMED && order.getStatus() != OrderStatus.WAITING) {
             return;
         }

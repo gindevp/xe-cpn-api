@@ -482,6 +482,10 @@ public class ExceptionFacadeService {
         dayClosureGuard.assertOrderMutable(order);
         IssueType issueType = type != null ? type : IssueType.EXCEPTION;
 
+        if (issueType == IssueType.CANCEL_REQUEST) {
+            return openCancelRequest(order, reason);
+        }
+
         if (issueType == IssueType.LOST || issueType == IssueType.EXCEPTION || issueType == IssueType.DAMAGED) {
             if (order.getStatus() == OrderStatus.DELIVERED || order.getStatus() == OrderStatus.RETURNED) {
                 throw new BadRequestAlertException("Cannot open issue on delivered/returned order", ENTITY, "issueOnSuccess");
@@ -538,6 +542,109 @@ public class ExceptionFacadeService {
         return orderFacadeService.getByCode(order.getOrderCode());
     }
 
+    /** Chỉ đơn đang ở Nhập kho gửi (chưa gán xe, không phải đơn hoàn) mới gửi yêu cầu huỷ. */
+    private OrderDetailDTO openCancelRequest(ShipmentOrder order, String reason) {
+        String note = reason == null ? "" : reason.trim();
+        if (note.isEmpty()) {
+            throw new BadRequestAlertException("Nhập lý do huỷ", ENTITY, "cancelReasonRequired");
+        }
+        ForwardStage stage = order.getForwardStage();
+        boolean atSenderWarehouse =
+            order.getStatus() == OrderStatus.CONFIRMED && order.getCurrentTrip() == null && (stage == null || stage == ForwardStage.WH_IN);
+        if (!atSenderWarehouse) {
+            throw new BadRequestAlertException(
+                "Đơn " + order.getOrderCode() + " không ở Nhập kho gửi — không gửi yêu cầu huỷ được",
+                ENTITY,
+                "cancelRequestStage"
+            );
+        }
+        if (orderIssueRepository.existsByOrder_IdAndIssueStatus(order.getId(), IssueStatus.OPEN)) {
+            throw new BadRequestAlertException(
+                "Đơn " + order.getOrderCode() + " đang có yêu cầu / sự cố chưa xử lý",
+                ENTITY,
+                "issueOpenExists"
+            );
+        }
+        String clipped = note.length() > 1000 ? note.substring(0, 1000) : note;
+        OrderIssue issue = new OrderIssue();
+        issue.setIssueType(IssueType.CANCEL_REQUEST);
+        issue.setIssueStatus(IssueStatus.OPEN);
+        issue.setReason(clipped);
+        issue.setOpenedAt(Instant.now());
+        issue.setOpenedByUsername(actor());
+        issue.setOrder(order);
+        try {
+            issue = orderIssueRepository.saveAndFlush(issue);
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            throw new BadRequestAlertException("Order already has an open issue", ENTITY, "issueOpenExists");
+        }
+        order.setIssue(issue);
+        shipmentOrderRepository.save(order);
+        appendEvent(order, "CANCEL_REQUEST", clipped);
+        return orderFacadeService.getByCode(order.getOrderCode());
+    }
+
+    private OrderIssue requireOpenCancelRequest(ShipmentOrder order) {
+        if (!canCancelReturnRole()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ admin được duyệt yêu cầu huỷ");
+        }
+        OrderIssue issue = order.getIssue();
+        if (issue == null || issue.getIssueStatus() != IssueStatus.OPEN || issue.getIssueType() != IssueType.CANCEL_REQUEST) {
+            throw new BadRequestAlertException(
+                "Đơn " + order.getOrderCode() + " không có yêu cầu huỷ đang chờ",
+                ENTITY,
+                "cancelRequestMissing"
+            );
+        }
+        return issue;
+    }
+
+    public OrderDetailDTO approveCancelRequest(String orderCode, String note) {
+        ShipmentOrder order = requireOrder(orderCode);
+        dayClosureGuard.assertOrderMutable(order);
+        OrderIssue issue = requireOpenCancelRequest(order);
+        String extra = note == null ? "" : note.trim();
+        issue.setIssueStatus(IssueStatus.RESOLVED);
+        issue.setResolvedAt(Instant.now());
+        issue.setResolvedByUsername(actor());
+        issue.setResolutionNote(extra.isEmpty() ? "Duyệt huỷ" : "Duyệt huỷ · " + extra);
+        orderIssueRepository.save(issue);
+        String requester = issue.getOpenedByUsername() == null ? "" : " (" + issue.getOpenedByUsername() + ")";
+        String detail = "Huỷ theo yêu cầu điều phối" + requester + " · " + (issue.getReason() == null ? "" : issue.getReason());
+        OrderTransitionRequest tr = new OrderTransitionRequest();
+        tr.setToStatus(OrderStatus.CANCELLED);
+        tr.setAction("CANCEL");
+        tr.setDetail(detail.length() <= 255 ? detail : detail.substring(0, 255));
+        orderFacadeService.transition(order.getOrderCode(), tr);
+        return orderFacadeService.getByCode(order.getOrderCode());
+    }
+
+    public OrderDetailDTO rejectCancelRequest(String orderCode, String note) {
+        ShipmentOrder order = requireOrder(orderCode);
+        dayClosureGuard.assertOrderMutable(order);
+        OrderIssue issue = requireOpenCancelRequest(order);
+        String why = note == null ? "" : note.trim();
+        issue.setIssueStatus(IssueStatus.RESOLVED);
+        issue.setResolvedAt(Instant.now());
+        issue.setResolvedByUsername(actor());
+        issue.setResolutionNote(why.isEmpty() ? "Từ chối huỷ" : "Từ chối huỷ · " + why);
+        orderIssueRepository.save(issue);
+        order.setIssue(null);
+        shipmentOrderRepository.save(order);
+        appendEvent(order, "CANCEL_REJECT", why.isEmpty() ? null : why);
+        return orderFacadeService.getByCode(order.getOrderCode());
+    }
+
+    private void appendEvent(ShipmentOrder order, String action, String detail) {
+        OrderEvent event = new OrderEvent();
+        event.setEventAt(Instant.now());
+        event.setAction(action);
+        event.setDetail(detail != null && detail.length() > 255 ? detail.substring(0, 255) : detail);
+        event.setActorUsername(actor());
+        event.setOrder(order);
+        orderEventRepository.save(event);
+    }
+
     public OrderDetailDTO resolveIssue(String orderCode, String note) {
         ShipmentOrder order = requireOrder(orderCode);
         dayClosureGuard.assertOrderMutable(order);
@@ -547,6 +654,9 @@ public class ExceptionFacadeService {
         }
         if (issue.getIssueStatus() != IssueStatus.OPEN) {
             throw new BadRequestAlertException("Current issue is not OPEN", ENTITY, "issueNotOpen");
+        }
+        if (issue.getIssueType() == IssueType.CANCEL_REQUEST) {
+            return rejectCancelRequest(orderCode, note);
         }
         issue.setIssueStatus(IssueStatus.RESOLVED);
         issue.setResolvedAt(Instant.now());
