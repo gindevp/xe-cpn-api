@@ -10,49 +10,52 @@ import org.junit.jupiter.api.Test;
 
 class FinanceFacadeServiceReceiptDayRangeTest {
 
-    private static Instant[] range(String day, String from, String to) {
-        return FinanceFacadeService.receiptDayRange(new ReceiptListFilter(null, null, null, day, null, from, to));
+    private static ReceiptListFilter filter(String day, String from, String to) {
+        return new ReceiptListFilter(null, null, null, day, null, from, to);
+    }
+
+    private static Instant[] paid(String from, String to) {
+        return FinanceFacadeService.receiptPaidRange(filter(null, from, to));
     }
 
     @Test
     void noFilter_open() {
-        assertThat(range(null, null, null)).containsExactly(null, null);
-        assertThat(FinanceFacadeService.receiptDayRange(ReceiptListFilter.NONE)).containsExactly(null, null);
+        assertThat(FinanceFacadeService.receiptCreatedRange(ReceiptListFilter.NONE)).containsExactly(null, null);
+        assertThat(FinanceFacadeService.receiptPaidRange(ReceiptListFilter.NONE)).containsExactly(null, null);
     }
 
     @Test
-    void legacySingleDay_vnBounds() {
-        assertThat(range("2026-10-04", null, null)).containsExactly(
+    void legacyDay_isCreatedDate_vnBounds() {
+        ReceiptListFilter f = filter("2026-10-04", null, null);
+        assertThat(FinanceFacadeService.receiptCreatedRange(f)).containsExactly(
             Instant.parse("2026-10-03T17:00:00Z"),
             Instant.parse("2026-10-04T17:00:00Z")
         );
+        assertThat(FinanceFacadeService.receiptPaidRange(f)).containsExactly(null, null);
     }
 
     @Test
-    void range_inclusiveBothEnds() {
-        assertThat(range(null, "2026-10-01", "2026-10-04")).containsExactly(
+    void paidRange_inclusiveBothEnds() {
+        assertThat(paid("2026-10-01", "2026-10-04")).containsExactly(
             Instant.parse("2026-09-30T17:00:00Z"),
             Instant.parse("2026-10-04T17:00:00Z")
         );
     }
 
     @Test
-    void range_overridesLegacyDay() {
-        assertThat(range("2026-01-01", "2026-10-01", "2026-10-01")).containsExactly(
-            Instant.parse("2026-09-30T17:00:00Z"),
-            Instant.parse("2026-10-01T17:00:00Z")
-        );
+    void paidRange_doesNotTouchCreatedRange() {
+        assertThat(FinanceFacadeService.receiptCreatedRange(filter(null, "2026-10-01", "2026-10-04"))).containsExactly(null, null);
     }
 
     @Test
-    void range_openEnds() {
-        assertThat(range(null, "2026-10-01", null)).containsExactly(Instant.parse("2026-09-30T17:00:00Z"), null);
-        assertThat(range(null, null, "2026-10-04")).containsExactly(null, Instant.parse("2026-10-04T17:00:00Z"));
+    void paidRange_openEnds() {
+        assertThat(paid("2026-10-01", null)).containsExactly(Instant.parse("2026-09-30T17:00:00Z"), null);
+        assertThat(paid(null, "2026-10-04")).containsExactly(null, Instant.parse("2026-10-04T17:00:00Z"));
     }
 
     @Test
-    void range_reversed_swapped() {
-        assertThat(range(null, "2026-10-04", "2026-10-01")).containsExactly(
+    void paidRange_reversed_swapped() {
+        assertThat(paid("2026-10-04", "2026-10-01")).containsExactly(
             Instant.parse("2026-09-30T17:00:00Z"),
             Instant.parse("2026-10-04T17:00:00Z")
         );
@@ -60,6 +63,6 @@ class FinanceFacadeServiceReceiptDayRangeTest {
 
     @Test
     void invalidDate_badRequest() {
-        assertThatThrownBy(() -> range(null, "04/10/2026", null)).isInstanceOf(BadRequestAlertException.class);
+        assertThatThrownBy(() -> paid("04/10/2026", null)).isInstanceOf(BadRequestAlertException.class);
     }
 }

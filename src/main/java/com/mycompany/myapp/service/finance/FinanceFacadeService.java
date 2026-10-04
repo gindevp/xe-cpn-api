@@ -626,9 +626,9 @@ public class FinanceFacadeService {
     }
 
     /**
-     * Lọc danh sách phiếu thu phía server theo ngày lập phiếu (yyyy-MM-dd, giờ VN): khoảng {@code dayFrom}–{@code dayTo}
-     * (gồm cả 2 đầu, thiếu 1 đầu thì để mở); {@code day} = 1 ngày (client cũ), dùng khi không gửi khoảng.
-     * {@code status} = CONFIRMED (đã thu) / PENDING (chưa thu), khác thì bỏ qua.
+     * Lọc danh sách phiếu thu phía server (ngày yyyy-MM-dd, giờ VN): {@code dayFrom}–{@code dayTo} = khoảng ngày thu tiền
+     * (mốc khách trả muộn nhất trong các đơn, không có thì ngày lập; gồm cả 2 đầu, thiếu 1 đầu thì để mở);
+     * {@code day} = 1 ngày lập phiếu (client cũ). {@code status} = CONFIRMED (đã thu) / PENDING (chưa thu), khác thì bỏ qua.
      */
     public record ReceiptListFilter(String code, String payer, String creator, String day, String status, String dayFrom, String dayTo) {
         public static final ReceiptListFilter NONE = new ReceiptListFilter(null, null, null, null, null, null, null);
@@ -647,12 +647,16 @@ public class FinanceFacadeService {
         return v == null || v.isBlank() ? null : "%" + v.trim().toLowerCase() + "%";
     }
 
-    static Instant[] receiptDayRange(ReceiptListFilter f) {
-        java.time.LocalDate from = parseDay(f.dayFrom());
-        java.time.LocalDate to = parseDay(f.dayTo());
-        if (from == null && to == null) {
-            from = to = parseDay(f.day());
-        }
+    static Instant[] receiptCreatedRange(ReceiptListFilter f) {
+        java.time.LocalDate day = parseDay(f.day());
+        return dayRange(day, day);
+    }
+
+    static Instant[] receiptPaidRange(ReceiptListFilter f) {
+        return dayRange(parseDay(f.dayFrom()), parseDay(f.dayTo()));
+    }
+
+    private static Instant[] dayRange(java.time.LocalDate from, java.time.LocalDate to) {
         if (from != null && to != null && to.isBefore(from)) {
             java.time.LocalDate tmp = from;
             from = to;
@@ -688,16 +692,19 @@ public class FinanceFacadeService {
     @Transactional(readOnly = true)
     public BigDecimal sumReceipts(String officeCode, String createdBy, ReceiptListFilter filter) {
         ReceiptListFilter f = filter == null ? ReceiptListFilter.NONE : filter;
-        Instant[] range = receiptDayRange(f);
+        Instant[] created = receiptCreatedRange(f);
+        Instant[] paid = receiptPaidRange(f);
         return receiptRepository.sumListTotal(
             officeParam(officeCode),
             createdByParam(createdBy),
             likeParam(f.code()),
             likeParam(f.payer()),
             likeParam(f.creator()),
-            range[0],
-            range[1],
-            statusParam(f.status())
+            created[0],
+            created[1],
+            statusParam(f.status()),
+            paid[0],
+            paid[1]
         );
     }
 
@@ -707,16 +714,19 @@ public class FinanceFacadeService {
             ? pageable
             : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "id"));
         ReceiptListFilter f = filter == null ? ReceiptListFilter.NONE : filter;
-        Instant[] range = receiptDayRange(f);
+        Instant[] created = receiptCreatedRange(f);
+        Instant[] paidRange = receiptPaidRange(f);
         Page<ReceiptListRow> rows = receiptRepository.findListRows(
             officeParam(officeCode),
             createdByParam(createdBy),
             likeParam(f.code()),
             likeParam(f.payer()),
             likeParam(f.creator()),
-            range[0],
-            range[1],
+            created[0],
+            created[1],
             statusParam(f.status()),
+            paidRange[0],
+            paidRange[1],
             paging
         );
         List<Long> receiptIds = rows.getContent().stream().map(ReceiptListRow::id).toList();
