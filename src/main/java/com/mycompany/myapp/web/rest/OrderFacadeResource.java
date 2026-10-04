@@ -171,6 +171,12 @@ public class OrderFacadeResource {
         return ResponseEntity.ok(orderFacadeService.getByCode(orderCode));
     }
 
+    @GetMapping("/{orderCode}/goods-photo")
+    public Map<String, String> goodsPhoto(@PathVariable String orderCode) {
+        String photo = orderFacadeService.goodsPhoto(orderCode);
+        return photo == null ? Map.of() : Map.of("image", photo);
+    }
+
     /**
      * Public guest create — always CONFIRMED + real order code (no DRAFT).
      * Preferred path for /tao-don.

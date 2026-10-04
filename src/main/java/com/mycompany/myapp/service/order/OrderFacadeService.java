@@ -3,6 +3,7 @@ package com.mycompany.myapp.service.order;
 import com.mycompany.myapp.domain.Itinerary;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderEvent;
+import com.mycompany.myapp.domain.OrderGoodsPhoto;
 import com.mycompany.myapp.domain.OrderLeg;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.ForwardStage;
@@ -14,6 +15,7 @@ import com.mycompany.myapp.domain.enumeration.ServiceType;
 import com.mycompany.myapp.repository.ItineraryRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
+import com.mycompany.myapp.repository.OrderGoodsPhotoRepository;
 import com.mycompany.myapp.repository.OrderIssueRepository;
 import com.mycompany.myapp.repository.OrderLegRepository;
 import com.mycompany.myapp.repository.OrderPodPhotoRepository;
@@ -72,6 +74,9 @@ public class OrderFacadeService {
     private final DraftExpiryService draftExpiryService;
     private final ApplicationEventPublisher eventPublisher;
     private ItineraryRepository itineraryRepository;
+    private OrderGoodsPhotoRepository goodsPhotoRepository;
+
+    static final int MAX_GOODS_PHOTO_LENGTH = 2_500_000;
 
     public OrderFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -358,13 +363,16 @@ public class OrderFacadeService {
         }
         Page<ShipmentOrder> page = shipmentOrderRepository.findAll(spec, pageable);
         java.util.Map<Long, List<OrderLeg>> legsByOrder = legsByOrderId(page.getContent());
-        java.util.Map<Long, java.util.Map<String, Instant>> stageTimes = stageEventTimes(
-            page.getContent().stream().map(ShipmentOrder::getId).filter(java.util.Objects::nonNull).toList()
-        );
+        List<Long> pageIds = page.getContent().stream().map(ShipmentOrder::getId).filter(java.util.Objects::nonNull).toList();
+        java.util.Map<Long, java.util.Map<String, Instant>> stageTimes = stageEventTimes(pageIds);
+        java.util.Set<Long> withGoodsPhoto = goodsPhotoRepository == null || pageIds.isEmpty()
+            ? java.util.Set.of()
+            : new java.util.HashSet<>(goodsPhotoRepository.findOrderIdsIn(pageIds));
         return page.map(o -> {
             OrderSummaryDTO dto = new OrderSummaryDTO();
             fillSummary(dto, o, legsByOrder.getOrDefault(o.getId(), List.of()));
             applyStageTimes(dto, stageTimes.getOrDefault(o.getId(), java.util.Map.of()));
+            dto.setHasGoodsPhoto(withGoodsPhoto.contains(o.getId()));
             return dto;
         });
     }
@@ -525,6 +533,7 @@ public class OrderFacadeService {
      * Guest drop-off (!homePickup) → qrDropOff so đơn vào Chờ nhận hàng.
      */
     public CreateDraftOrderResponse createDraft(CreateDraftOrderRequest req) {
+        String goodsPhoto = validGoodsPhoto(req.getGoodsPhoto());
         boolean homeDelivery = Boolean.TRUE.equals(req.getHomeDelivery());
         boolean homePickup = Boolean.TRUE.equals(req.getHomePickup());
         // GTN: VP nhận = toOffice (không còn hub trung chuyển). Chấp nhận hubOfficeCode legacy làm toOffice.
@@ -613,6 +622,15 @@ public class OrderFacadeService {
         order = shipmentOrderRepository.save(order);
         ensureLegs(order);
         appendEvent(order, "CREATE", "Tạo đơn hàng", "customer");
+        if (goodsPhoto != null && goodsPhotoRepository != null) {
+            OrderGoodsPhoto photo = new OrderGoodsPhoto();
+            photo.setOrderId(order.getId());
+            photo.setPhotoUrl(goodsPhoto);
+            photo.setCapturedAt(Instant.now());
+            photo.setCapturedByUsername("customer");
+            goodsPhotoRepository.save(photo);
+            appendEvent(order, "GOODS_PHOTO", "Khách gửi ảnh đơn hàng", "customer");
+        }
 
         return new CreateDraftOrderResponse(null, order.getOrderCode(), OrderStatus.CONFIRMED, fareTotal, null);
     }
@@ -1205,6 +1223,36 @@ public class OrderFacadeService {
     @Autowired(required = false)
     void setItineraryRepository(ItineraryRepository itineraryRepository) {
         this.itineraryRepository = itineraryRepository;
+    }
+
+    @Autowired(required = false)
+    void setGoodsPhotoRepository(OrderGoodsPhotoRepository goodsPhotoRepository) {
+        this.goodsPhotoRepository = goodsPhotoRepository;
+    }
+
+    /** Ảnh đơn hàng khách gửi khi tạo đơn; null nếu không có. */
+    @Transactional(readOnly = true)
+    public String goodsPhoto(String code) {
+        ShipmentOrder order = requireByCode(code);
+        if (goodsPhotoRepository == null) {
+            return null;
+        }
+        return goodsPhotoRepository.findOneByOrderId(order.getId()).map(OrderGoodsPhoto::getPhotoUrl).orElse(null);
+    }
+
+    /** Ảnh từ endpoint công khai: chỉ nhận data-URL ảnh, giới hạn dung lượng. */
+    static String validGoodsPhoto(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String photo = raw.trim();
+        if (!photo.startsWith("data:image/") || !photo.contains(";base64,")) {
+            throw new BadRequestAlertException("Goods photo must be an image", ENTITY, "goodsPhotoInvalid");
+        }
+        if (photo.length() > MAX_GOODS_PHOTO_LENGTH) {
+            throw new BadRequestAlertException("Goods photo too large", ENTITY, "goodsPhotoTooLarge");
+        }
+        return photo;
     }
 
     private com.mycompany.myapp.repository.StaffProfileRepository staffProfileRepository;
@@ -1805,6 +1853,7 @@ public class OrderFacadeService {
         fillSummary(dto, o, null);
         if (o.getId() != null) {
             applyStageTimes(dto, stageEventTimes(List.of(o.getId())).getOrDefault(o.getId(), java.util.Map.of()));
+            dto.setHasGoodsPhoto(goodsPhotoRepository != null && goodsPhotoRepository.existsByOrderId(o.getId()));
         }
     }
 

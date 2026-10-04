@@ -80,6 +80,17 @@ public class CreateDraftOrderRequest {
     private BigDecimal paidAmount;
     private Integer quantity;
 
+    /** Ảnh đơn hàng (data:image/..., không bắt buộc, 1 ảnh). */
+    private String goodsPhoto;
+
+    public String getGoodsPhoto() {
+        return goodsPhoto;
+    }
+
+    public void setGoodsPhoto(String goodsPhoto) {
+        this.goodsPhoto = goodsPhoto;
+    }
+
     public String getSenderPhone() {
         return senderPhone;
     }

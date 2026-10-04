@@ -55,6 +55,8 @@ public class OrderSummaryDTO {
     private List<OrderLegViewDTO> legs = new ArrayList<>();
     /** Ảnh POD (data-URL / URL) — thường chỉ gắn khi DELIVERED. */
     private List<String> podPhotos = new ArrayList<>();
+    /** Khách gửi ảnh đơn hàng khi tạo đơn — ảnh lấy qua GET /api/orders/{code}/goods-photo. */
+    private boolean hasGoodsPhoto;
     /** Người thực nhận — gắn khi DELIVERED. */
     private String receiverActualName;
     private String receiverActualPhone;
@@ -423,6 +425,14 @@ public class OrderSummaryDTO {
 
     public void setLegs(List<OrderLegViewDTO> legs) {
         this.legs = legs;
+    }
+
+    public boolean isHasGoodsPhoto() {
+        return hasGoodsPhoto;
+    }
+
+    public void setHasGoodsPhoto(boolean hasGoodsPhoto) {
+        this.hasGoodsPhoto = hasGoodsPhoto;
     }
 
     public List<String> getPodPhotos() {
