@@ -45,7 +45,7 @@ class CodPaymentRequestServiceTest {
     void fillsTemplateCells_keepsOtherParts() throws Exception {
         byte[] xlsx = CodPaymentRequestService.fill(
             order(),
-            new CodPaymentRequestService.Requester("Nguyễn Văn Kế", "Kế toán", "VP Bắc"),
+            new CodPaymentRequestService.Requester("Nguyễn Văn Kế", "Kế toán"),
             LocalDate.of(2026, 10, 5)
         );
         Map<String, String> parts = unzip(xlsx);
@@ -56,7 +56,10 @@ class CodPaymentRequestServiceTest {
         assertThat(sheet).contains(
             "<c r=\"B6\" s=\"11\" t=\"inlineStr\"><is><t xml:space=\"preserve\">Ngày 5 Tháng 10 Năm 2026</t></is></c>"
         );
-        assertThat(sheet).contains("Nguyễn Văn Kế").contains(">Kế toán<").contains(">VP Bắc<");
+        assertThat(sheet).contains("Nguyễn Văn Kế").contains(">Kế toán<");
+        assertThat(sheet).contains("<row r=\"9\" ht=\"30.75\" hidden=\"1\"").doesNotContain("<c r=\"B9\"");
+        assertThat(sheet).contains("<c r=\"E32\" s=\"34\" t=\"inlineStr\"><is><t xml:space=\"preserve\">Nguyễn Tuấn Việt</t></is></c>");
+        assertThat(sheet).contains("<mergeCell ref=\"E32:G32\"/>");
         assertThat(sheet).contains("<c r=\"H14\" s=\"59\"><v>2440000.00</v></c>");
         assertThat(sheet).contains("<c r=\"H20\" s=\"61\"><f>SUM(H14:H19)</f><v>2440000.00</v></c>");
         assertThat(sheet).contains("Hai triệu bốn trăm bốn mươi nghìn đồng");

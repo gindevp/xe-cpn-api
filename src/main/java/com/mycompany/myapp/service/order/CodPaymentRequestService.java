@@ -62,7 +62,9 @@ public class CodPaymentRequestService {
         this.staffAccessService = staffAccessService;
     }
 
-    public record Requester(String name, String position, String department) {}
+    static final String DEPARTMENT_HEAD = "Nguyễn Tuấn Việt";
+
+    public record Requester(String name, String position) {}
 
     public byte[] build(String orderCode) {
         ShipmentOrder order = shipmentOrderRepository
@@ -81,11 +83,10 @@ public class CodPaymentRequestService {
         String login = SecurityUtils.getCurrentUserLogin().orElse("");
         StaffProfile p = staffAccessService.current().orElse(null);
         if (p == null) {
-            return new Requester(login, "", "");
+            return new Requester(login, "");
         }
         String name = p.getDisplayName() != null && !p.getDisplayName().isBlank() ? p.getDisplayName().trim() : login;
-        String dept = p.getOffice() != null && p.getOffice().getName() != null ? p.getOffice().getName() : "";
-        return new Requester(name, ROLE_LABELS.getOrDefault(p.getRoleCode(), ""), dept);
+        return new Requester(name, ROLE_LABELS.getOrDefault(p.getRoleCode(), ""));
     }
 
     static byte[] fill(ShipmentOrder order, Requester requester, LocalDate day) {
@@ -98,7 +99,6 @@ public class CodPaymentRequestService {
         cells.put("B6", Cell.text("Ngày " + day.getDayOfMonth() + " Tháng " + day.getMonthValue() + " Năm " + day.getYear()));
         cells.put("C8", Cell.text(requester.name()));
         cells.put("H8", Cell.text(requester.position()));
-        cells.put("C9", Cell.text(requester.department()));
         cells.put("B10", Cell.text("Lý do xin thanh toán: Thanh toán tiền thu hộ COD cho người gửi đơn " + code));
         cells.put("B14", Cell.number(BigDecimal.ONE));
         cells.put("C14", Cell.text("Thanh toán tiền thu hộ COD đơn " + code));
@@ -114,6 +114,7 @@ public class CodPaymentRequestService {
         cells.put("C24", Cell.text(nz(order.getBankAccountName())));
         cells.put("C25", Cell.text(nz(order.getBankAccountNo())));
         cells.put("H25", Cell.text(nz(order.getBankName())));
+        cells.put("E32", Cell.text(DEPARTMENT_HEAD));
         cells.put("I32", Cell.text(requester.name()));
 
         return rewriteTemplate(sheet -> applyCells(sheet, cells));
