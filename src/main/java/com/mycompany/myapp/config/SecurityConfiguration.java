@@ -78,6 +78,8 @@ public class SecurityConfiguration {
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/hhvn/webhook")).permitAll()
                     // Webhook Auto Call Vtech: xác thực bằng token CPN sinh (AutoCallResource)
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/vtech/webhook")).permitAll()
+                    // Webhook Ahamove: token CPN sinh (?token= hoặc header apikey) — AhamoveDispatchResource
+                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/ahamove/webhook")).permitAll()
                     .requestMatchers(mvc.pattern("/api/admin/**")).hasAuthority(AuthoritiesConstants.ADMIN)
                     // Generated domain CRUD must not bypass facade money/status/day-close guards (TASK-007)
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/shipment-orders")).hasAuthority(AuthoritiesConstants.ADMIN)

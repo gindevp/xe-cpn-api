@@ -78,7 +78,7 @@ public class AhamoveAuthClient {
     private String fetchAccessTokenOnce(String key, String mob) {
         try {
             String json = objectMapper.createObjectNode().put("mobile", mob).put("api_key", key).toString();
-            String url = baseUrl + "/accounts/token";
+            String url = getBaseUrl() + "/accounts/token";
             LOG.info(
                 "Ahamove POST {} mobile={} apiKeyLen={} apiKeySuffix=…{}",
                 url,
@@ -198,7 +198,7 @@ public class AhamoveAuthClient {
         }
         String keyHint =
             "host=" +
-            baseUrl +
+            getBaseUrl() +
             " mobile=" +
             mobile +
             " apiKeyLen=" +
@@ -209,7 +209,7 @@ public class AhamoveAuthClient {
             return (
                 "PARTNER_NOT_FOUND — Ahamove không nhận ra API key (" +
                 keyHint +
-                "). Kiểm tra key đúng PROD và dán lại nguyên api_key (không dán JWT)."
+                "). Kiểm tra dùng api_key production (key staging không dùng được) và dán lại nguyên api_key (không dán JWT)."
             );
         }
         if ("INVALID_PHONE_NUMBER".equals(code)) {

@@ -122,5 +122,7 @@
     <include file="config/liquibase/changelog/20261005170000_vehicle_pickup_offset.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261005180000_vehicle_event_photo.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261005190000_inventory_check_session.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261005210000_ahamove_dispatch.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261005230000_shipper.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 

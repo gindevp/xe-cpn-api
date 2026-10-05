@@ -16,6 +16,27 @@ public class AssignShipperRequest {
     @DecimalMin("0")
     private BigDecimal partnerFeeAmount;
 
+    /** Shipper nội bộ (Danh mục) — tùy chọn để app TAKE_JOB cũ vẫn chạy. */
+    private Long shipperId;
+
+    private String note;
+
+    public Long getShipperId() {
+        return shipperId;
+    }
+
+    public void setShipperId(Long shipperId) {
+        this.shipperId = shipperId;
+    }
+
+    public String getNote() {
+        return note;
+    }
+
+    public void setNote(String note) {
+        this.note = note;
+    }
+
     public String getMode() {
         return mode;
     }

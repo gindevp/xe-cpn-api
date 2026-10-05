@@ -36,19 +36,23 @@ public class AhamoveOrderClient {
 
     private final AhamoveTokenService ahamoveTokenService;
     private final ObjectMapper objectMapper;
-    private final String baseUrl;
+    private final AhamoveAuthClient authClient;
     private final HttpClient httpClient;
 
     public AhamoveOrderClient(
         AhamoveTokenService ahamoveTokenService,
         ObjectMapper objectMapper,
-        @Value("${cpn.ahamove.base-url:https://partner-api.ahamove.com/v3}") String baseUrl,
+        AhamoveAuthClient authClient,
         @Value("${cpn.ahamove.insecure-ssl:false}") boolean insecureSsl
     ) {
         this.ahamoveTokenService = ahamoveTokenService;
         this.objectMapper = objectMapper;
-        this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        this.authClient = authClient;
         this.httpClient = PartnerHttpClients.build(Duration.ofSeconds(15), insecureSsl);
+    }
+
+    private String baseUrl() {
+        return authClient.getBaseUrl();
     }
 
     public List<Map<String, Object>> listServices(double lat, double lng, String deliveryType) {
@@ -56,7 +60,7 @@ public class AhamoveOrderClient {
         String type = deliveryType == null || deliveryType.isBlank() ? "INSTANT" : deliveryType.trim();
         try {
             String url =
-                baseUrl +
+                baseUrl() +
                 "/services?lat=" +
                 URLEncoder.encode(Double.toString(lat), StandardCharsets.UTF_8) +
                 "&lng=" +
@@ -118,7 +122,7 @@ public class AhamoveOrderClient {
             svc.putArray("requests");
 
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/orders/estimates"))
+                .uri(URI.create(baseUrl() + "/orders/estimates"))
                 .timeout(HTTP_TIMEOUT)
                 .header("Authorization", "Bearer " + token)
                 .header("Content-Type", "application/json")
@@ -148,6 +152,7 @@ public class AhamoveOrderClient {
                 out.put("distanceKm", null);
                 out.put("distanceMeters", null);
             }
+            out.put("totalPrice", extractTotalPrice(item));
             return out;
         } catch (BadRequestAlertException e) {
             throw e;
@@ -239,7 +244,7 @@ public class AhamoveOrderClient {
         g.putArray("group_requests");
 
         HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(baseUrl + "/orders/estimates"))
+            .uri(URI.create(baseUrl() + "/orders/estimates"))
             .timeout(HTTP_TIMEOUT)
             .header("Authorization", "Bearer " + token)
             .header("Content-Type", "application/json")
@@ -267,7 +272,179 @@ public class AhamoveOrderClient {
             out.put("distanceKm", null);
             out.put("distanceMeters", null);
         }
+        out.put("totalPrice", extractTotalPrice(item));
         return out;
+    }
+
+    /** {@code cod} chỉ dùng ở điểm giao: tài xế ứng số này cho VP lúc lấy hàng, thu lại của người nhận. */
+    public record Stop(
+        double lat,
+        double lng,
+        String address,
+        String name,
+        String mobile,
+        String remarks,
+        String trackingNumber,
+        long cod
+    ) {}
+
+    public record CreatedOrder(String orderId, String status, String sharedLink, BigDecimal totalPay, String serviceId) {}
+
+    /**
+     * Tạo đơn giao Ahamove (2 điểm; {@code drop.cod > 0} = tài xế ứng cước). {@code POST /orders} — group_service BIKE để Ahamove tự chọn theo GPS.
+     */
+    public CreatedOrder createOrder(Stop pickup, Stop drop, String paymentMethod) {
+        String token = requireToken();
+        try {
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("order_time", 0);
+            body.put("payment_method", paymentMethod == null || paymentMethod.isBlank() ? "BALANCE" : paymentMethod);
+            ArrayNode path = body.putArray("path");
+            path.add(stop(pickup));
+            path.add(stop(drop));
+            body.put("group_service_id", "BIKE");
+            body.putArray("group_requests");
+            String remarks = drop.remarks();
+            if (remarks != null && !remarks.isBlank()) {
+                body.put("remarks", remarks.trim());
+            }
+
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl() + "/orders"))
+                .timeout(HTTP_TIMEOUT)
+                .header("Authorization", "Bearer " + token)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8))
+                .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                LOG.warn("Ahamove create order HTTP {}: {}", response.statusCode(), truncate(response.body()));
+                throw new BadRequestAlertException(
+                    "Ahamove tạo đơn thất bại (HTTP " + response.statusCode() + "): " + errorMessage(response.body()),
+                    ENTITY,
+                    "ahamoveCreate"
+                );
+            }
+            return parseCreated(objectMapper.readTree(response.body()));
+        } catch (BadRequestAlertException e) {
+            throw e;
+        } catch (Exception e) {
+            LOG.warn("Ahamove create order failed: {}", e.getMessage());
+            throw new BadRequestAlertException("Ahamove tạo đơn thất bại: " + e.getMessage(), ENTITY, "ahamoveCreate");
+        }
+    }
+
+    /** Hủy đơn Ahamove — chỉ được khi tài xế chưa lấy hàng (IDLE/ASSIGNING/ACCEPTED/CONFIRMING/PAYING). */
+    public void cancelOrder(String orderId, String comment) {
+        if (orderId == null || orderId.isBlank()) {
+            throw new BadRequestAlertException("Thiếu mã đơn Ahamove", ENTITY, "ahamoveOrderIdRequired");
+        }
+        String token = requireToken();
+        try {
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("comment", comment == null || comment.isBlank() ? "CPN hủy" : comment.trim());
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl() + "/orders/" + URLEncoder.encode(orderId.trim(), StandardCharsets.UTF_8)))
+                .timeout(HTTP_TIMEOUT)
+                .header("Authorization", "Bearer " + token)
+                .header("Content-Type", "application/json")
+                .method("DELETE", HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8))
+                .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                LOG.warn("Ahamove cancel HTTP {}: {}", response.statusCode(), truncate(response.body()));
+                throw new BadRequestAlertException(
+                    "Ahamove hủy đơn thất bại (HTTP " + response.statusCode() + "): " + errorMessage(response.body()),
+                    ENTITY,
+                    "ahamoveCancel"
+                );
+            }
+        } catch (BadRequestAlertException e) {
+            throw e;
+        } catch (Exception e) {
+            LOG.warn("Ahamove cancel failed: {}", e.getMessage());
+            throw new BadRequestAlertException("Ahamove hủy đơn thất bại: " + e.getMessage(), ENTITY, "ahamoveCancel");
+        }
+    }
+
+    static CreatedOrder parseCreated(JsonNode root) {
+        if (root == null || root.isNull()) {
+            throw new BadRequestAlertException("Ahamove tạo đơn: response rỗng", ENTITY, "ahamoveCreate");
+        }
+        String orderId = text(root, "order_id");
+        JsonNode order = root.get("order");
+        if (orderId == null && order != null) {
+            orderId = text(order, "_id");
+        }
+        if (orderId == null) {
+            throw new BadRequestAlertException("Ahamove tạo đơn: thiếu order_id — " + truncate(root.toString()), ENTITY, "ahamoveCreate");
+        }
+        String status = text(root, "status");
+        if (status == null && order != null) {
+            status = text(order, "status");
+        }
+        String link = text(root, "shared_link");
+        if (link == null && order != null) {
+            link = text(order, "shared_link");
+        }
+        Double pay = order != null ? number(order, "total_pay") : null;
+        if (pay == null && order != null) {
+            pay = number(order, "total_price");
+        }
+        String serviceId = order != null ? text(order, "service_id") : null;
+        return new CreatedOrder(
+            orderId,
+            status,
+            link,
+            pay == null ? null : BigDecimal.valueOf(pay).setScale(0, RoundingMode.HALF_UP),
+            serviceId
+        );
+    }
+
+    static BigDecimal extractTotalPrice(JsonNode item) {
+        if (item == null) {
+            return null;
+        }
+        JsonNode data = item.get("data");
+        JsonNode src = data != null && data.isObject() ? data : item;
+        Double v = number(src, "total_price");
+        if (v == null) {
+            v = number(src, "total_pay");
+        }
+        return v == null ? null : BigDecimal.valueOf(v).setScale(0, RoundingMode.HALF_UP);
+    }
+
+    private String errorMessage(String body) {
+        try {
+            JsonNode n = objectMapper.readTree(body);
+            String title = text(n, "title");
+            String desc = text(n, "description");
+            String code = text(n, "code");
+            if (title != null || desc != null) {
+                return (code != null ? code + " — " : "") + (title != null ? title : "") + (desc != null ? ": " + desc : "");
+            }
+        } catch (Exception ignored) {
+            // body không phải JSON
+        }
+        return truncate(body);
+    }
+
+    private ObjectNode stop(Stop s) {
+        ObjectNode p = point(s.lat(), s.lng(), s.address());
+        if (s.name() != null && !s.name().isBlank()) {
+            p.put("name", s.name().trim());
+        }
+        if (s.mobile() != null && !s.mobile().isBlank()) {
+            p.put("mobile", s.mobile().trim());
+        }
+        if (s.trackingNumber() != null && !s.trackingNumber().isBlank()) {
+            p.put("tracking_number", s.trackingNumber().trim());
+        }
+        if (s.remarks() != null && !s.remarks().isBlank()) {
+            p.put("remarks", s.remarks().trim());
+        }
+        p.put("cod", Math.max(0L, s.cod()));
+        return p;
     }
 
     private ObjectNode point(double lat, double lng, String address) {

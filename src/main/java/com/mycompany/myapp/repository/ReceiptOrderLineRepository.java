@@ -50,6 +50,9 @@ public interface ReceiptOrderLineRepository extends JpaRepository<ReceiptOrderLi
 
     boolean existsByOrder_Id(Long orderId);
 
+    /** Đơn đã nằm trong phiếu thu lập từ mốc {@code from} trở đi (tiền đã nộp quỹ). */
+    boolean existsByOrder_IdAndReceipt_CreatedAtGreaterThanEqual(Long orderId, java.time.Instant from);
+
     /** Hàng: [orderId, sum(amountCollected)]. */
     @Query(
         "select receiptOrderLine.order.id, coalesce(sum(receiptOrderLine.amountCollected), 0) from ReceiptOrderLine receiptOrderLine where receiptOrderLine.order.id in :orderIds group by receiptOrderLine.order.id"

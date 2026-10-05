@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261005230000-shipper-table" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="shipper"/>
+            </not>
+        </preConditions>
+        <comment>Danh mục shipper nội bộ theo VP nhận (popup Bàn giao shipper → tab Nội bộ).</comment>
+        <createTable tableName="shipper">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="full_name" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="phone" type="varchar(20)"/>
+            <column name="office_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="note" type="varchar(255)"/>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="shipper"
+            baseColumnNames="office_id"
+            constraintName="fk_shipper_office"
+            referencedTableName="office"
+            referencedColumnNames="id"
+        />
+    </changeSet>
+
+    <changeSet id="20261005230000-order-shipper" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="shipment_order" columnName="shipper_id"/>
+            </not>
+        </preConditions>
+        <comment>Shipper nội bộ được gán khi bàn giao (null = đối tác / chưa gán).</comment>
+        <addColumn tableName="shipment_order">
+            <column name="shipper_id" type="bigint"/>
+        </addColumn>
+        <addForeignKeyConstraint
+            baseTableName="shipment_order"
+            baseColumnNames="shipper_id"
+            constraintName="fk_shipment_order_shipper"
+            referencedTableName="shipper"
+            referencedColumnNames="id"
+        />
+    </changeSet>
+
+    <changeSet id="20261005230000-order-partner-cod" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="shipment_order" columnName="partner_cod_amount"/>
+            </not>
+        </preConditions>
+        <comment>Ahamove ứng cước: số tài xế ứng (cod) + NV quầy xác nhận đã nhận tiền.</comment>
+        <addColumn tableName="shipment_order">
+            <column name="partner_cod_amount" type="decimal(21,2)"/>
+            <column name="partner_cod_collected_at" type="${datetimeType}"/>
+            <column name="partner_cod_collected_by" type="varchar(50)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

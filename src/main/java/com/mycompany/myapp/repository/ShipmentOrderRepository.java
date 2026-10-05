@@ -46,6 +46,15 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
 
     Optional<ShipmentOrder> findOneByDraftCode(String draftCode);
 
+    Optional<ShipmentOrder> findFirstByPartnerOrderId(String partnerOrderId);
+
+    /** [shipperId, số đơn] — đơn đang giao (OUT_FOR_DELIVERY) mỗi shipper nội bộ đang giữ. */
+    @Query(
+        "select o.shipper.id, count(o) from ShipmentOrder o where o.shipper.id in :ids " +
+        "and o.status = com.mycompany.myapp.domain.enumeration.OrderStatus.OUT_FOR_DELIVERY group by o.shipper.id"
+    )
+    List<Object[]> countOutForDeliveryByShipper(@Param("ids") List<Long> ids);
+
     @Query(
         """
         select shipmentOrder from ShipmentOrder shipmentOrder

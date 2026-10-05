@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261005210000-order-partner-dispatch" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="shipment_order" columnName="partner_order_id"/>
+            </not>
+        </preConditions>
+        <comment>Giao tận nơi qua đối tác (Ahamove): mã đơn đối tác, trạng thái, tài xế, link theo dõi, ảnh POD, GPS điểm giao</comment>
+        <addColumn tableName="shipment_order">
+            <column name="partner_order_id" type="varchar(64)"/>
+            <column name="partner_status" type="varchar(40)"/>
+            <column name="partner_tracking_url" type="varchar(500)"/>
+            <column name="partner_driver_name" type="varchar(100)"/>
+            <column name="partner_driver_phone" type="varchar(32)"/>
+            <column name="partner_pod_url" type="varchar(1000)"/>
+            <column name="partner_fail_reason" type="varchar(500)"/>
+            <column name="partner_updated_at" type="${datetimeType}"/>
+            <column name="delivery_lat" type="decimal(10,7)"/>
+            <column name="delivery_lng" type="decimal(10,7)"/>
+        </addColumn>
+        <createIndex tableName="shipment_order" indexName="idx_shipment_order_partner_order_id">
+            <column name="partner_order_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20261005210000-integration-ahamove-dispatch" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="integration_config" columnName="ahamove_webhook_token"/>
+            </not>
+        </preConditions>
+        <comment>Ahamove: token xác thực webhook (?token=) + hình thức thanh toán cước đối tác (BALANCE | CASH)</comment>
+        <addColumn tableName="integration_config">
+            <column name="ahamove_webhook_token" type="varchar(64)"/>
+            <column name="ahamove_payment_method" type="varchar(32)" defaultValue="BALANCE"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

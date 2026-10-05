@@ -51,6 +51,20 @@ public class OrderSummaryDTO {
     private String pickupStaffUsername;
     private String partnerCode;
     private BigDecimal partnerFeeAmount;
+    private String partnerOrderId;
+    private String partnerStatus;
+    private String partnerTrackingUrl;
+    private String partnerDriverName;
+    private String partnerDriverPhone;
+    private String partnerPodUrl;
+    private String partnerFailReason;
+    private Instant partnerUpdatedAt;
+    private BigDecimal partnerCodAmount;
+    private Instant partnerCodCollectedAt;
+    private String partnerCodCollectedBy;
+    private Long shipperId;
+    private String shipperName;
+    private String shipperPhone;
     private Integer currentLegIndex;
     private List<OrderLegViewDTO> legs = new ArrayList<>();
     /** Ảnh POD (data-URL / URL) — thường chỉ gắn khi DELIVERED. */
@@ -416,6 +430,118 @@ public class OrderSummaryDTO {
 
     public void setPartnerFeeAmount(BigDecimal partnerFeeAmount) {
         this.partnerFeeAmount = partnerFeeAmount;
+    }
+
+    public String getPartnerOrderId() {
+        return partnerOrderId;
+    }
+
+    public void setPartnerOrderId(String partnerOrderId) {
+        this.partnerOrderId = partnerOrderId;
+    }
+
+    public String getPartnerStatus() {
+        return partnerStatus;
+    }
+
+    public void setPartnerStatus(String partnerStatus) {
+        this.partnerStatus = partnerStatus;
+    }
+
+    public String getPartnerTrackingUrl() {
+        return partnerTrackingUrl;
+    }
+
+    public void setPartnerTrackingUrl(String partnerTrackingUrl) {
+        this.partnerTrackingUrl = partnerTrackingUrl;
+    }
+
+    public String getPartnerDriverName() {
+        return partnerDriverName;
+    }
+
+    public void setPartnerDriverName(String partnerDriverName) {
+        this.partnerDriverName = partnerDriverName;
+    }
+
+    public String getPartnerDriverPhone() {
+        return partnerDriverPhone;
+    }
+
+    public void setPartnerDriverPhone(String partnerDriverPhone) {
+        this.partnerDriverPhone = partnerDriverPhone;
+    }
+
+    public String getPartnerPodUrl() {
+        return partnerPodUrl;
+    }
+
+    public void setPartnerPodUrl(String partnerPodUrl) {
+        this.partnerPodUrl = partnerPodUrl;
+    }
+
+    public String getPartnerFailReason() {
+        return partnerFailReason;
+    }
+
+    public void setPartnerFailReason(String partnerFailReason) {
+        this.partnerFailReason = partnerFailReason;
+    }
+
+    public Instant getPartnerUpdatedAt() {
+        return partnerUpdatedAt;
+    }
+
+    public void setPartnerUpdatedAt(Instant partnerUpdatedAt) {
+        this.partnerUpdatedAt = partnerUpdatedAt;
+    }
+
+    public BigDecimal getPartnerCodAmount() {
+        return partnerCodAmount;
+    }
+
+    public void setPartnerCodAmount(BigDecimal partnerCodAmount) {
+        this.partnerCodAmount = partnerCodAmount;
+    }
+
+    public Instant getPartnerCodCollectedAt() {
+        return partnerCodCollectedAt;
+    }
+
+    public void setPartnerCodCollectedAt(Instant partnerCodCollectedAt) {
+        this.partnerCodCollectedAt = partnerCodCollectedAt;
+    }
+
+    public String getPartnerCodCollectedBy() {
+        return partnerCodCollectedBy;
+    }
+
+    public void setPartnerCodCollectedBy(String partnerCodCollectedBy) {
+        this.partnerCodCollectedBy = partnerCodCollectedBy;
+    }
+
+    public Long getShipperId() {
+        return shipperId;
+    }
+
+    public void setShipperId(Long shipperId) {
+        this.shipperId = shipperId;
+    }
+
+    public String getShipperName() {
+        return shipperName;
+    }
+
+    public void setShipperName(String shipperName) {
+        this.shipperName = shipperName;
+    }
+
+    public String getShipperPhone() {
+        return shipperPhone;
+    }
+
+    public void setShipperPhone(String shipperPhone) {
+        this.shipperPhone = shipperPhone;
     }
 
     public Integer getCurrentLegIndex() {

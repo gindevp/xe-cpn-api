@@ -32,6 +32,7 @@ import com.mycompany.myapp.service.audit.AuditRecorder;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.service.order.OrderStatusTransitions;
+import com.mycompany.myapp.service.order.PartnerAdvance;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import jakarta.persistence.criteria.JoinType;
 import java.math.BigDecimal;
@@ -499,6 +500,7 @@ public class FinanceFacadeService {
                 .findOneByOrderCodeOrDraftCode(line.orderCode().trim())
                 .orElseThrow(() -> new BadRequestAlertException("Order not found: " + line.orderCode(), ENTITY, "orderNotFound"));
             dayClosureGuard.assertCollectionMutable(order);
+            PartnerAdvance.assertNotPending(order, ENTITY);
             BigDecimal amount = line.amountCollected();
             if (amount == null) {
                 amount = BigDecimal.ZERO;
@@ -1013,6 +1015,7 @@ public class FinanceFacadeService {
                 .findOneByOrderCodeOrDraftCode(item.orderCode().trim())
                 .orElseThrow(() -> new BadRequestAlertException("Order not found: " + item.orderCode(), ENTITY, "orderNotFound"));
             dayClosureGuard.assertCollectionMutable(order);
+            PartnerAdvance.assertNotPending(order, ENTITY);
             String portion = item.portion() == null || item.portion().isBlank() ? null : item.portion().trim().toUpperCase();
             if (portion != null && !ReceiptSettlement.SENDER.equals(portion) && !ReceiptSettlement.DELIVERY.equals(portion)) {
                 throw new BadRequestAlertException("Invalid portion: " + item.portion(), ENTITY, "portionInvalid");

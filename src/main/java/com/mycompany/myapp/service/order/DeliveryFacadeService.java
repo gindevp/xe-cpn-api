@@ -1,9 +1,11 @@
 package com.mycompany.myapp.service.order;
 
+import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderDeliveryAttempt;
 import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.OrderPodPhoto;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.Shipper;
 import com.mycompany.myapp.domain.enumeration.DeliveryAttemptResult;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentKind;
@@ -13,6 +15,7 @@ import com.mycompany.myapp.repository.OrderDeliveryAttemptRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
 import com.mycompany.myapp.repository.OrderPodPhotoRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
+import com.mycompany.myapp.repository.ShipperRepository;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.AddPaymentRequest;
@@ -28,6 +31,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +50,7 @@ public class DeliveryFacadeService {
     private final OrderDeliveryAttemptRepository deliveryAttemptRepository;
     private final OrderFacadeService orderFacadeService;
     private final DayClosureGuard dayClosureGuard;
+    private final ShipperRepository shipperRepository;
 
     public DeliveryFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -53,8 +58,10 @@ public class DeliveryFacadeService {
         OrderPaymentRepository paymentRepository,
         OrderDeliveryAttemptRepository deliveryAttemptRepository,
         OrderFacadeService orderFacadeService,
-        DayClosureGuard dayClosureGuard
+        DayClosureGuard dayClosureGuard,
+        ShipperRepository shipperRepository
     ) {
+        this.shipperRepository = shipperRepository;
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.podPhotoRepository = podPhotoRepository;
         this.paymentRepository = paymentRepository;
@@ -194,6 +201,7 @@ public class DeliveryFacadeService {
         if (order.getStatus() != OrderStatus.AT_DEST && order.getStatus() != OrderStatus.FAILED_DELIVERY) {
             throw new BadRequestAlertException("Assign shipper from AT_DEST or FAILED_DELIVERY", ENTITY, "assignShipperStatus");
         }
+        PartnerAdvance.assertNoRefundDue(order, ENTITY);
 
         String mode = req.getMode() == null ? "INTERNAL" : req.getMode().trim().toUpperCase();
         String action;
@@ -210,6 +218,7 @@ public class DeliveryFacadeService {
             if (req.getPartnerFeeAmount() != null) {
                 order.setPartnerFeeAmount(req.getPartnerFeeAmount());
             }
+            order.setShipper(null);
             shipmentOrderRepository.save(order);
             action = "PUSH_SHIP";
             detail =
@@ -228,12 +237,24 @@ public class DeliveryFacadeService {
         } else {
             action = "TAKE_JOB";
             detail = "Internal shipper";
+            String reason = "TAKE_JOB";
+            if (req.getShipperId() != null) {
+                Shipper shipper = requireAssignableShipper(order, req.getShipperId());
+                order.setShipper(shipper);
+                shipmentOrderRepository.save(order);
+                String who = shipper.getFullName() + (shipper.getPhone() != null ? " · " + shipper.getPhone() : "");
+                detail = "Shipper nội bộ: " + who;
+                reason = "TAKE_JOB · " + who;
+            }
+            if (req.getNote() != null && !req.getNote().isBlank()) {
+                detail = detail + " — " + req.getNote().trim();
+            }
             OrderDeliveryAttempt attempt = new OrderDeliveryAttempt();
             attempt.setAttemptNo((int) deliveryAttemptRepository.countByOrder_Id(order.getId()) + 1);
             attempt.setAttemptAt(Instant.now());
             attempt.setResult(DeliveryAttemptResult.SUCCESS);
             attempt.setHandledByUsername(currentActor());
-            attempt.setReason("TAKE_JOB");
+            attempt.setReason(reason.length() > 255 ? reason.substring(0, 255) : reason);
             attempt.setOrder(order);
             deliveryAttemptRepository.save(attempt);
         }
@@ -365,8 +386,21 @@ public class DeliveryFacadeService {
         order.setPaidAmount(paid.add(amount));
     }
 
+    /**
+     * NV quầy nhận tiền mặt tài xế đối tác ứng: đánh dấu đã nhận rồi ghi khoản thu (người thu = NV đang thao tác).
+     * Vẫn qua guard chốt ngày + không vượt số còn nợ.
+     */
+    public void recordPartnerAdvance(ShipmentOrder order, BigDecimal amount, String note) {
+        String actor = currentActor();
+        order.setPartnerCodCollectedAt(Instant.now());
+        order.setPartnerCodCollectedBy(actor);
+        addPaymentInternal(order, amount, PaymentMethod.TM, PaymentKind.SAU, note, actor);
+        shipmentOrderRepository.save(order);
+    }
+
     private void assertPaymentAllowed(ShipmentOrder order, BigDecimal amount) {
         dayClosureGuard.assertCollectionMutable(order);
+        PartnerAdvance.assertNotPending(order, ENTITY);
         BigDecimal due = OrderMoney.collectDue(order);
         if (amount.compareTo(due) > 0) {
             throw new BadRequestAlertException(
@@ -375,6 +409,25 @@ public class DeliveryFacadeService {
                 "amountExceedsDue"
             );
         }
+    }
+
+    /** Shipper phải đang hoạt động và thuộc VP nhận của đơn (VP đích cuối nếu có trung chuyển). */
+    Shipper requireAssignableShipper(ShipmentOrder order, Long shipperId) {
+        Shipper shipper = shipperRepository
+            .findById(shipperId)
+            .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy shipper", ENTITY, "shipperNotFound"));
+        if (!Boolean.TRUE.equals(shipper.getActive())) {
+            throw new BadRequestAlertException("Shipper " + shipper.getFullName() + " đã ngừng hoạt động", ENTITY, "shipperInactive");
+        }
+        Office dest = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
+        if (dest == null || shipper.getOffice() == null || !Objects.equals(dest.getId(), shipper.getOffice().getId())) {
+            throw new BadRequestAlertException(
+                "Shipper " + shipper.getFullName() + " không thuộc VP nhận của đơn",
+                ENTITY,
+                "shipperOfficeMismatch"
+            );
+        }
+        return shipper;
     }
 
     private ShipmentOrder requireOrder(String code) {

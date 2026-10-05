@@ -916,6 +916,7 @@ public class OrderFacadeService {
         }
         String endpointsBefore = itineraryEndpointsKey(order);
         java.util.Map<String, String> fieldsBefore = OrderEditDiff.snapshot(order);
+        BigDecimal fareBefore = OrderMoney.nz(order.getFareAmount());
         if (req.getSenderName() != null) {
             order.setSenderName(req.getSenderName());
         }
@@ -1057,6 +1058,9 @@ public class OrderFacadeService {
         }
         if (req.getRouteLabel() == null && req.getItineraryLabel() == null && !endpointsBefore.equals(itineraryEndpointsKey(order))) {
             refillItinerary(order);
+        }
+        if (OrderMoney.nz(order.getFareAmount()).compareTo(fareBefore) != 0) {
+            PartnerAdvance.assertNotPending(order, ENTITY);
         }
         shipmentOrderRepository.save(order);
         if (!Boolean.TRUE.equals(req.getSkipHistory())) {
@@ -1401,6 +1405,7 @@ public class OrderFacadeService {
     public OrderDetailDTO rerouteDestination(String code, com.mycompany.myapp.service.dto.order.RerouteDestinationRequest req) {
         ShipmentOrder order = requireByCode(code);
         dayClosureGuard.assertOrderMutable(order);
+        PartnerAdvance.assertNoRefundDue(order, ENTITY);
         String reason = req == null || req.reason() == null ? "" : req.reason().trim();
         if (reason.length() < 3) {
             throw new BadRequestAlertException("Nhập lý do đổi VP nhận", ENTITY, "rerouteReasonRequired");
@@ -1446,6 +1451,8 @@ public class OrderFacadeService {
         order.setHubOffice(null);
         order.setPartnerCode(null);
         order.setPartnerFeeAmount(null);
+        order.setPartnerOrderId(null);
+        order.setPartnerStatus(null);
         shipmentOrderRepository.save(order);
         String detail =
             "Đổi VP nhận " + (current == null ? "—" : current.getName()) + " → " + target.getName() + " (hàng chuyển tay) · " + reason;
@@ -1464,6 +1471,7 @@ public class OrderFacadeService {
 
     public OrderDetailDTO changePaymentTerm(String code, com.mycompany.myapp.service.dto.order.ChangePaymentTermRequest req) {
         ShipmentOrder order = requireByCode(code);
+        PartnerAdvance.assertNotPending(order, ENTITY);
         String reason = req == null || req.reason() == null ? "" : req.reason().trim();
         if (reason.length() < 3) {
             throw new BadRequestAlertException("Nhập lý do đổi hình thức thanh toán", ENTITY, "paymentTermReasonRequired");
@@ -1834,6 +1842,11 @@ public class OrderFacadeService {
         return VietnamTaxCode.normalize(compact);
     }
 
+    /** Ghi 1 dòng lịch sử đơn không đổi trạng thái (vd cập nhật từ đối tác giao). */
+    public void recordEvent(ShipmentOrder order, String action, String detail, String actor) {
+        appendEvent(order, action, detail, actor);
+    }
+
     private void appendEvent(ShipmentOrder order, String action, String detail, String actor) {
         OrderEvent event = new OrderEvent();
         event.setEventAt(Instant.now());
@@ -1931,6 +1944,22 @@ public class OrderFacadeService {
         dto.setPickupStaffUsername(o.getPickupStaffUsername());
         dto.setPartnerCode(o.getPartnerCode());
         dto.setPartnerFeeAmount(o.getPartnerFeeAmount());
+        dto.setPartnerOrderId(o.getPartnerOrderId());
+        dto.setPartnerStatus(o.getPartnerStatus());
+        dto.setPartnerTrackingUrl(o.getPartnerTrackingUrl());
+        dto.setPartnerDriverName(o.getPartnerDriverName());
+        dto.setPartnerDriverPhone(o.getPartnerDriverPhone());
+        dto.setPartnerPodUrl(o.getPartnerPodUrl());
+        dto.setPartnerFailReason(o.getPartnerFailReason());
+        dto.setPartnerUpdatedAt(o.getPartnerUpdatedAt());
+        dto.setPartnerCodAmount(o.getPartnerCodAmount());
+        dto.setPartnerCodCollectedAt(o.getPartnerCodCollectedAt());
+        dto.setPartnerCodCollectedBy(o.getPartnerCodCollectedBy());
+        if (o.getShipper() != null) {
+            dto.setShipperId(o.getShipper().getId());
+            dto.setShipperName(o.getShipper().getFullName());
+            dto.setShipperPhone(o.getShipper().getPhone());
+        }
         dto.setCodAmount(o.getCodAmount());
         dto.setCodFeeAmount(o.getCodFeeAmount());
         dto.setGoodsFareAmount(o.getGoodsFareAmount());

@@ -53,6 +53,10 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             staffAccessService.requireScreenWrite(ScreenKey.POD_QUAY, ScreenKey.GIAO_TAN_NHA);
             return;
         }
+        if (path.matches(".*/api/orders/[^/]+/ahamove/(dispatch|cancel|advance-in|advance-refund)/?$")) {
+            staffAccessService.requireScreenWrite(ScreenKey.NHAP_KHO_LUAN_CHUYEN, ScreenKey.GIAO_TAN_NHA);
+            return;
+        }
         // Xuất HĐĐT MISA thủ công: màn Giao thành công hoặc kế toán (Quản lý hoá đơn)
         if (path.matches(".*/api/orders/[^/]+/invoice/issue/?$")) {
             staffAccessService.requireScreenWrite(ScreenKey.GIAO_THANH_CONG, ScreenKey.QUAN_LY_HOA_DON);
@@ -73,7 +77,8 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             path.startsWith("/api/offices") ||
             path.startsWith("/api/routes") ||
             path.startsWith("/api/vehicles") ||
-            path.startsWith("/api/drivers")
+            path.startsWith("/api/drivers") ||
+            path.startsWith("/api/shippers")
         ) {
             staffAccessService.requireScreenWrite(ScreenKey.MASTER);
             return;
@@ -162,7 +167,12 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         if ("POST".equals(method) && ("/api/orders/track".equals(path) || path.startsWith("/api/orders/track/invoice"))) {
             return true;
         }
-        if ("POST".equals(method) && ("/api/public/hhvn/webhook".equals(path) || "/api/public/vtech/webhook".equals(path))) {
+        if (
+            "POST".equals(method) &&
+            ("/api/public/hhvn/webhook".equals(path) ||
+                "/api/public/vtech/webhook".equals(path) ||
+                "/api/public/ahamove/webhook".equals(path))
+        ) {
             return true;
         }
         if ("POST".equals(method) && path.startsWith("/api/account/reset-password")) {

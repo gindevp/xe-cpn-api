@@ -62,6 +62,17 @@ public class IntegrationConfig implements Serializable {
     @Column(name = "goong_map_tiles_key", length = 255)
     private String goongMapTilesKey;
 
+    /** Ahamove gọi webhook kèm {@code ?token=} hoặc header {@code apikey} — CPN tự sinh. */
+    @Size(max = 64)
+    @Column(name = "ahamove_webhook_token", length = 64)
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String ahamoveWebhookToken;
+
+    /** BALANCE (trừ ví tài khoản Ahamove) | CASH (VP trả tiền mặt cho tài xế lúc lấy hàng). */
+    @Size(max = 32)
+    @Column(name = "ahamove_payment_method", length = 32)
+    private String ahamovePaymentMethod;
+
     @Size(max = 255)
     @Column(name = "telegram_token", length = 255)
     private String telegramToken;
@@ -493,6 +504,22 @@ public class IntegrationConfig implements Serializable {
 
     public void setAutocallVtechApiKey(String autocallVtechApiKey) {
         this.autocallVtechApiKey = autocallVtechApiKey;
+    }
+
+    public String getAhamoveWebhookToken() {
+        return ahamoveWebhookToken;
+    }
+
+    public void setAhamoveWebhookToken(String ahamoveWebhookToken) {
+        this.ahamoveWebhookToken = ahamoveWebhookToken;
+    }
+
+    public String getAhamovePaymentMethod() {
+        return ahamovePaymentMethod;
+    }
+
+    public void setAhamovePaymentMethod(String ahamovePaymentMethod) {
+        this.ahamovePaymentMethod = ahamovePaymentMethod;
     }
 
     public String getAutocallVtechWebhookToken() {

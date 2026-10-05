@@ -104,6 +104,15 @@ public class ConfigFacadeService {
         if (notBlank(incoming.getGoongMapTilesKey())) {
             current.setGoongMapTilesKey(incoming.getGoongMapTilesKey().trim());
         }
+        if (incoming.getAhamovePaymentMethod() != null) {
+            String pm = incoming.getAhamovePaymentMethod().trim().toUpperCase();
+            if ("BALANCE".equals(pm) || "CASH".equals(pm)) {
+                current.setAhamovePaymentMethod(pm);
+            }
+        }
+        if (!notBlank(current.getAhamoveWebhookToken())) {
+            current.setAhamoveWebhookToken(newWebhookToken());
+        }
         if (incoming.getTelegramToken() != null) current.setTelegramToken(incoming.getTelegramToken());
         if (incoming.getTelegramChatId() != null) current.setTelegramChatId(incoming.getTelegramChatId());
         if (incoming.getWebhookUrl() != null) current.setWebhookUrl(incoming.getWebhookUrl());

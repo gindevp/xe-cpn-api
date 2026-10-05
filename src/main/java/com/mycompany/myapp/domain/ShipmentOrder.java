@@ -322,6 +322,55 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "partner_code", length = 100)
     private String partnerCode;
 
+    /** Mã đơn bên đối tác giao tận nơi (Ahamove order_id) — khoá tra cứu webhook. */
+    @Size(max = 64)
+    @Column(name = "partner_order_id", length = 64)
+    private String partnerOrderId;
+
+    @Size(max = 40)
+    @Column(name = "partner_status", length = 40)
+    private String partnerStatus;
+
+    @Size(max = 500)
+    @Column(name = "partner_tracking_url", length = 500)
+    private String partnerTrackingUrl;
+
+    @Size(max = 100)
+    @Column(name = "partner_driver_name", length = 100)
+    private String partnerDriverName;
+
+    @Size(max = 32)
+    @Column(name = "partner_driver_phone", length = 32)
+    private String partnerDriverPhone;
+
+    @Size(max = 1000)
+    @Column(name = "partner_pod_url", length = 1000)
+    private String partnerPodUrl;
+
+    @Size(max = 500)
+    @Column(name = "partner_fail_reason", length = 500)
+    private String partnerFailReason;
+
+    @Column(name = "partner_updated_at")
+    private Instant partnerUpdatedAt;
+
+    /** Cước tài xế đối tác ứng cho VP lúc lấy hàng và thu lại người nhận (Ahamove {@code cod}). */
+    @Column(name = "partner_cod_amount", precision = 21, scale = 2)
+    private BigDecimal partnerCodAmount;
+
+    /** NV quầy xác nhận đã nhận tiền ứng; null = chưa nhận. */
+    @Column(name = "partner_cod_collected_at")
+    private Instant partnerCodCollectedAt;
+
+    @Column(name = "partner_cod_collected_by", length = 50)
+    private String partnerCodCollectedBy;
+
+    @Column(name = "delivery_lat", precision = 10, scale = 7)
+    private BigDecimal deliveryLat;
+
+    @Column(name = "delivery_lng", precision = 10, scale = 7)
+    private BigDecimal deliveryLng;
+
     @DecimalMin(value = "0")
     @DecimalMax(value = "100")
     @Column(name = "payment_percent", precision = 21, scale = 2)
@@ -376,6 +425,9 @@ public class ShipmentOrder implements Serializable {
 
     @ManyToOne(fetch = FetchType.LAZY)
     private Office finalToOffice;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    private Shipper shipper;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JsonIgnoreProperties(value = { "office", "route", "vehicle", "driver" }, allowSetters = true)
@@ -1154,6 +1206,118 @@ public class ShipmentOrder implements Serializable {
 
     public void setPartnerCode(String partnerCode) {
         this.partnerCode = partnerCode;
+    }
+
+    public String getPartnerOrderId() {
+        return partnerOrderId;
+    }
+
+    public void setPartnerOrderId(String partnerOrderId) {
+        this.partnerOrderId = partnerOrderId;
+    }
+
+    public String getPartnerStatus() {
+        return partnerStatus;
+    }
+
+    public void setPartnerStatus(String partnerStatus) {
+        this.partnerStatus = partnerStatus;
+    }
+
+    public String getPartnerTrackingUrl() {
+        return partnerTrackingUrl;
+    }
+
+    public void setPartnerTrackingUrl(String partnerTrackingUrl) {
+        this.partnerTrackingUrl = partnerTrackingUrl;
+    }
+
+    public String getPartnerDriverName() {
+        return partnerDriverName;
+    }
+
+    public void setPartnerDriverName(String partnerDriverName) {
+        this.partnerDriverName = partnerDriverName;
+    }
+
+    public String getPartnerDriverPhone() {
+        return partnerDriverPhone;
+    }
+
+    public void setPartnerDriverPhone(String partnerDriverPhone) {
+        this.partnerDriverPhone = partnerDriverPhone;
+    }
+
+    public String getPartnerPodUrl() {
+        return partnerPodUrl;
+    }
+
+    public void setPartnerPodUrl(String partnerPodUrl) {
+        this.partnerPodUrl = partnerPodUrl;
+    }
+
+    public String getPartnerFailReason() {
+        return partnerFailReason;
+    }
+
+    public void setPartnerFailReason(String partnerFailReason) {
+        this.partnerFailReason = partnerFailReason;
+    }
+
+    public Instant getPartnerUpdatedAt() {
+        return partnerUpdatedAt;
+    }
+
+    public void setPartnerUpdatedAt(Instant partnerUpdatedAt) {
+        this.partnerUpdatedAt = partnerUpdatedAt;
+    }
+
+    public BigDecimal getPartnerCodAmount() {
+        return partnerCodAmount;
+    }
+
+    public void setPartnerCodAmount(BigDecimal partnerCodAmount) {
+        this.partnerCodAmount = partnerCodAmount;
+    }
+
+    public Instant getPartnerCodCollectedAt() {
+        return partnerCodCollectedAt;
+    }
+
+    public void setPartnerCodCollectedAt(Instant partnerCodCollectedAt) {
+        this.partnerCodCollectedAt = partnerCodCollectedAt;
+    }
+
+    public String getPartnerCodCollectedBy() {
+        return partnerCodCollectedBy;
+    }
+
+    public void setPartnerCodCollectedBy(String partnerCodCollectedBy) {
+        this.partnerCodCollectedBy = partnerCodCollectedBy;
+    }
+
+    public BigDecimal getDeliveryLat() {
+        return deliveryLat;
+    }
+
+    public Shipper getShipper() {
+        return shipper;
+    }
+
+    public void setShipper(Shipper shipper) {
+        this.shipper = shipper;
+    }
+
+    public void setDeliveryLat(BigDecimal deliveryLat) {
+        this.deliveryLat = deliveryLat;
+    }
+
+    public BigDecimal getDeliveryLng() {
+        return deliveryLng;
+    }
+
+    public void setDeliveryLng(BigDecimal deliveryLng) {
+        this.deliveryLng = deliveryLng;
     }
 
     public BigDecimal getPaymentPercent() {
