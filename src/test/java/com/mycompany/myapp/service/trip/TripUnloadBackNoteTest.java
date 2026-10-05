@@ -21,4 +21,16 @@ class TripUnloadBackNoteTest {
         assertThat(TripFacadeService.stripWarehouseOut("[WHOUT]1[/WHOUT]")).isNull();
         assertThat(TripFacadeService.stripWarehouseOut(null)).isNull();
     }
+
+    @Test
+    void withAllWarehouseInMarksEveryPackage() {
+        assertThat(TripFacadeService.withAllWarehouseIn(null, null)).isEqualTo("[WHIN]1[/WHIN]");
+        assertThat(TripFacadeService.withAllWarehouseIn("[WHOUT]1,2,3[/WHOUT]\nghi chú", 3)).isEqualTo(
+            "[WHOUT]1,2,3[/WHOUT]\nghi chú\n[WHIN]1,2,3[/WHIN]"
+        );
+        assertThat(TripFacadeService.withAllWarehouseIn("[LOAI]A[/LOAI]\n[WHIN]2[/WHIN]\n[CUOC]1[/CUOC]", 2)).isEqualTo(
+            "[LOAI]A[/LOAI]\n[CUOC]1[/CUOC]\n[WHIN]1,2[/WHIN]"
+        );
+        assertThat(TripFacadeService.hasDestWarehouseIn(TripFacadeService.withAllWarehouseIn("x", 1))).isTrue();
+    }
 }

@@ -431,6 +431,19 @@ public class TripFacadeService {
         return note != null && WHIN_SEQS.matcher(note).find();
     }
 
+    private static final java.util.regex.Pattern WHIN_BLOCK = java.util.regex.Pattern.compile("\\[WHIN\\][\\d,]*\\[/WHIN\\]\\n?");
+
+    /** Đánh dấu mọi kiện 1..quantity đã nhập kho giao trong note (định dạng FE: [WHIN]1,2[/WHIN]). */
+    static String withAllWarehouseIn(String note, Integer quantity) {
+        int n = quantity != null && quantity > 0 ? quantity : 1;
+        String seqs = java.util.stream.IntStream.rangeClosed(1, n)
+            .mapToObj(String::valueOf)
+            .collect(java.util.stream.Collectors.joining(","));
+        String rest = note == null ? "" : WHIN_BLOCK.matcher(note).replaceAll("").trim();
+        String block = "[WHIN]" + seqs + "[/WHIN]";
+        return rest.isEmpty() ? block : rest + "\n" + block;
+    }
+
     static String stripWarehouseOut(String note) {
         if (note == null) return null;
         String out = WHOUT_BLOCK.matcher(note).replaceAll("").trim();
@@ -496,6 +509,10 @@ public class TripFacadeService {
             tr.setAction("SCAN_IN");
             tr.setDetail(officeCode != null ? "Văn phòng " + officeCode : "Nhập kho nhận");
             orderFacadeService.transition(order.getOrderCode(), tr);
+            // Web/app chỉ gọi khi đã quét đủ kiện; ghi [WHIN] cùng transaction để note không lệch trạng thái khi client lỗi mạng.
+            order = requireOrder(req.getOrderCode());
+            order.setNote(withAllWarehouseIn(order.getNote(), order.getQuantity()));
+            shipmentOrderRepository.save(order);
         }
 
         if (req.getShelfNumber() != null) {
