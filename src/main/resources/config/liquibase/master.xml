@@ -119,5 +119,6 @@
     <include file="config/liquibase/changelog/20261004214500_order_goods_photo.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261004230000_inventory_check_photo.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261005150000_order_cod_processed_by.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261005170000_vehicle_pickup_offset.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 

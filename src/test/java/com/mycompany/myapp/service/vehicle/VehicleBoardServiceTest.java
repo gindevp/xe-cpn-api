@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import com.mycompany.myapp.domain.Itinerary;
 import com.mycompany.myapp.domain.Office;
+import com.mycompany.myapp.domain.OfficeVehicleItinerary;
 import com.mycompany.myapp.domain.Route;
 import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.domain.Trip;
@@ -242,50 +243,105 @@ class VehicleBoardServiceTest {
         loginAt(ga);
 
         VehicleBoardDtos.Item item = service.report(
-            new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, todayAt(9))
+            new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, Instant.now())
         );
         assertThat(item.eventType()).isEqualTo("DEPART");
         assertThat(item.reportedAt()).isNotNull();
     }
 
-    @Test
-    void departAfterLongDwellRequiresReason() {
+    private void arrivedAtGa() {
         VehicleOfficeEvent arrived = new VehicleOfficeEvent();
-        arrived.setEventAt(Instant.now().minusSeconds(6 * 60));
+        arrived.setEventAt(Instant.now().minusSeconds(60 * 60));
         when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(1L, EventType.DEPART, "C:CH123")).thenReturn(Optional.empty());
         when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(1L, EventType.ARRIVE, "C:CH123")).thenReturn(Optional.of(arrived));
         loginAt(ga);
+    }
+
+    @Test
+    void departLateVsPickupRequiresReason() {
+        arrivedAtGa();
 
         assertThatThrownBy(() ->
-            service.report(new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, todayAt(9), "  "))
+            service.report(
+                new VehicleBoardDtos.ReportRequest(
+                    "DEPART",
+                    "CRM",
+                    null,
+                    "CH123",
+                    "30H-83330",
+                    null,
+                    null,
+                    Instant.now().minusSeconds(6 * 60),
+                    "  "
+                )
+            )
         )
             .isInstanceOf(BadRequestAlertException.class)
             .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
-            .isEqualTo("dwellReasonRequired");
+            .isEqualTo("lateReasonRequired");
         verify(eventRepository, never()).saveAndFlush(any());
     }
 
     @Test
-    void departAfterLongDwellWithReasonSavesReason() {
-        VehicleOfficeEvent arrived = new VehicleOfficeEvent();
-        arrived.setEventAt(Instant.now().minusSeconds(20 * 60));
-        when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(1L, EventType.DEPART, "C:CH123")).thenReturn(Optional.empty());
-        when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(1L, EventType.ARRIVE, "C:CH123")).thenReturn(Optional.of(arrived));
-        ArgumentCaptor<VehicleOfficeEvent> saved = ArgumentCaptor.forClass(VehicleOfficeEvent.class);
-        when(eventRepository.saveAndFlush(saved.capture())).thenAnswer(inv -> inv.getArgument(0));
-        loginAt(ga);
+    void longDwellButOnTimeVsPickupNeedsNoReason() {
+        arrivedAtGa();
+        when(eventRepository.saveAndFlush(any(VehicleOfficeEvent.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service.report(
-            new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, todayAt(9), " Chờ hàng ")
+        VehicleBoardDtos.Item item = service.report(
+            new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, Instant.now().plusSeconds(600))
         );
-        assertThat(saved.getValue().getReason()).isEqualTo("Chờ hàng");
+        assertThat(item.reportedAt()).isNotNull();
     }
 
     @Test
-    void dwellOverLimitIsStrictlyAfterFiveMinutes() {
-        Instant a = Instant.parse("2026-10-03T01:00:00Z");
-        assertThat(VehicleBoardService.dwellOverLimit(a, a.plusSeconds(5 * 60))).isFalse();
-        assertThat(VehicleBoardService.dwellOverLimit(a, a.plusSeconds(5 * 60 + 1))).isTrue();
+    void departLateWithReasonSavesReasonAndPickup() {
+        arrivedAtGa();
+        ArgumentCaptor<VehicleOfficeEvent> saved = ArgumentCaptor.forClass(VehicleOfficeEvent.class);
+        when(eventRepository.saveAndFlush(saved.capture())).thenAnswer(inv -> inv.getArgument(0));
+        Instant planned = Instant.now().minusSeconds(20 * 60);
+
+        service.report(new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, planned, " Chờ hàng "));
+        assertThat(saved.getValue().getReason()).isEqualTo("Chờ hàng");
+        assertThat(saved.getValue().getPickupAt()).isEqualTo(planned);
+    }
+
+    @Test
+    void pickupOffsetOfItineraryShiftsLateCheck() {
+        arrivedAtGa();
+        OfficeVehicleItinerary cfg = new OfficeVehicleItinerary(1L, "GA-YB", 30);
+        when(officeItineraryRepository.findByOfficeId(1L)).thenReturn(List.of(cfg));
+        ArgumentCaptor<VehicleOfficeEvent> saved = ArgumentCaptor.forClass(VehicleOfficeEvent.class);
+        when(eventRepository.saveAndFlush(saved.capture())).thenAnswer(inv -> inv.getArgument(0));
+        Instant planned = Instant.now().minusSeconds(20 * 60);
+
+        service.report(new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, planned, null, "GA-YB"));
+        assertThat(saved.getValue().getPickupAt()).isEqualTo(planned.plusSeconds(30 * 60));
+        assertThat(saved.getValue().getReason()).isNull();
+    }
+
+    @Test
+    void pickupOffsetResolvedByRouteLabelWhenNoCode() {
+        arrivedAtGa();
+        when(officeItineraryRepository.findByOfficeId(1L)).thenReturn(List.of(new OfficeVehicleItinerary(1L, "GA-YB", -120)));
+        when(itineraryRepository.findFiltered(null, true)).thenReturn(List.of(itinerary("GA-YB", "GA - YB")));
+        ArgumentCaptor<VehicleOfficeEvent> saved = ArgumentCaptor.forClass(VehicleOfficeEvent.class);
+        when(eventRepository.saveAndFlush(saved.capture())).thenAnswer(inv -> inv.getArgument(0));
+        Instant planned = Instant.now().plusSeconds(150 * 60);
+
+        service.report(
+            new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, "GA - YB", planned, "Đợi khách")
+        );
+        assertThat(saved.getValue().getPickupAt()).isEqualTo(planned.minusSeconds(120 * 60));
+    }
+
+    @Test
+    void deviationMinutesAndLateThreshold() {
+        Instant p = Instant.parse("2026-10-03T01:00:00Z");
+        assertThat(VehicleBoardService.deviationMinutes(p, p.plusSeconds(4 * 60 + 59))).isEqualTo(4);
+        assertThat(VehicleBoardService.departLate(p, p.plusSeconds(4 * 60 + 59))).isFalse();
+        assertThat(VehicleBoardService.departLate(p, p.plusSeconds(5 * 60))).isTrue();
+        assertThat(VehicleBoardService.deviationMinutes(p, p.minusSeconds(3 * 60))).isEqualTo(-3);
+        assertThat(VehicleBoardService.departLate(p, null)).isFalse();
     }
 
     @Test
@@ -413,6 +469,43 @@ class VehicleBoardServiceTest {
         verify(officeItineraryRepository).deleteByOfficeId(1L);
         verify(officeItineraryRepository).save(any());
         assertThat(cfg.options()).extracting(VehicleBoardDtos.ConfigOption::selected).containsExactly(true, false);
+    }
+
+    @Test
+    void saveConfigStoresOffsetOnlyForSelectedItinerary() {
+        ga.setItineraryPoint("GA");
+        when(officeRepository.findById(1L)).thenReturn(Optional.of(ga));
+        when(itineraryRepository.findFiltered(null, true)).thenReturn(
+            List.of(itinerary("GA-NB", "GA - NB"), itinerary("GA-YB", "GA - YB"))
+        );
+        ArgumentCaptor<OfficeVehicleItinerary> saved = ArgumentCaptor.forClass(OfficeVehicleItinerary.class);
+
+        service.saveItineraryConfig(
+            1L,
+            new VehicleBoardDtos.ItineraryConfigRequest(
+                List.of("GA-NB"),
+                List.of(new VehicleBoardDtos.ItineraryOffset("GA-NB", -120), new VehicleBoardDtos.ItineraryOffset("GA-YB", 30))
+            )
+        );
+
+        verify(officeItineraryRepository).save(saved.capture());
+        assertThat(saved.getValue().getItineraryCode()).isEqualTo("GA-NB");
+        assertThat(saved.getValue().getOffsetMinutes()).isEqualTo(-120);
+    }
+
+    @Test
+    void saveConfigRejectsOffsetOutOfRange() {
+        ga.setItineraryPoint("GA");
+        when(officeRepository.findById(1L)).thenReturn(Optional.of(ga));
+        when(itineraryRepository.findFiltered(null, true)).thenReturn(List.of(itinerary("GA-NB", "GA - NB")));
+
+        assertThatThrownBy(() ->
+            service.saveItineraryConfig(
+                1L,
+                new VehicleBoardDtos.ItineraryConfigRequest(List.of("GA-NB"), List.of(new VehicleBoardDtos.ItineraryOffset("GA-NB", 1000)))
+            )
+        ).isInstanceOf(BadRequestAlertException.class);
+        verify(officeItineraryRepository, never()).deleteByOfficeId(any());
     }
 
     @Test

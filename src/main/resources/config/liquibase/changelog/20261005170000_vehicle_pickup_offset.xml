@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261005170000-1" author="cpn">
+        <comment>Phút lệch giờ đón khách tại VP so với giờ xe xuất bến (âm = sớm hơn), theo từng lộ trình VP báo giờ.</comment>
+        <addColumn tableName="office_vehicle_itinerary">
+            <column name="offset_minutes" type="int"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20261005170000-2" author="cpn">
+        <comment>Giờ đón khách tại VP (giờ xuất bến + phút lệch lộ trình) chốt lúc báo giờ.</comment>
+        <addColumn tableName="vehicle_office_event">
+            <column name="pickup_at" type="${datetimeType}"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

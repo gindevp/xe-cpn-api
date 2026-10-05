@@ -21,7 +21,8 @@ public final class VehicleBoardDtos {
         String routeLabel,
         Instant plannedDepartAt,
         Instant reportedAt,
-        String reportedBy
+        String reportedBy,
+        Instant pickupAt
     ) {}
 
     public record ItineraryOption(String code, String name) {}
@@ -29,6 +30,7 @@ public final class VehicleBoardDtos {
     /** Xe CRM của một lộ trình xuất bến hôm nay + giờ đã báo đến/rời tại VP của NV. */
     public record DayBoard(String officeCode, String officeName, List<DayItem> items) {}
 
+    /** {@code pickupAt}: giờ đón khách tại VP = giờ xuất bến + phút lệch của lộ trình (Danh mục VP → Lộ trình áp dụng). */
     public record DayItem(
         String externalTripId,
         String vehiclePlate,
@@ -38,7 +40,8 @@ public final class VehicleBoardDtos {
         Instant arrivedAt,
         String arrivedBy,
         Instant departedAt,
-        String departedBy
+        String departedBy,
+        Instant pickupAt
     ) {}
 
     public record ReportItem(
@@ -57,7 +60,8 @@ public final class VehicleBoardDtos {
         Instant eventAt,
         String reportedBy,
         String reportedByName,
-        String reason
+        String reason,
+        Instant pickupAt
     ) {}
 
     /** {@code itineraries}: lộ trình báo giờ của VP đang xem (rỗng khi xem toàn hệ thống). */
@@ -66,9 +70,17 @@ public final class VehicleBoardDtos {
     /** Cấu hình lộ trình báo giờ của VP: mọi lộ trình qua điểm của VP, {@code selected} = VP báo giờ lộ trình đó. */
     public record ItineraryConfig(Long officeId, String officeName, List<ConfigOption> options) {}
 
-    public record ConfigOption(String code, String name, boolean selected) {}
+    /** {@code offsetMinutes}: phút lệch giờ đón so với giờ xuất bến (âm = sớm), null = trùng giờ xuất bến. */
+    public record ConfigOption(String code, String name, boolean selected, Integer offsetMinutes) {}
 
-    public record ItineraryConfigRequest(List<String> itineraryCodes) {}
+    public record ItineraryOffset(String code, Integer offsetMinutes) {}
+
+    /** {@code offsets}: phút lệch theo mã lộ trình (chỉ áp cho lộ trình có trong {@code itineraryCodes}). */
+    public record ItineraryConfigRequest(List<String> itineraryCodes, List<ItineraryOffset> offsets) {
+        public ItineraryConfigRequest(List<String> itineraryCodes) {
+            this(itineraryCodes, null);
+        }
+    }
 
     public record ReportRequest(
         String eventType,
@@ -79,7 +91,9 @@ public final class VehicleBoardDtos {
         String driverName,
         String routeLabel,
         Instant plannedDepartAt,
-        String reason
+        String reason,
+        /** Mã lộ trình đang chọn trên app — để lấy phút lệch giờ đón; app cũ không gửi thì suy theo tên tuyến. */
+        String itineraryCode
     ) {
         public ReportRequest(
             String eventType,
@@ -91,7 +105,21 @@ public final class VehicleBoardDtos {
             String routeLabel,
             Instant plannedDepartAt
         ) {
-            this(eventType, source, tripCode, externalTripId, vehiclePlate, driverName, routeLabel, plannedDepartAt, null);
+            this(eventType, source, tripCode, externalTripId, vehiclePlate, driverName, routeLabel, plannedDepartAt, null, null);
+        }
+
+        public ReportRequest(
+            String eventType,
+            String source,
+            String tripCode,
+            String externalTripId,
+            String vehiclePlate,
+            String driverName,
+            String routeLabel,
+            Instant plannedDepartAt,
+            String reason
+        ) {
+            this(eventType, source, tripCode, externalTripId, vehiclePlate, driverName, routeLabel, plannedDepartAt, reason, null);
         }
     }
 }

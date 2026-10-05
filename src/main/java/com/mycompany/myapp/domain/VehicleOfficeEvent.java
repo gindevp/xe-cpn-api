@@ -66,6 +66,10 @@ public class VehicleOfficeEvent implements Serializable {
     @Column(name = "planned_depart_at")
     private Instant plannedDepartAt;
 
+    /** Giờ đón khách tại VP (giờ xuất bến + phút lệch lộ trình); lượt báo cũ = null, dùng giờ xuất bến. */
+    @Column(name = "pickup_at")
+    private Instant pickupAt;
+
     @NotNull
     @Column(name = "event_at", nullable = false)
     private Instant eventAt;
@@ -75,6 +79,14 @@ public class VehicleOfficeEvent implements Serializable {
 
     @Column(name = "reason", length = 500)
     private String reason;
+
+    public Instant getPickupAt() {
+        return pickupAt;
+    }
+
+    public void setPickupAt(Instant pickupAt) {
+        this.pickupAt = pickupAt;
+    }
 
     public String getReason() {
         return reason;

@@ -25,11 +25,28 @@ public class OfficeVehicleItinerary implements Serializable {
     @Column(name = "itinerary_code", length = 50, nullable = false)
     private String itineraryCode;
 
+    /** Giờ đón khách tại VP = giờ xe xuất bến + số phút này (âm = sớm hơn); null = trùng giờ xuất bến. */
+    @Column(name = "offset_minutes")
+    private Integer offsetMinutes;
+
     public OfficeVehicleItinerary() {}
 
     public OfficeVehicleItinerary(Long officeId, String itineraryCode) {
         this.officeId = officeId;
         this.itineraryCode = itineraryCode;
+    }
+
+    public OfficeVehicleItinerary(Long officeId, String itineraryCode, Integer offsetMinutes) {
+        this(officeId, itineraryCode);
+        this.offsetMinutes = offsetMinutes;
+    }
+
+    public Integer getOffsetMinutes() {
+        return offsetMinutes;
+    }
+
+    public void setOffsetMinutes(Integer offsetMinutes) {
+        this.offsetMinutes = offsetMinutes;
     }
 
     public Long getId() {

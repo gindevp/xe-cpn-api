@@ -56,8 +56,10 @@ public class VehicleBoardService {
     static final String ENTITY = "vehicleEvent";
     private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     static final int MAX_REPORT_DAYS = 92;
-    /** Dừng tại VP lâu hơn ngưỡng này thì báo rời phải kèm lý do. */
-    static final int MAX_DWELL_MINUTES = 5;
+    /** Rời VP trễ hơn giờ đón từ ngần này phút là MUỘN — báo rời phải kèm lý do. */
+    static final int LATE_MINUTES = 5;
+    /** Phút lệch giờ đón tối đa so với giờ xuất bến (± 12 tiếng). */
+    static final int MAX_OFFSET_MINUTES = 720;
 
     private final TripRepository tripRepository;
     private final ItineraryRepository itineraryRepository;
@@ -138,6 +140,7 @@ public class VehicleBoardService {
             }
         }
 
+        PickupOffsets offsets = pickupOffsets(office);
         List<VehicleBoardDtos.Item> items = new ArrayList<>();
         for (Candidate c : candidates) {
             VehicleOfficeEvent e = reported.get(c.type() + "|" + c.tripKey());
@@ -145,7 +148,7 @@ public class VehicleBoardService {
             if (yesterday && e != null) {
                 continue;
             }
-            items.add(toItem(c, e));
+            items.add(toItem(c, e, pickupAt(c.departAt(), offsets.of(null, c.route()))));
         }
         items.sort(Comparator.comparing(VehicleBoardDtos.Item::plannedDepartAt, Comparator.nullsLast(Comparator.naturalOrder())));
         return new VehicleBoardDtos.Board(office.getCode(), office.getName(), items, crmWarning);
@@ -200,6 +203,80 @@ public class VehicleBoardService {
         return office.getId() == null ? Set.of() : new HashSet<>(officeItineraryRepository.findCodesByOfficeId(office.getId()));
     }
 
+    /** Mã lộ trình → phút lệch giờ đón tại VP (chỉ lộ trình đã tích và có nhập phút lệch). */
+    private Map<String, Integer> offsetsByCode(Office office) {
+        Map<String, Integer> out = new HashMap<>();
+        if (office.getId() == null) {
+            return out;
+        }
+        for (OfficeVehicleItinerary v : officeItineraryRepository.findByOfficeId(office.getId())) {
+            if (v.getItineraryCode() != null && v.getOffsetMinutes() != null && v.getOffsetMinutes() != 0) {
+                out.put(v.getItineraryCode(), v.getOffsetMinutes());
+            }
+        }
+        return out;
+    }
+
+    private PickupOffsets pickupOffsets(Office office) {
+        return new PickupOffsets(offsetsByCode(office));
+    }
+
+    /** Tra phút lệch theo mã lộ trình, hoặc theo tên tuyến khi không có mã (app cũ / chuyến hệ thống). */
+    private final class PickupOffsets {
+
+        private final Map<String, Integer> byCode;
+        private Map<String, String> codeByName;
+
+        PickupOffsets(Map<String, Integer> byCode) {
+            this.byCode = byCode;
+        }
+
+        int of(String itineraryCode, String routeLabel) {
+            if (byCode.isEmpty()) {
+                return 0;
+            }
+            String code = trimToNull(itineraryCode);
+            if (code == null && routeLabel != null) {
+                if (codeByName == null) {
+                    codeByName = new HashMap<>();
+                    for (Itinerary it : itineraryRepository.findFiltered(null, true)) {
+                        if (byCode.containsKey(it.getCode())) {
+                            codeByName.put(nameKey(it.getCode()), it.getCode());
+                            if (it.getName() != null) {
+                                codeByName.put(nameKey(it.getName()), it.getCode());
+                            }
+                        }
+                    }
+                }
+                code = codeByName.get(nameKey(routeLabel));
+            }
+            Integer v = code == null ? null : byCode.get(code);
+            return v == null ? 0 : v;
+        }
+    }
+
+    private static String nameKey(String s) {
+        String f = foldPoint(s);
+        return f == null ? "" : f.replaceAll("\\s+", "");
+    }
+
+    static Instant pickupAt(Instant departAt, int offsetMinutes) {
+        return departAt == null ? null : departAt.plus(offsetMinutes, ChronoUnit.MINUTES);
+    }
+
+    /** Phút lệch giờ rời thực tế so với giờ đón (âm = sớm), làm tròn về 0 theo phút; thiếu một mốc → null. */
+    static Long deviationMinutes(Instant pickupAt, Instant actualAt) {
+        if (pickupAt == null || actualAt == null) {
+            return null;
+        }
+        return java.time.Duration.between(pickupAt, actualAt).getSeconds() / 60;
+    }
+
+    static boolean departLate(Instant pickupAt, Instant actualAt) {
+        Long d = deviationMinutes(pickupAt, actualAt);
+        return d != null && d >= LATE_MINUTES;
+    }
+
     /** Trang khách tạo đơn: mã VP → lộ trình VP báo giờ (chỉ VP đã cấu hình). */
     @Transactional(readOnly = true)
     public Map<String, List<String>> allOfficeItineraries() {
@@ -218,13 +295,15 @@ public class VehicleBoardService {
         staffAccessService.requireScreenRead(ScreenKey.MASTER);
         Office office = officeById(officeId);
         Set<String> configured = configuredCodes(office);
+        Map<String, Integer> offsets = offsetsByCode(office);
         List<VehicleBoardDtos.ConfigOption> options = pointItineraries(office)
             .stream()
             .map(it ->
                 new VehicleBoardDtos.ConfigOption(
                     it.getCode(),
                     firstNonBlank(it.getName(), it.getCode()),
-                    configured.contains(it.getCode())
+                    configured.contains(it.getCode()),
+                    offsets.get(it.getCode())
                 )
             )
             .toList();
@@ -253,9 +332,26 @@ public class VehicleBoardService {
                 codes.add(code);
             }
         }
+        Map<String, Integer> offsets = new HashMap<>();
+        if (req != null && req.offsets() != null) {
+            for (VehicleBoardDtos.ItineraryOffset o : req.offsets()) {
+                String code = o == null ? null : trimToNull(o.code());
+                if (code == null || o.offsetMinutes() == null || !codes.contains(code)) {
+                    continue;
+                }
+                if (Math.abs(o.offsetMinutes()) > MAX_OFFSET_MINUTES) {
+                    throw new BadRequestAlertException(
+                        "Phút lệch giờ đón của lộ trình " + code + " phải trong khoảng ±" + MAX_OFFSET_MINUTES,
+                        ENTITY,
+                        "offsetOutOfRange"
+                    );
+                }
+                offsets.put(code, o.offsetMinutes());
+            }
+        }
         officeItineraryRepository.deleteByOfficeId(office.getId());
         officeItineraryRepository.flush();
-        codes.forEach(c -> officeItineraryRepository.save(new OfficeVehicleItinerary(office.getId(), c)));
+        codes.forEach(c -> officeItineraryRepository.save(new OfficeVehicleItinerary(office.getId(), c, offsets.get(c))));
         return itineraryConfig(officeId);
     }
 
@@ -294,6 +390,7 @@ public class VehicleBoardService {
             }
         }
 
+        int offset = pickupOffsets(office).of(itinerary.getCode(), null);
         Set<String> seen = new HashSet<>();
         List<VehicleBoardDtos.DayItem> items = new ArrayList<>();
         for (AvailableTripDTO t : trips) {
@@ -313,7 +410,8 @@ public class VehicleBoardService {
                     arrive != null ? arrive.getEventAt() : null,
                     arrive != null ? arrive.getReportedBy() : null,
                     depart != null ? depart.getEventAt() : null,
-                    depart != null ? depart.getReportedBy() : null
+                    depart != null ? depart.getReportedBy() : null,
+                    pickupAt(t.getDepartAt(), offset)
                 )
             );
         }
@@ -365,23 +463,25 @@ public class VehicleBoardService {
             );
         }
 
+        Instant pickup = pickupAt(c.departAt(), pickupOffsets(office).of(req.itineraryCode(), c.route()));
         var existing = eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(office.getId(), type, c.tripKey());
         if (existing.isPresent()) {
-            return toItem(c, existing.get());
+            VehicleOfficeEvent old = existing.get();
+            return toItem(c, old, old.getPickupAt() != null ? old.getPickupAt() : pickup);
         }
         Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         String reason = cut(trimToNull(req.reason()), 500);
         if (type == EventType.DEPART) {
-            VehicleOfficeEvent arrive = eventRepository
+            eventRepository
                 .findOneByOffice_IdAndEventTypeAndTripKey(office.getId(), EventType.ARRIVE, c.tripKey())
                 .orElseThrow(() ->
                     new BadRequestAlertException("Chưa báo xe đến VP — báo xe đến trước rồi mới báo xe rời", ENTITY, "arriveFirst")
                 );
-            if (reason == null && dwellOverLimit(arrive.getEventAt(), now)) {
+            if (reason == null && departLate(pickup, now)) {
                 throw new BadRequestAlertException(
-                    "Xe dừng quá " + MAX_DWELL_MINUTES + " phút — nhập lý do trước khi báo xe rời",
+                    "Xe rời muộn " + deviationMinutes(pickup, now) + " phút so với giờ đón — nhập lý do trước khi báo xe rời",
                     ENTITY,
-                    "dwellReasonRequired"
+                    "lateReasonRequired"
                 );
             }
         }
@@ -396,6 +496,7 @@ public class VehicleBoardService {
         e.setDriverName(c.driver());
         e.setRouteLabel(c.route());
         e.setPlannedDepartAt(c.departAt());
+        e.setPickupAt(pickup);
         e.setEventAt(now);
         e.setReportedBy(SecurityUtils.getCurrentUserLogin().orElse(null));
         e.setReason(reason);
@@ -404,7 +505,7 @@ public class VehicleBoardService {
         } catch (DataIntegrityViolationException dup) {
             throw new BadRequestAlertException("Chuyến này vừa được báo — tải lại danh sách", ENTITY, "alreadyReported");
         }
-        return toItem(c, e);
+        return toItem(c, e, pickup);
     }
 
     /**
@@ -464,7 +565,8 @@ public class VehicleBoardService {
                     e.getEventAt(),
                     e.getReportedBy(),
                     e.getReportedBy() == null ? null : names.get(e.getReportedBy().toLowerCase(Locale.ROOT)),
-                    e.getReason()
+                    e.getReason(),
+                    e.getPickupAt() != null ? e.getPickupAt() : e.getPlannedDepartAt()
                 )
             )
             .toList();
@@ -534,10 +636,6 @@ public class VehicleBoardService {
         return p.getOffice();
     }
 
-    static boolean dwellOverLimit(Instant arrivedAt, Instant departAt) {
-        return arrivedAt != null && departAt != null && departAt.isAfter(arrivedAt.plus(MAX_DWELL_MINUTES, ChronoUnit.MINUTES));
-    }
-
     static boolean departsFrom(Trip trip, Office office) {
         Route r = trip.getRoute();
         return (
@@ -567,7 +665,7 @@ public class VehicleBoardService {
         );
     }
 
-    private static VehicleBoardDtos.Item toItem(Candidate c, VehicleOfficeEvent e) {
+    private static VehicleBoardDtos.Item toItem(Candidate c, VehicleOfficeEvent e, Instant pickupAt) {
         return new VehicleBoardDtos.Item(
             c.type() + "|" + c.tripKey(),
             c.type().name(),
@@ -579,7 +677,8 @@ public class VehicleBoardService {
             c.route(),
             c.departAt(),
             e != null ? e.getEventAt() : null,
-            e != null ? e.getReportedBy() : null
+            e != null ? e.getReportedBy() : null,
+            pickupAt
         );
     }
 

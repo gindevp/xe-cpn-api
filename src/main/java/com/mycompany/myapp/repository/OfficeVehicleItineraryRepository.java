@@ -13,6 +13,8 @@ public interface OfficeVehicleItineraryRepository extends JpaRepository<OfficeVe
     @Query("select o.itineraryCode from OfficeVehicleItinerary o where o.officeId = :officeId")
     List<String> findCodesByOfficeId(@Param("officeId") Long officeId);
 
+    List<OfficeVehicleItinerary> findByOfficeId(Long officeId);
+
     /** [office.code, itinerary_code] của mọi VP đã cấu hình. */
     @Query("select o.code, v.itineraryCode from OfficeVehicleItinerary v, Office o where o.id = v.officeId")
     List<Object[]> findAllOfficeCodePairs();
