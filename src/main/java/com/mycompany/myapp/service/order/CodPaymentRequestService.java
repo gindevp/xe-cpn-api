@@ -8,32 +8,28 @@ import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.LinkedHashMap;
+import java.util.Base64;
+import java.util.Locale;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
-import java.util.zip.ZipOutputStream;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Giấy đề nghị thanh toán COD cho người gửi — điền vào mẫu BMTT-01 (templates/cod-payment-request.xlsx). */
+/** Giấy đề nghị thanh toán COD cho người gửi — trang HTML theo mẫu BMTT-01 để in từ trình duyệt. */
 @Service
 @Transactional(readOnly = true)
 public class CodPaymentRequestService {
 
-    static final String TEMPLATE = "templates/cod-payment-request.xlsx";
-    private static final String SHEET = "xl/worksheets/sheet1.xml";
+    static final String LOGO = "templates/xe-logo.png";
+    static final String DEPARTMENT_HEAD = "Nguyễn Tuấn Việt";
     private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final Map<RoleCode, String> ROLE_LABELS = Map.of(
         RoleCode.Q,
@@ -54,6 +50,37 @@ public class CodPaymentRequestService {
         "Admin"
     );
 
+    private static final String CSS =
+        """
+        @page{size:A4 portrait;margin:12mm 12mm 14mm}
+        *{box-sizing:border-box}
+        body{margin:0;font-family:"Times New Roman",Times,serif;font-size:13pt;color:#000}
+        .head{display:flex;align-items:center;gap:10px}
+        .head img{height:62px}
+        .head .co{flex:1}
+        .head .co b{font-size:13pt}
+        .head .co div{font-size:10.5pt}
+        .head .form{font-size:10.5pt;text-align:right;white-space:nowrap}
+        h1{text-align:center;font-size:16pt;margin:18px 0 2px}
+        .day{text-align:center;font-style:italic;margin-bottom:12px}
+        p{margin:5px 0}
+        .row2{display:flex}
+        .row2>div:first-child{flex:1}
+        .row2>div:last-child{width:38%}
+        table.items{width:100%;border-collapse:collapse;margin:6px 0 8px;font-size:12pt}
+        table.items th,table.items td{border:1px solid #000;padding:4px 5px;vertical-align:top}
+        table.items th{font-weight:bold;text-align:center}
+        table.items td.r{text-align:right;white-space:nowrap}
+        table.items td.c{text-align:center}
+        table.items tr.blank td{height:22px}
+        table.items tr.total td{font-weight:bold}
+        .sign{display:flex;margin-top:14px;text-align:center;page-break-inside:avoid}
+        .sign>div{flex:1}
+        .sign b{display:block}
+        .sign i{display:block;font-size:11pt}
+        .sign .name{margin-top:72px;font-weight:bold}
+        """;
+
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final StaffAccessService staffAccessService;
 
@@ -62,11 +89,9 @@ public class CodPaymentRequestService {
         this.staffAccessService = staffAccessService;
     }
 
-    static final String DEPARTMENT_HEAD = "Nguyễn Tuấn Việt";
-
     public record Requester(String name, String position) {}
 
-    public byte[] build(String orderCode) {
+    public String buildHtml(String orderCode) {
         ShipmentOrder order = shipmentOrderRepository
             .findOneByOrderCodeOrDraftCode(orderCode == null ? "" : orderCode.trim())
             .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy đơn", "order", "notfound"));
@@ -76,7 +101,7 @@ public class CodPaymentRequestService {
         if (order.getStatus() != OrderStatus.DELIVERED) {
             throw new BadRequestAlertException("Đơn chưa giao thành công", "order", "notDelivered");
         }
-        return fill(order, currentRequester(), LocalDate.now(VN));
+        return html(order, currentRequester(), LocalDate.now(VN), logoDataUrl());
     }
 
     private Requester currentRequester() {
@@ -89,99 +114,112 @@ public class CodPaymentRequestService {
         return new Requester(name, ROLE_LABELS.getOrDefault(p.getRoleCode(), ""));
     }
 
-    static byte[] fill(ShipmentOrder order, Requester requester, LocalDate day) {
+    static String html(ShipmentOrder order, Requester requester, LocalDate day, String logo) {
         BigDecimal cod = OrderMoney.nz(order.getCodAmount());
-        String code = order.getOrderCode();
-        String sender = join(" - ", order.getSenderName(), order.getSenderPhone());
+        String code = esc(order.getOrderCode());
+        String money = esc(money(cod));
+        String sender = esc(join(" - ", order.getSenderName(), order.getSenderPhone()));
         boolean transfer = notBlank(order.getBankAccountNo());
 
-        Map<String, Cell> cells = new LinkedHashMap<>();
-        cells.put("B6", Cell.text("Ngày " + day.getDayOfMonth() + " Tháng " + day.getMonthValue() + " Năm " + day.getYear()));
-        cells.put("C8", Cell.text(requester.name()));
-        cells.put("H8", Cell.text(requester.position()));
-        cells.put("B10", Cell.text("Lý do xin thanh toán: Thanh toán tiền thu hộ COD cho người gửi đơn " + code));
-        cells.put("B14", Cell.number(BigDecimal.ONE));
-        cells.put("C14", Cell.text("Thanh toán tiền thu hộ COD đơn " + code));
-        cells.put("D14", Cell.text(code));
-        cells.put("E14", Cell.text("Đơn"));
-        cells.put("F14", Cell.number(BigDecimal.ONE));
-        cells.put("G14", Cell.number(cod));
-        cells.put("H14", Cell.number(cod));
-        cells.put("I14", Cell.text(sender));
-        cells.put("H20", Cell.formula("SUM(H14:H19)", cod));
-        cells.put("C22", Cell.text(VietnameseMoneyWords.of(cod)));
-        cells.put("B23", Cell.text("Hình thức thanh toán: " + (transfer ? "CK" : "TM")));
-        cells.put("C24", Cell.text(nz(order.getBankAccountName())));
-        cells.put("C25", Cell.text(nz(order.getBankAccountNo())));
-        cells.put("H25", Cell.text(nz(order.getBankName())));
-        cells.put("E32", Cell.text(DEPARTMENT_HEAD));
-        cells.put("I32", Cell.text(requester.name()));
-
-        return rewriteTemplate(sheet -> applyCells(sheet, cells));
-    }
-
-    /** Thay nội dung các ô (giữ style s="…" của mẫu). Ô chưa có trong hàng thì không thêm — mẫu đã khai đủ ô cần điền. */
-    static String applyCells(String sheetXml, Map<String, Cell> cells) {
-        String xml = sheetXml;
-        for (Map.Entry<String, Cell> e : cells.entrySet()) {
-            Matcher m = Pattern.compile("<c r=\"" + e.getKey() + "\"([^>]*?)(?:/>|>.*?</c>)").matcher(xml);
-            if (!m.find()) {
-                throw new IllegalStateException("Mẫu đề nghị thanh toán thiếu ô " + e.getKey());
-            }
-            String attrs = m.group(1).replaceAll(" t=\"[^\"]*\"", "");
-            xml = xml.substring(0, m.start()) + e.getValue().xml(e.getKey(), attrs) + xml.substring(m.end());
+        StringBuilder blanks = new StringBuilder();
+        for (int i = 0; i < 5; i++) {
+            blanks.append("<tr class=\"blank\"><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>");
         }
-        return xml;
+
+        return (
+            "<!doctype html><html lang=\"vi\"><head><meta charset=\"utf-8\"><title>De nghi thanh toan COD " +
+            code +
+            "</title><style>" +
+            CSS +
+            "</style></head><body>" +
+            "<div class=\"head\">" +
+            (logo.isEmpty() ? "" : "<img alt=\"X.E\" src=\"" + logo + "\">") +
+            "<div class=\"co\"><b>CÔNG TY TNHH X.E VIỆT NAM</b>" +
+            "<div>Số 4 Đường Văn Chỉ Thôn Tam Đa, Xã Tam Hưng, TP Hà Nội</div>" +
+            "<div>VPGD: Số 21 Đại Từ - Định Công - HN</div></div>" +
+            "<div class=\"form\">Biểu mẫu: BMTT - 01<br>NBH: 01/09/2025</div></div>" +
+            "<h1>GIẤY ĐỀ NGHỊ THANH TOÁN</h1>" +
+            "<div class=\"day\">Ngày " +
+            day.getDayOfMonth() +
+            " Tháng " +
+            day.getMonthValue() +
+            " Năm " +
+            day.getYear() +
+            "</div>" +
+            "<p>Kính gửi: Ban lãnh đạo công ty TNHH X.E Việt Nam</p>" +
+            "<div class=\"row2\"><div>Tên tôi là: <b>" +
+            esc(requester.name()) +
+            "</b></div><div>Chức vụ: " +
+            esc(requester.position()) +
+            "</div></div>" +
+            "<p>Lý do xin thanh toán: Thanh toán tiền thu hộ COD cho người gửi đơn " +
+            code +
+            "</p>" +
+            "<p>Chi tiết theo bảng kê như sau:</p>" +
+            "<table class=\"items\"><thead><tr><th style=\"width:6%\">STT</th><th>Nội dung</th><th style=\"width:13%\">Số CT</th>" +
+            "<th style=\"width:6%\">ĐVT</th><th style=\"width:7%\">Số lượng</th><th style=\"width:11%\">Đơn giá</th>" +
+            "<th style=\"width:12%\">Thành tiền</th><th style=\"width:18%\">Chi tiết đối tượng</th></tr></thead><tbody>" +
+            "<tr><td class=\"c\">1</td><td>Thanh toán tiền thu hộ COD đơn " +
+            code +
+            "</td><td>" +
+            code +
+            "</td><td class=\"c\">Đơn</td><td class=\"c\">1</td><td class=\"r\">" +
+            money +
+            "</td><td class=\"r\">" +
+            money +
+            "</td><td>" +
+            sender +
+            "</td></tr>" +
+            blanks +
+            "<tr class=\"total\"><td></td><td>Tổng cộng</td><td></td><td></td><td></td><td></td><td class=\"r\">" +
+            money +
+            "</td><td></td></tr></tbody></table>" +
+            "<p>Số tiền bằng chữ: <b><i>" +
+            esc(VietnameseMoneyWords.of(cod)) +
+            "</i></b></p>" +
+            "<p>Hình thức thanh toán: " +
+            (transfer ? "CK" : "TM") +
+            "</p>" +
+            "<p>Tên chủ tài khoản: " +
+            esc(nz(order.getBankAccountName())) +
+            "</p>" +
+            "<div class=\"row2\"><div>Số tài khoản: " +
+            esc(nz(order.getBankAccountNo())) +
+            "</div><div>Mở tại: " +
+            esc(nz(order.getBankName())) +
+            "</div></div>" +
+            "<div class=\"sign\">" +
+            signer("Giám đốc", "") +
+            signer("Kế toán trưởng", "") +
+            signer("Trưởng Bộ phận", DEPARTMENT_HEAD) +
+            signer("Người đề nghị", requester.name()) +
+            "</div></body></html>"
+        );
     }
 
-    private static byte[] rewriteTemplate(java.util.function.UnaryOperator<String> sheetEditor) {
-        ClassPathResource res = new ClassPathResource(TEMPLATE);
-        try (
-            InputStream raw = res.getInputStream();
-            ZipInputStream in = new ZipInputStream(raw, StandardCharsets.UTF_8);
-            ByteArrayOutputStream buf = new ByteArrayOutputStream();
-            ZipOutputStream out = new ZipOutputStream(buf, StandardCharsets.UTF_8)
-        ) {
-            ZipEntry e;
-            while ((e = in.getNextEntry()) != null) {
-                byte[] data = in.readAllBytes();
-                if (SHEET.equals(e.getName())) {
-                    data = sheetEditor.apply(new String(data, StandardCharsets.UTF_8)).getBytes(StandardCharsets.UTF_8);
-                }
-                out.putNextEntry(new ZipEntry(e.getName()));
-                out.write(data);
-                out.closeEntry();
-            }
-            out.finish();
-            return buf.toByteArray();
+    private static String signer(String title, String name) {
+        return "<div><b>" + title + "</b><i>(Ký, ghi rõ họ tên)</i><div class=\"name\">" + esc(name) + "&nbsp;</div></div>";
+    }
+
+    private static String logoDataUrl() {
+        try (InputStream in = new ClassPathResource(LOGO).getInputStream()) {
+            return "data:image/png;base64," + Base64.getEncoder().encodeToString(in.readAllBytes());
         } catch (IOException ex) {
-            throw new UncheckedIOException("Không đọc được mẫu đề nghị thanh toán", ex);
+            throw new UncheckedIOException("Không đọc được logo", ex);
         }
     }
 
-    record Cell(String kind, String text, BigDecimal number, String formula) {
-        static Cell text(String v) {
-            return new Cell("text", v == null ? "" : v, null, null);
-        }
-
-        static Cell number(BigDecimal v) {
-            return new Cell("number", null, v, null);
-        }
-
-        static Cell formula(String f, BigDecimal cached) {
-            return new Cell("formula", null, cached, f);
-        }
-
-        String xml(String ref, String attrs) {
-            return switch (kind) {
-                case "number" -> "<c r=\"" + ref + "\"" + attrs + "><v>" + number.toPlainString() + "</v></c>";
-                case "formula" -> "<c r=\"" + ref + "\"" + attrs + "><f>" + esc(formula) + "</f><v>" + number.toPlainString() + "</v></c>";
-                default -> "<c r=\"" + ref + "\"" + attrs + " t=\"inlineStr\"><is><t xml:space=\"preserve\">" + esc(text) + "</t></is></c>";
-            };
-        }
+    static String money(BigDecimal v) {
+        DecimalFormatSymbols sym = new DecimalFormatSymbols(Locale.ROOT);
+        sym.setGroupingSeparator('.');
+        sym.setDecimalSeparator(',');
+        return new DecimalFormat("#,##0.##", sym).format(v);
     }
 
-    private static String esc(String s) {
+    static String esc(String s) {
+        if (s == null) {
+            return "";
+        }
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 

@@ -1,8 +1,7 @@
 package com.mycompany.myapp.web.rest;
 
 import com.mycompany.myapp.service.order.CodPaymentRequestService;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
+import java.nio.charset.StandardCharsets;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,14 +19,11 @@ public class CodPaymentRequestResource {
         this.codPaymentRequestService = codPaymentRequestService;
     }
 
-    /** Giấy đề nghị thanh toán COD (mẫu BMTT-01) của 1 đơn, dạng .xlsx. */
+    /** Giấy đề nghị thanh toán COD (mẫu BMTT-01) của 1 đơn — trang HTML để FE mở hộp thoại in. */
     @GetMapping("/payment-request")
     public ResponseEntity<byte[]> paymentRequest(@RequestParam String code) {
-        byte[] body = codPaymentRequestService.build(code);
-        String file = "de-nghi-thanh-toan-cod-" + code.trim().replaceAll("[^A-Za-z0-9_-]", "") + ".xlsx";
         return ResponseEntity.ok()
-            .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(file).build().toString())
-            .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-            .body(body);
+            .contentType(new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8))
+            .body(codPaymentRequestService.buildHtml(code).getBytes(StandardCharsets.UTF_8));
     }
 }
