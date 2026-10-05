@@ -28,6 +28,7 @@ final class OrderEditDiff {
         { "SLQTY", "Số lượng từng kiện" },
         { "PKGKG", "KL từng kiện" },
         { "PKGDIM", "Kích thước kiện" },
+        { "PKGNOTE", "Ghi chú kiện" },
         { "RETURN", "Người nhận hoàn" },
     };
 
