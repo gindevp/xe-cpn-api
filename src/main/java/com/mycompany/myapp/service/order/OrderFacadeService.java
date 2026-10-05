@@ -636,6 +636,9 @@ public class OrderFacadeService {
         if (req.getCodFeeAmount() != null) {
             order.setCodFeeAmount(req.getCodFeeAmount());
         }
+        order.setBankName(blankToNull(req.getBankName()));
+        order.setBankAccountNo(blankToNull(req.getBankAccountNo()));
+        order.setBankAccountName(blankToNull(req.getBankAccountName()));
         // Endpoint công khai: không tin paidAmount từ client — tiền chỉ ghi qua order_payment do nhân viên thu.
         order.setPaidAmount(BigDecimal.ZERO);
         order.setRouteLabel(blankToNull(req.getRouteLabel()));

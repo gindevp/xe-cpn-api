@@ -80,8 +80,42 @@ public class CreateDraftOrderRequest {
     private BigDecimal paidAmount;
     private Integer quantity;
 
+    /** Tài khoản người gửi nhận tiền thu hộ (COD chuyển khoản). */
+    @Size(max = 120)
+    private String bankName;
+
+    @Size(max = 60)
+    private String bankAccountNo;
+
+    @Size(max = 120)
+    private String bankAccountName;
+
     /** Ảnh đơn hàng (data:image/..., không bắt buộc, 1 ảnh). */
     private String goodsPhoto;
+
+    public String getBankName() {
+        return bankName;
+    }
+
+    public void setBankName(String bankName) {
+        this.bankName = bankName;
+    }
+
+    public String getBankAccountNo() {
+        return bankAccountNo;
+    }
+
+    public void setBankAccountNo(String bankAccountNo) {
+        this.bankAccountNo = bankAccountNo;
+    }
+
+    public String getBankAccountName() {
+        return bankAccountName;
+    }
+
+    public void setBankAccountName(String bankAccountName) {
+        this.bankAccountName = bankAccountName;
+    }
 
     public String getGoodsPhoto() {
         return goodsPhoto;
