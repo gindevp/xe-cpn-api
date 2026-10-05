@@ -42,6 +42,10 @@ public interface OrderEventRepository extends JpaRepository<OrderEvent, Long> {
 
     boolean existsByOrder_IdAndActionAndActorUsername(Long orderId, String action, String actorUsername);
 
+    /** Hàng: [orderId, actorUsername] của sự kiện tạo đơn ("customer" = khách tự tạo). */
+    @Query("select e.order.id, e.actorUsername from OrderEvent e where e.order.id in :orderIds and upper(e.action) = 'CREATE'")
+    List<Object[]> creatorsByOrderIds(@Param("orderIds") java.util.Collection<Long> orderIds);
+
     /** Hàng: [orderId, max(eventAt)] của các sự kiện thuộc {@code actions}. */
     @Query(
         "select e.order.id, max(e.eventAt) from OrderEvent e where e.order.id in :orderIds and upper(e.action) in :actions group by e.order.id"

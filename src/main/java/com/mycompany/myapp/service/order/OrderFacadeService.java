@@ -375,9 +375,12 @@ public class OrderFacadeService {
         java.util.Map<String, String> codProcessorNames = staffNamesByLogin(
             page.getContent().stream().map(ShipmentOrder::getCodExportedBy).toList()
         );
+        java.util.Map<Long, String> creators = creatorLogins(pageIds);
+        java.util.Map<String, java.util.Optional<com.mycompany.myapp.domain.StaffProfile>> creatorProfiles = new java.util.HashMap<>();
         return page.map(o -> {
             OrderSummaryDTO dto = new OrderSummaryDTO();
             fillSummary(dto, o, legsByOrder.getOrDefault(o.getId(), List.of()));
+            applyCreator(dto, creators.get(o.getId()), creatorProfiles);
             applyStageTimes(dto, stageTimes.getOrDefault(o.getId(), java.util.Map.of()));
             dto.setHasGoodsPhoto(withGoodsPhoto.contains(o.getId()));
             if (o.getCodExportedBy() != null) {
@@ -1856,12 +1859,14 @@ public class OrderFacadeService {
     private OrderSummaryDTO toSummary(ShipmentOrder o) {
         OrderSummaryDTO dto = new OrderSummaryDTO();
         fillSummary(dto, o);
+        applyCreator(dto, o);
         return dto;
     }
 
     private OrderDetailDTO toDetail(ShipmentOrder o) {
         OrderDetailDTO dto = new OrderDetailDTO();
         fillSummary(dto, o);
+        applyCreator(dto, o);
         dto.setCancelReason(o.getCancelReason());
         dto.setReceiverActualName(o.getReceiverActualName());
         dto.setReceiverActualPhone(o.getReceiverActualPhone());
@@ -2085,6 +2090,47 @@ public class OrderFacadeService {
                 return v;
             })
             .toList();
+    }
+
+    private java.util.Map<Long, String> creatorLogins(java.util.Collection<Long> orderIds) {
+        java.util.Map<Long, String> out = new java.util.HashMap<>();
+        if (orderEventRepository == null || orderIds == null || orderIds.isEmpty()) {
+            return out;
+        }
+        for (Object[] row : orderEventRepository.creatorsByOrderIds(orderIds)) {
+            if (row[0] != null && row[1] != null) {
+                out.putIfAbsent((Long) row[0], (String) row[1]);
+            }
+        }
+        return out;
+    }
+
+    private void applyCreator(OrderSummaryDTO dto, ShipmentOrder o) {
+        if (o.getId() == null) {
+            return;
+        }
+        applyCreator(dto, creatorLogins(List.of(o.getId())).get(o.getId()), new java.util.HashMap<>());
+    }
+
+    private void applyCreator(
+        OrderSummaryDTO dto,
+        String login,
+        java.util.Map<String, java.util.Optional<com.mycompany.myapp.domain.StaffProfile>> profiles
+    ) {
+        if (login == null || login.isBlank()) {
+            return;
+        }
+        dto.setCreatedBy(login.trim());
+        if ("customer".equalsIgnoreCase(login.trim()) || staffProfileRepository == null) {
+            return;
+        }
+        profiles
+            .computeIfAbsent(login.trim().toLowerCase(), staffProfileRepository::findOneByUserLoginIgnoreCase)
+            .ifPresent(sp -> {
+                String name = sp.getDisplayName();
+                dto.setCreatedByName(name != null && !name.isBlank() ? name.trim() : null);
+                dto.setCreatedByRole(sp.getRoleCode() != null ? sp.getRoleCode().name() : null);
+            });
     }
 
     /** login (chữ thường) → họ tên nhân viên; tài khoản không có hồ sơ / không có tên thì bỏ qua. */

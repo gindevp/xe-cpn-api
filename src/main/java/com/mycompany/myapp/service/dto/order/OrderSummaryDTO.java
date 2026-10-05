@@ -93,6 +93,11 @@ public class OrderSummaryDTO {
     private Instant codExportedAt;
     private String codExportedBy;
     private String codExportedByName;
+    /** Tài khoản tạo đơn (sự kiện CREATE); "customer" = khách tự tạo. */
+    private String createdBy;
+    private String createdByName;
+    /** Mã vai trò nhân viên tạo đơn (Q, DH, …); null với khách. */
+    private String createdByRole;
     private String vehiclePlate;
     private String driverName;
     /** Giờ xuất phát chuyến hiện tại (trip.departAt) — FE tab Hàng trên xe. */
@@ -707,6 +712,30 @@ public class OrderSummaryDTO {
 
     public void setCodExportedByName(String codExportedByName) {
         this.codExportedByName = codExportedByName;
+    }
+
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
+    }
+
+    public String getCreatedByName() {
+        return createdByName;
+    }
+
+    public void setCreatedByName(String createdByName) {
+        this.createdByName = createdByName;
+    }
+
+    public String getCreatedByRole() {
+        return createdByRole;
+    }
+
+    public void setCreatedByRole(String createdByRole) {
+        this.createdByRole = createdByRole;
     }
 
     public String getVehiclePlate() {
