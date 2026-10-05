@@ -11,13 +11,16 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mycompany.myapp.domain.InventoryCheck;
 import com.mycompany.myapp.domain.InventoryCheckPhoto;
+import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.repository.InventoryCheckPhotoRepository;
 import com.mycompany.myapp.repository.InventoryCheckRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
+import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.dto.inventory.CreateInventoryCheckRequest;
 import com.mycompany.myapp.service.inventory.InventoryCheckService.UploadPhotoRequest;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,11 +49,21 @@ class InventoryCheckServicePhotoTest {
     @Mock
     private StaffAccessService staffAccessService;
 
+    @Mock
+    private StaffProfileRepository staffProfileRepository;
+
     private InventoryCheckService service;
 
     @BeforeEach
     void setUp() {
-        service = new InventoryCheckService(checkRepository, photoRepository, officeRepository, staffAccessService, new ObjectMapper());
+        service = new InventoryCheckService(
+            checkRepository,
+            photoRepository,
+            officeRepository,
+            staffAccessService,
+            new ObjectMapper(),
+            staffProfileRepository
+        );
         lenient().when(staffAccessService.scopedOfficeCode()).thenReturn(Optional.of("VP_HD"));
     }
 
@@ -144,15 +157,39 @@ class InventoryCheckServicePhotoTest {
         when(photoRepository.findBySessionKeyAndOrderCodeIgnoreCaseOrderByPackageSeqAscCapturedAtAsc(SESSION, "HD1")).thenReturn(
             List.of(p)
         );
-        when(photoRepository.countByOrder(SESSION)).thenReturn(List.<Object[]>of(new Object[] { "HD1", 2L }));
+        Instant t1 = Instant.parse("2026-09-29T13:43:00Z");
+        Instant t2 = Instant.parse("2026-09-29T13:44:25Z");
+        when(photoRepository.scanMetaBySession(SESSION)).thenReturn(
+            List.<Object[]>of(new Object[] { "hd1", t2, "ngoc" }, new Object[] { "HD1", t1, "nam" }, new Object[] { "HD2", t1, "nam" })
+        );
+        StaffProfile ngoc = new StaffProfile();
+        ngoc.setStaffCode("1805235");
+        ngoc.setDisplayName("Nguyễn Thị Ngọc");
+        when(staffProfileRepository.findOneByUserLoginIgnoreCase("ngoc")).thenReturn(Optional.of(ngoc));
+        when(staffProfileRepository.findOneByUserLoginIgnoreCase("nam")).thenReturn(Optional.empty());
 
         assertThat(service.photos(5L, "HD1")).singleElement().satisfies(d -> assertThat(d.photo()).isEqualTo(IMG));
-        assertThat(service.photoOrders(5L))
-            .singleElement()
-            .satisfies(c -> {
-                assertThat(c.orderCode()).isEqualTo("HD1");
-                assertThat(c.count()).isEqualTo(2L);
-            });
+        assertThat(service.photoOrders(5L)).containsExactly(
+            new InventoryCheckService.PhotoOrderCount("HD1", 2L, t2, "ngoc", "1805235", "Nguyễn Thị Ngọc"),
+            new InventoryCheckService.PhotoOrderCount("HD2", 1L, t1, "nam", null, null)
+        );
+    }
+
+    @Test
+    void thumbnails_firstPhotoPerOrder() {
+        InventoryCheck check = new InventoryCheck();
+        check.setOfficeCode("VP_HD");
+        check.setSessionKey(SESSION);
+        when(checkRepository.findById(5L)).thenReturn(Optional.of(check));
+        InventoryCheckPhoto p = new InventoryCheckPhoto();
+        p.setOrderCode("hd1");
+        p.setPhotoUrl(IMG);
+        when(photoRepository.firstPhotoIds(SESSION, List.of("HD1", "HD2"))).thenReturn(List.of(11L));
+        when(photoRepository.findAllById(List.of(11L))).thenReturn(List.of(p));
+
+        assertThat(service.thumbnails(5L, List.of(" hd1", "HD2", "hd1", ""))).containsExactly(
+            new InventoryCheckService.ThumbnailDTO("HD1", IMG)
+        );
     }
 
     @Test

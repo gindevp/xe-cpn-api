@@ -49,6 +49,11 @@ public class InventoryCheckResource {
         return inventoryCheckService.photoOrders(id);
     }
 
+    @GetMapping("/{id}/thumbnails")
+    public List<InventoryCheckService.ThumbnailDTO> thumbnails(@PathVariable Long id, @RequestParam List<String> codes) {
+        return inventoryCheckService.thumbnails(id, codes);
+    }
+
     @GetMapping("/{id}/photos")
     public List<InventoryCheckService.PhotoDTO> photos(@PathVariable Long id, @RequestParam String orderCode) {
         return inventoryCheckService.photos(id, orderCode);

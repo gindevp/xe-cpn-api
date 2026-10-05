@@ -8,6 +8,7 @@ import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.repository.InventoryCheckPhotoRepository;
 import com.mycompany.myapp.repository.InventoryCheckRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
+import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.dto.inventory.CreateInventoryCheckRequest;
@@ -36,19 +37,22 @@ public class InventoryCheckService {
     private final OfficeRepository officeRepository;
     private final StaffAccessService staffAccessService;
     private final ObjectMapper objectMapper;
+    private final StaffProfileRepository staffProfileRepository;
 
     public InventoryCheckService(
         InventoryCheckRepository inventoryCheckRepository,
         InventoryCheckPhotoRepository photoRepository,
         OfficeRepository officeRepository,
         StaffAccessService staffAccessService,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        StaffProfileRepository staffProfileRepository
     ) {
         this.inventoryCheckRepository = inventoryCheckRepository;
         this.photoRepository = photoRepository;
         this.officeRepository = officeRepository;
         this.staffAccessService = staffAccessService;
         this.objectMapper = objectMapper;
+        this.staffProfileRepository = staffProfileRepository;
     }
 
     @Transactional(readOnly = true)
@@ -133,7 +137,17 @@ public class InventoryCheckService {
 
     public record PhotoDTO(Long id, int packageSeq, String photo, Instant capturedAt, String capturedBy) {}
 
-    public record PhotoOrderCount(String orderCode, long count) {}
+    /** Số ảnh + lần quét cuối (giờ, tài khoản, mã NV, họ tên) của từng đơn trong phiên. */
+    public record PhotoOrderCount(
+        String orderCode,
+        long count,
+        Instant lastScannedAt,
+        String lastScannedBy,
+        String lastScannedByCode,
+        String lastScannedByName
+    ) {}
+
+    public record ThumbnailDTO(String orderCode, String photo) {}
 
     /** Ảnh kiện chụp khi quét — app gửi từng ảnh ngay lúc quét, trước khi có biên bản. */
     public void uploadPhoto(UploadPhotoRequest req) {
@@ -182,10 +196,67 @@ public class InventoryCheckService {
         if (check.getSessionKey() == null) {
             return List.of();
         }
-        return photoRepository
-            .countByOrder(check.getSessionKey())
+        java.util.Map<String, long[]> counts = new java.util.LinkedHashMap<>();
+        java.util.Map<String, Object[]> last = new java.util.HashMap<>();
+        for (Object[] r : photoRepository.scanMetaBySession(check.getSessionKey())) {
+            if (r[0] == null) {
+                continue;
+            }
+            String code = ((String) r[0]).trim().toUpperCase(Locale.ROOT);
+            counts.computeIfAbsent(code, k -> new long[1])[0]++;
+            Instant at = (Instant) r[1];
+            Object[] prev = last.get(code);
+            if (prev == null || (at != null && (prev[1] == null || at.isAfter((Instant) prev[1])))) {
+                last.put(code, r);
+            }
+        }
+        java.util.Map<String, java.util.Optional<StaffProfile>> staff = new java.util.HashMap<>();
+        List<PhotoOrderCount> out = new ArrayList<>();
+        counts.forEach((code, n) -> {
+            Object[] l = last.get(code);
+            String by = l == null ? null : (String) l[2];
+            StaffProfile sp = by == null || staffProfileRepository == null
+                ? null
+                : staff.computeIfAbsent(by.toLowerCase(Locale.ROOT), staffProfileRepository::findOneByUserLoginIgnoreCase).orElse(null);
+            out.add(
+                new PhotoOrderCount(
+                    code,
+                    n[0],
+                    l == null ? null : (Instant) l[1],
+                    by,
+                    sp == null ? null : sp.getStaffCode(),
+                    sp == null || sp.getDisplayName() == null || sp.getDisplayName().isBlank() ? null : sp.getDisplayName().trim()
+                )
+            );
+        });
+        return out;
+    }
+
+    /** Ảnh đầu tiên của từng đơn (ảnh đại diện trong bảng chi tiết phiên); tối đa 100 đơn một lần. */
+    @Transactional(readOnly = true)
+    public List<ThumbnailDTO> thumbnails(Long checkId, List<String> orderCodes) {
+        InventoryCheck check = requireViewable(checkId);
+        if (check.getSessionKey() == null || orderCodes == null || orderCodes.isEmpty()) {
+            return List.of();
+        }
+        List<String> codes = orderCodes
             .stream()
-            .map(r -> new PhotoOrderCount((String) r[0], ((Number) r[1]).longValue()))
+            .filter(c -> c != null && !c.isBlank())
+            .map(c -> c.trim().toUpperCase(Locale.ROOT))
+            .distinct()
+            .limit(100)
+            .toList();
+        if (codes.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = photoRepository.firstPhotoIds(check.getSessionKey(), codes);
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return photoRepository
+            .findAllById(ids)
+            .stream()
+            .map(p -> new ThumbnailDTO(p.getOrderCode().trim().toUpperCase(Locale.ROOT), p.getPhotoUrl()))
             .toList();
     }
 
