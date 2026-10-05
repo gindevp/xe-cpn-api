@@ -372,11 +372,17 @@ public class OrderFacadeService {
         java.util.Set<Long> withGoodsPhoto = goodsPhotoRepository == null || pageIds.isEmpty()
             ? java.util.Set.of()
             : new java.util.HashSet<>(goodsPhotoRepository.findOrderIdsIn(pageIds));
+        java.util.Map<String, String> codProcessorNames = staffNamesByLogin(
+            page.getContent().stream().map(ShipmentOrder::getCodExportedBy).toList()
+        );
         return page.map(o -> {
             OrderSummaryDTO dto = new OrderSummaryDTO();
             fillSummary(dto, o, legsByOrder.getOrDefault(o.getId(), List.of()));
             applyStageTimes(dto, stageTimes.getOrDefault(o.getId(), java.util.Map.of()));
             dto.setHasGoodsPhoto(withGoodsPhoto.contains(o.getId()));
+            if (o.getCodExportedBy() != null) {
+                dto.setCodExportedByName(codProcessorNames.get(o.getCodExportedBy().trim().toLowerCase()));
+            }
             return dto;
         });
     }
@@ -467,11 +473,19 @@ public class OrderFacadeService {
             if (!isCodOrder(order)) {
                 continue;
             }
-            if (order.getStatus() != OrderStatus.DELIVERED) {
+            if (order.getStatus() != OrderStatus.DELIVERED || order.getCodExportedAt() != null) {
                 continue;
             }
+            String actor = currentActor();
             order.setCodExportedAt(now);
+            order.setCodExportedBy(actor);
             shipmentOrderRepository.save(order);
+            appendEvent(
+                order,
+                "COD_PROCESSED",
+                "Xác nhận đã xử lý COD " + OrderMoney.nz(order.getCodAmount()).toPlainString() + "đ",
+                actor
+            );
             updated++;
         }
         return updated;
@@ -1937,6 +1951,7 @@ public class OrderFacadeService {
         dto.setRouteLabel(o.getRouteLabel());
         dto.setItineraryLabel(o.getItineraryLabel());
         dto.setCodExportedAt(o.getCodExportedAt());
+        dto.setCodExportedBy(o.getCodExportedBy());
         if (o.getCurrentTrip() != null) {
             if (o.getCurrentTrip().getVehicle() != null) {
                 dto.setVehiclePlate(o.getCurrentTrip().getVehicle().getPlateNumber());
@@ -2070,6 +2085,28 @@ public class OrderFacadeService {
                 return v;
             })
             .toList();
+    }
+
+    /** login (chữ thường) → họ tên nhân viên; tài khoản không có hồ sơ / không có tên thì bỏ qua. */
+    private java.util.Map<String, String> staffNamesByLogin(java.util.Collection<String> logins) {
+        java.util.Map<String, String> out = new java.util.HashMap<>();
+        if (staffProfileRepository == null) {
+            return out;
+        }
+        for (String raw : logins) {
+            String login = raw == null ? "" : raw.trim().toLowerCase();
+            if (login.isEmpty() || out.containsKey(login)) {
+                continue;
+            }
+            String name = staffProfileRepository
+                .findOneByUserLoginIgnoreCase(login)
+                .map(com.mycompany.myapp.domain.StaffProfile::getDisplayName)
+                .filter(n -> !n.isBlank())
+                .map(String::trim)
+                .orElse(null);
+            out.put(login, name);
+        }
+        return out;
     }
 
     /** Gắn mã NV + họ tên người thao tác (mỗi tài khoản tra một lần). */

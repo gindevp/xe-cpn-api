@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261005150000-order-cod-processed-by" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="shipment_order" columnName="cod_exported_by"/>
+            </not>
+        </preConditions>
+        <comment>Tài khoản bấm "Xác nhận đã xử lý" COD (cod_exported_at = thời điểm)</comment>
+        <addColumn tableName="shipment_order">
+            <column name="cod_exported_by" type="varchar(50)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

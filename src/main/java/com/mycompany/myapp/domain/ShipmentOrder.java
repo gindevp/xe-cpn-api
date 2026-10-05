@@ -284,6 +284,10 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "cod_exported_at")
     private Instant codExportedAt;
 
+    @Size(max = 50)
+    @Column(name = "cod_exported_by", length = 50)
+    private String codExportedBy;
+
     @NotNull
     @DecimalMin(value = "0")
     @Column(name = "paid_amount", precision = 21, scale = 2, nullable = false)
@@ -1038,6 +1042,14 @@ public class ShipmentOrder implements Serializable {
 
     public void setCodExportedAt(Instant codExportedAt) {
         this.codExportedAt = codExportedAt;
+    }
+
+    public String getCodExportedBy() {
+        return this.codExportedBy;
+    }
+
+    public void setCodExportedBy(String codExportedBy) {
+        this.codExportedBy = codExportedBy;
     }
 
     public BigDecimal getPaidAmount() {

@@ -91,6 +91,8 @@ public class OrderSummaryDTO {
     private String routeLabel;
     private String itineraryLabel;
     private Instant codExportedAt;
+    private String codExportedBy;
+    private String codExportedByName;
     private String vehiclePlate;
     private String driverName;
     /** Giờ xuất phát chuyến hiện tại (trip.departAt) — FE tab Hàng trên xe. */
@@ -689,6 +691,22 @@ public class OrderSummaryDTO {
 
     public void setCodExportedAt(Instant codExportedAt) {
         this.codExportedAt = codExportedAt;
+    }
+
+    public String getCodExportedBy() {
+        return codExportedBy;
+    }
+
+    public void setCodExportedBy(String codExportedBy) {
+        this.codExportedBy = codExportedBy;
+    }
+
+    public String getCodExportedByName() {
+        return codExportedByName;
+    }
+
+    public void setCodExportedByName(String codExportedByName) {
+        this.codExportedByName = codExportedByName;
     }
 
     public String getVehiclePlate() {

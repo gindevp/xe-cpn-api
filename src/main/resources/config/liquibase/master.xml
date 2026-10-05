@@ -118,5 +118,6 @@
     <include file="config/liquibase/changelog/20261004203000_receipt_confirm_proof_extra.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261004214500_order_goods_photo.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261004230000_inventory_check_photo.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261005150000_order_cod_processed_by.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
