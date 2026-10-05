@@ -299,7 +299,11 @@ public class OrderFacadeService {
         if (status != null) {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), status));
         }
-        if (paymentTerm != null) {
+        if (paymentTerm == PaymentTerm.COD) {
+            spec = spec.and((root, q, cb) ->
+                cb.or(cb.equal(root.get("paymentTerm"), PaymentTerm.COD), cb.greaterThan(root.get("codAmount"), BigDecimal.ZERO))
+            );
+        } else if (paymentTerm != null) {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("paymentTerm"), paymentTerm));
         }
         if (fromOfficeCode != null && !fromOfficeCode.isBlank()) {
@@ -438,6 +442,14 @@ public class OrderFacadeService {
         return out;
     }
 
+    /**
+     * Đơn có thu hộ: nhận biết theo tiền COD; hình thức thanh toán vẫn là người gửi / người nhận trả cước.
+     * PaymentTerm.COD chỉ còn ở đơn cũ (coi như người nhận trả cước).
+     */
+    static boolean isCodOrder(ShipmentOrder order) {
+        return order.getPaymentTerm() == PaymentTerm.COD || OrderMoney.nz(order.getCodAmount()).signum() > 0;
+    }
+
     public int markCodExported(MarkCodExportedRequest req) {
         if (req == null || req.getOrderCodes() == null || req.getOrderCodes().isEmpty()) {
             throw new BadRequestAlertException("orderCodes required", ENTITY, "orderCodesRequired");
@@ -452,7 +464,7 @@ public class OrderFacadeService {
             if (order == null) {
                 continue;
             }
-            if (order.getPaymentTerm() != PaymentTerm.COD) {
+            if (!isCodOrder(order)) {
                 continue;
             }
             if (order.getStatus() != OrderStatus.DELIVERED) {
