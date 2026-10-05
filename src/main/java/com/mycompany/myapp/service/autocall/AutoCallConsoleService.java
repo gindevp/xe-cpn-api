@@ -152,7 +152,7 @@ public class AutoCallConsoleService {
             }
         }
         if (resultFilter != null) {
-            all.removeIf(c -> !resultFilter.equals(c.path("result").asText("")));
+            all.removeIf(c -> !matchesResult(resultFilter, c));
         }
         if (phoneQuery != null) {
             all.removeIf(c -> {
@@ -176,6 +176,18 @@ public class AutoCallConsoleService {
         return out;
     }
 
+    /** Lọc "Không nghe" gồm cả cuộc đã huỷ. */
+    static boolean matchesResult(String filter, JsonNode call) {
+        String result = call.path("result").asText("");
+        if (filter.equals(result)) {
+            return true;
+        }
+        return (
+            "not_answered".equals(filter) &&
+            ("cancelled".equalsIgnoreCase(result) || "cancelled".equalsIgnoreCase(call.path("status").asText("")))
+        );
+    }
+
     /** Vtech không có API danh sách — đọc auto_call phía CPN, trả cùng dạng Call object HHVN cho FE. */
     private Map<String, Object> listLocalCalls(
         LocalDate fromDate,
@@ -196,7 +208,7 @@ public class AutoCallConsoleService {
             all.add(toCallNode(c));
         }
         if (resultFilter != null) {
-            all.removeIf(c -> !resultFilter.equals(c.path("result").asText("")));
+            all.removeIf(c -> !matchesResult(resultFilter, c));
         }
         if (phoneQuery != null) {
             all.removeIf(c -> {

@@ -171,15 +171,16 @@ class AutoCallConsoleServiceTest {
             "{\"callId\":\"a\",\"result\":\"answered\"}," +
             "{\"callId\":\"b\",\"result\":\"not_answered\"}," +
             "{\"callId\":\"c\",\"result\":\"error\"}," +
-            "{\"callId\":\"d\",\"status\":\"queued\"}]," +
-            "\"pagination\":{\"page\":1,\"limit\":200,\"total\":4,\"totalPages\":1}}"
+            "{\"callId\":\"d\",\"status\":\"queued\"}," +
+            "{\"callId\":\"e\",\"status\":\"cancelled\"}]," +
+            "\"pagination\":{\"page\":1,\"limit\":200,\"total\":5,\"totalPages\":1}}"
         );
         when(client.listCalls(any(), any(), anyMap())).thenReturn(new Result(true, 200, null, null, body));
 
         Map<String, Object> err = service.listCalls(null, null, null, null, "ERROR", null, 1, 20);
         assertThat((List<JsonNode>) err.get("data")).extracting(n -> n.path("callId").asText()).containsExactly("c");
         Map<String, Object> no = service.listCalls(null, null, null, null, "not_answered", null, 1, 20);
-        assertThat((List<JsonNode>) no.get("data")).extracting(n -> n.path("callId").asText()).containsExactly("b");
+        assertThat((List<JsonNode>) no.get("data")).extracting(n -> n.path("callId").asText()).containsExactlyInAnyOrder("b", "e");
 
         assertThatThrownBy(() -> service.listCalls(null, null, null, null, "busy", null, 1, 20)).hasMessageContaining("Kết quả");
     }
