@@ -349,7 +349,7 @@ class AutoCallConsoleServiceTest {
         stubVtech();
         assertThatThrownBy(() -> service.testCall("0912345671", "giao", false)).hasMessageContaining("LIVE");
 
-        when(vtechClient.importContact(any(), eq("tdai_key"), eq("0912345671"), any(), anyMap())).thenReturn(
+        when(vtechClient.importContact(any(), eq("tdai_key"), eq("0912345671"), anyMap())).thenReturn(
             new Result(true, 201, null, null, JSON.readTree("{\"data\":{\"total\":1,\"imported\":1,\"skipped\":0,\"errors\":[]}}"))
         );
         Map<String, Object> out = service.testCall("0912345671", "giao", true);

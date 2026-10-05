@@ -444,7 +444,7 @@ public class AutoCallConsoleService {
         extra.put("ma_don", "GOI-THU");
         extra.put("ten_san_pham", "Hàng hoá");
         extra.put("diem_nhan", "Văn phòng CPN");
-        Result r = vtechClient.importContact(cfg.getAutocallVtechBaseUrl(), cfg.getAutocallVtechApiKey(), phone, null, extra);
+        Result r = vtechClient.importContact(cfg.getAutocallVtechBaseUrl(), cfg.getAutocallVtechApiKey(), phone, extra);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("sandbox", false);
         out.put("provider", IntegrationConfig.PROVIDER_VTECH);

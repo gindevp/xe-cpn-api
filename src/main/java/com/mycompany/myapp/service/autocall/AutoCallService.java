@@ -403,12 +403,10 @@ public class AutoCallService {
      * webhook về (khớp bằng extra_data.ref_id).
      */
     private void sendVtech(AutoCall call, IntegrationConfig cfg) {
-        ShipmentOrder order = call.getOrder();
         Result r = vtechClient.importContact(
             cfg.getAutocallVtechBaseUrl(),
             cfg.getAutocallVtechApiKey(),
             call.getPhone(),
-            order != null ? order.getReceiverName() : null,
             vtechExtraData(call)
         );
         if (!r.ok()) {

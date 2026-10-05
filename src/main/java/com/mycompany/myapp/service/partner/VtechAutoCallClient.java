@@ -63,12 +63,9 @@ public class VtechAutoCallClient {
      * Import 1 số vào chiến dịch = yêu cầu callbot gọi. {@code skip_duplicates = false}: gọi lại cùng số vẫn được gọi.
      * Thành công: HTTP 201 {@code {data:{total, imported, skipped, errors:[{row, phone_number, error}]}}}.
      */
-    public Result importContact(String baseUrl, String apiKey, String phone, String name, Map<String, String> extraData) {
+    public Result importContact(String baseUrl, String apiKey, String phone, Map<String, String> extraData) {
         Map<String, Object> contact = new LinkedHashMap<>();
         contact.put("phone_number", phone);
-        if (name != null && !name.isBlank()) {
-            contact.put("name", name.trim());
-        }
         if (extraData != null && !extraData.isEmpty()) {
             contact.put("extra_data", extraData);
         }

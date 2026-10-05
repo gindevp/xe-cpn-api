@@ -1007,14 +1007,14 @@ class AutoCallServiceTest {
         c.getOrder().setToOffice(office);
         when(autoCallRepository.findById(99L)).thenReturn(Optional.of(c));
         when(integrationConfigRepository.findAll()).thenReturn(List.of(vtechConfig()));
-        when(vtechClient.importContact(any(), eq(VTECH_KEY), eq("0912345678"), eq("Nguyễn Văn B"), anyMap())).thenReturn(
+        when(vtechClient.importContact(any(), eq(VTECH_KEY), eq("0912345678"), anyMap())).thenReturn(
             new Result(true, 201, null, null, JSON.readTree("{\"data\":{\"total\":1,\"imported\":1,\"skipped\":0,\"errors\":[]}}"))
         );
 
         service.send(99L);
 
         ArgumentCaptor<java.util.Map<String, String>> extra = ArgumentCaptor.forClass(java.util.Map.class);
-        verify(vtechClient).importContact(any(), eq(VTECH_KEY), eq("0912345678"), eq("Nguyễn Văn B"), extra.capture());
+        verify(vtechClient).importContact(any(), eq(VTECH_KEY), eq("0912345678"), extra.capture());
         assertThat(extra.getValue())
             .containsEntry("ref_id", c.getRefId())
             .containsEntry("ma_don", "HN260930-0001")
@@ -1044,7 +1044,7 @@ class AutoCallServiceTest {
         AutoCall c = pendingCall();
         when(autoCallRepository.findById(99L)).thenReturn(Optional.of(c));
         when(integrationConfigRepository.findAll()).thenReturn(List.of(vtechConfig()));
-        when(vtechClient.importContact(any(), any(), any(), any(), anyMap())).thenReturn(
+        when(vtechClient.importContact(any(), any(), any(), anyMap())).thenReturn(
             new Result(
                 true,
                 201,
@@ -1069,7 +1069,7 @@ class AutoCallServiceTest {
         AutoCall c = pendingCall();
         when(autoCallRepository.findById(99L)).thenReturn(Optional.of(c));
         when(integrationConfigRepository.findAll()).thenReturn(List.of(vtechConfig()));
-        when(vtechClient.importContact(any(), any(), any(), any(), anyMap())).thenReturn(
+        when(vtechClient.importContact(any(), any(), any(), anyMap())).thenReturn(
             new Result(false, 401, "INVALID_API_KEY", "API key không hợp lệ", null)
         );
 
@@ -1230,7 +1230,7 @@ class AutoCallServiceTest {
 
         service.sync("HN260930-0001");
 
-        verify(vtechClient, never()).importContact(any(), any(), any(), any(), anyMap());
+        verify(vtechClient, never()).importContact(any(), any(), any(), anyMap());
         verify(client, never()).getCall(any(), any(), any());
         assertThat(c.getStatus()).isEqualTo("QUEUED");
     }
