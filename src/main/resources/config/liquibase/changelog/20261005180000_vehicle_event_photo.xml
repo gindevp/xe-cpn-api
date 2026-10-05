@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261005180000-vehicle-event-photo" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="vehicle_event_photo"/>
+            </not>
+        </preConditions>
+        <comment>Ảnh xe chụp khi NV báo xe rời VP — 1 ảnh / lượt báo</comment>
+        <createTable tableName="vehicle_event_photo">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="event_id" type="bigint">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_vehicle_event_photo_event"/>
+            </column>
+            <column name="photo_url" type="longtext">
+                <constraints nullable="false"/>
+            </column>
+            <column name="captured_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="captured_by_username" type="varchar(50)"/>
+        </createTable>
+    </changeSet>
+</databaseChangeLog>
