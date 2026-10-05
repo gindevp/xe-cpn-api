@@ -999,7 +999,8 @@ class AutoCallServiceTest {
     void vtech_send_importsContactWithScriptVariables_andQueuesWithoutCallId() throws Exception {
         AutoCall c = pendingCall();
         c.getOrder().setReceiverName("Nguyễn Văn B");
-        c.getOrder().setGoodsType(com.mycompany.myapp.domain.enumeration.GoodsType.DIEN_TU);
+        c.getOrder().setGoodsType(com.mycompany.myapp.domain.enumeration.GoodsType.THUONG);
+        c.getOrder().setNote("[LOAI]Khác|Khác[/LOAI]\n[TENHANG]VALI MỸ PHẨM|Máy làm tóc[/TENHANG]\n[CUOC]30000,20000[/CUOC]");
         com.mycompany.myapp.domain.Office office = new com.mycompany.myapp.domain.Office();
         office.setName("VP Mỹ Đình");
         office.setAddress("123 Phạm Hùng, Hà Nội");
@@ -1017,12 +1018,25 @@ class AutoCallServiceTest {
         assertThat(extra.getValue())
             .containsEntry("ref_id", c.getRefId())
             .containsEntry("ma_don", "HN260930-0001")
-            .containsEntry("ten_san_pham", "Hàng điện tử")
-            .containsEntry("diem_nhan", "VP Mỹ Đình - 123 Phạm Hùng, Hà Nội");
+            .containsEntry("ten_san_pham", "VALI MỸ PHẨM, Máy làm tóc")
+            .containsEntry("diem_nhan", "VP Mỹ Đình");
         assertThat(c.getStatus()).isEqualTo("QUEUED");
         assertThat(c.getCallId()).isNull();
         assertThat(c.getProvider()).isEqualTo("VTECH");
         verify(client, never()).createCall(any(), any(), any(), any(), any(), anyMap());
+    }
+
+    @Test
+    void goodsNameLabel_usesPackageGoodsNames() {
+        assertThat(AutoCallService.goodsNameLabel("[LOAI]Khác[/LOAI]\n[TENHANG]RĂNG[/TENHANG]")).isEqualTo("RĂNG");
+        assertThat(AutoCallService.goodsNameLabel("[LOAI]Phong bì( giấy tờ bản a5)[/LOAI]\nghi chú")).isEqualTo(
+            "Phong bì( giấy tờ bản a5)"
+        );
+        assertThat(AutoCallService.goodsNameLabel("[LOAI]Xe máy|Khác|Xe máy[/LOAI][TENHANG]||[/TENHANG]")).isEqualTo("Xe máy");
+        assertThat(AutoCallService.goodsNameLabel("[LOAI]Khác|Xe máy[/LOAI][TENHANG]mẫu|[/TENHANG]")).isEqualTo("mẫu, Xe máy");
+        assertThat(AutoCallService.goodsNameLabel("[KIEN]Áo, Quần[/KIEN]")).isEqualTo("Áo, Quần");
+        assertThat(AutoCallService.goodsNameLabel("[LOAI]Khác[/LOAI]")).isEqualTo("Hàng hoá");
+        assertThat(AutoCallService.goodsNameLabel(null)).isEqualTo("Hàng hoá");
     }
 
     @Test

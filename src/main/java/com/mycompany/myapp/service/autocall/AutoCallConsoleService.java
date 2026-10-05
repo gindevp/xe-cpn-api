@@ -430,7 +430,7 @@ public class AutoCallConsoleService {
         Map<String, String> extra = new LinkedHashMap<>();
         extra.put("ref_id", refId);
         extra.put("ma_don", "GOI-THU");
-        extra.put("ten_san_pham", "Hàng thường");
+        extra.put("ten_san_pham", "Hàng hoá");
         extra.put("diem_nhan", "Văn phòng CPN");
         Result r = vtechClient.importContact(cfg.getAutocallVtechBaseUrl(), cfg.getAutocallVtechApiKey(), phone, null, extra);
         Map<String, Object> out = new LinkedHashMap<>();

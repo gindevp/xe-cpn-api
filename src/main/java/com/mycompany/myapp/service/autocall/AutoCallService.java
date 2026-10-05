@@ -8,7 +8,6 @@ import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.ShipmentOrder;
-import com.mycompany.myapp.domain.enumeration.GoodsType;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.AutoCallRepository;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
@@ -34,12 +33,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
@@ -442,36 +444,60 @@ public class AutoCallService {
         extra.put("ref_id", call.getRefId());
         if (order != null) {
             extra.put("ma_don", order.getOrderCode());
-            extra.put("ten_san_pham", goodsTypeLabel(order.getGoodsType()));
+            extra.put("ten_san_pham", goodsNameLabel(order.getNote()));
             extra.put("diem_nhan", officeLabel(order.getToOffice()));
         }
         return extra;
     }
 
-    static String goodsTypeLabel(GoodsType type) {
-        if (type == null) {
-            return "Hàng hoá";
+    private static final Pattern LOAI_TAG = Pattern.compile("\\[LOAI\\]([\\s\\S]*?)\\[/LOAI\\]");
+    private static final Pattern TENHANG_TAG = Pattern.compile("\\[TENHANG\\]([\\s\\S]*?)\\[/TENHANG\\]");
+    private static final Pattern KIEN_TAG = Pattern.compile("\\[KIEN\\]([\\s\\S]*?)\\[/KIEN\\]");
+    private static final String OTHER_GOODS = "Khác";
+    private static final String GOODS_FALLBACK = "Hàng hoá";
+
+    /**
+     * Tên hàng các kiện (note đơn, như FE): kiện loại "Khác" → tên hàng tự nhập [TENHANG]; kiện chọn từ bảng giá →
+     * tên sản phẩm [LOAI]; đơn cũ → [KIEN] ngăn dấu phẩy. Trùng gộp, ngăn ", ".
+     */
+    static String goodsNameLabel(String note) {
+        String raw = note == null ? "" : note;
+        List<String> kinds = splitTag(raw, LOAI_TAG, "\\|");
+        List<String> names = splitTag(raw, TENHANG_TAG, "\\|");
+        Set<String> out = new LinkedHashSet<>();
+        for (int i = 0; i < Math.max(kinds.size(), names.size()); i++) {
+            String name = i < names.size() ? names.get(i) : "";
+            String kind = i < kinds.size() ? kinds.get(i) : "";
+            if (!name.isEmpty()) {
+                out.add(name);
+            } else if (!kind.isEmpty() && !OTHER_GOODS.equalsIgnoreCase(kind)) {
+                out.add(kind);
+            }
         }
-        return switch (type) {
-            case THUONG -> "Hàng thường";
-            case DE_VO -> "Hàng dễ vỡ";
-            case DIEN_TU -> "Hàng điện tử";
-            case THUC_PHAM_KHO -> "Thực phẩm khô";
-            case GIAY_TO -> "Giấy tờ";
-            case CONG_KENH -> "Hàng cồng kềnh";
-        };
+        if (out.isEmpty() && kinds.isEmpty()) {
+            out.addAll(splitTag(raw, KIEN_TAG, ","));
+        }
+        String label = String.join(", ", out);
+        if (label.isEmpty()) {
+            return GOODS_FALLBACK;
+        }
+        return label.length() <= 200 ? label : label.substring(0, 200).trim() + "…";
     }
 
-    /** "VP Mỹ Đình - 123 Phạm Hùng, Hà Nội". */
-    static String officeLabel(Office office) {
-        if (office == null) {
-            return "";
+    private static List<String> splitTag(String raw, Pattern tag, String sep) {
+        Matcher m = tag.matcher(raw);
+        if (!m.find()) {
+            return List.of();
         }
-        String name = office.getName() != null ? office.getName().trim() : "";
-        String addr = office.getAddress() != null ? office.getAddress().trim() : "";
-        if (name.isEmpty()) return addr;
-        if (addr.isEmpty()) return name;
-        return name + " - " + addr;
+        List<String> out = new ArrayList<>();
+        for (String part : m.group(1).split(sep, -1)) {
+            out.add(part.trim());
+        }
+        return out;
+    }
+
+    static String officeLabel(Office office) {
+        return office != null && office.getName() != null ? office.getName().trim() : "";
     }
 
     public enum VtechWebhookOutcome {
