@@ -188,6 +188,33 @@ public class AutoCallConsoleService {
         );
     }
 
+    /**
+     * "Lần gọi" = cuộc thứ mấy tới được tổng đài của cùng đơn + loại gọi trong ngày (giờ VN). Lệnh gửi lỗi / chưa gửi
+     * không tính và không có số.
+     */
+    static Map<AutoCall, Integer> dailyCallOrdinals(List<AutoCall> calls) {
+        Map<AutoCall, Integer> out = new java.util.IdentityHashMap<>();
+        Map<String, Integer> seen = new java.util.HashMap<>();
+        calls
+            .stream()
+            .filter(c -> c.getCreatedAt() != null && reachedCarrier(c))
+            .sorted(Comparator.comparing(AutoCall::getCreatedAt))
+            .forEach(c -> {
+                Object orderKey = c.getOrder() != null && c.getOrder().getId() != null ? c.getOrder().getId() : c.getPhone();
+                String key = orderKey + "|" + c.getCallType() + "|" + c.getCreatedAt().atZone(VN).toLocalDate();
+                out.put(c, seen.merge(key, 1, Integer::sum));
+            });
+        return out;
+    }
+
+    private static boolean reachedCarrier(AutoCall c) {
+        String st = c.getStatus() == null ? "" : c.getStatus();
+        if ("FAILED".equals(st)) {
+            return !"send_error".equals(c.getResult());
+        }
+        return Set.of("QUEUED", "CALLING", "RINGING", "COMPLETED", "CANCELLED").contains(st);
+    }
+
     /** Vtech không có API danh sách — đọc auto_call phía CPN, trả cùng dạng Call object HHVN cho FE. */
     private Map<String, Object> listLocalCalls(
         LocalDate fromDate,
@@ -199,13 +226,17 @@ public class AutoCallConsoleService {
     ) {
         int pg = page == null || page < 1 ? 1 : page;
         int lim = limit == null ? 50 : Math.max(1, Math.min(HHVN_PAGE_LIMIT, limit));
-        List<JsonNode> all = new ArrayList<>();
-        for (AutoCall c : autoCallRepository.findForConsole(
+        List<AutoCall> calls = autoCallRepository.findForConsole(
             IntegrationConfig.PROVIDER_VTECH,
             fromDate.atStartOfDay(VN).toInstant(),
             toDate.plusDays(1).atStartOfDay(VN).toInstant()
-        )) {
-            all.add(toCallNode(c));
+        );
+        Map<AutoCall, Integer> ordinal = dailyCallOrdinals(calls);
+        List<JsonNode> all = new ArrayList<>();
+        for (AutoCall c : calls) {
+            ObjectNode n = toCallNode(c);
+            n.put("attemptCount", ordinal.getOrDefault(c, 0));
+            all.add(n);
         }
         if (resultFilter != null) {
             all.removeIf(c -> !matchesResult(resultFilter, c));
@@ -254,7 +285,6 @@ public class AutoCallConsoleService {
         String result = "ERROR".equals(status) ? "send_error" : c.getResult();
         if (result != null) n.put("result", result);
         if (c.getAttemptCount() != null) n.put("attemptCount", c.getAttemptCount());
-        n.put("maxAttempts", 1);
         if (c.getDurationSec() != null) n.put("duration", c.getDurationSec());
         putInstant(n, "createdAt", c.getCreatedAt());
         putInstant(n, "firstCallAt", c.getFirstCallAt());
@@ -358,7 +388,14 @@ public class AutoCallConsoleService {
             out.put("message", "Không tìm thấy cuộc gọi");
             return out;
         }
-        out.put("call", toCallNode(c));
+        ObjectNode node = toCallNode(c);
+        if (IntegrationConfig.PROVIDER_VTECH.equals(c.getProvider()) && c.getOrder() != null && c.getOrder().getId() != null) {
+            node.put(
+                "attemptCount",
+                dailyCallOrdinals(autoCallRepository.findByOrder_IdOrderByCreatedAtDesc(c.getOrder().getId())).getOrDefault(c, 0)
+            );
+        }
+        out.put("call", node);
         return out;
     }
 

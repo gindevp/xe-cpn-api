@@ -309,6 +309,37 @@ class AutoCallConsoleServiceTest {
     }
 
     @Test
+    void listCalls_vtech_attemptCount_isDailyOrdinalPerOrder() {
+        stubVtech();
+        com.mycompany.myapp.domain.ShipmentOrder order = new com.mycompany.myapp.domain.ShipmentOrder();
+        order.setId(7L);
+        order.setOrderCode("TB041005Q0");
+        java.time.Instant day = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"))
+            .atTime(8, 0)
+            .atZone(java.time.ZoneId.of("Asia/Ho_Chi_Minh"))
+            .toInstant();
+        com.mycompany.myapp.domain.AutoCall first = localCall("A", "0393916124", "FAILED", "not_answered", 0);
+        com.mycompany.myapp.domain.AutoCall sendErr = localCall("B", "0393916124", "ERROR", null, 0);
+        com.mycompany.myapp.domain.AutoCall second = localCall("C", "0393916124", "CANCELLED", "cancelled", 0);
+        com.mycompany.myapp.domain.AutoCall third = localCall("D", "0393916124", "FAILED", "not_answered", 0);
+        com.mycompany.myapp.domain.AutoCall[] seq = { first, sendErr, second, third };
+        for (int i = 0; i < seq.length; i++) {
+            seq[i].setOrder(order);
+            seq[i].setCreatedAt(day.plusSeconds(3600L * i));
+        }
+        com.mycompany.myapp.domain.AutoCall otherDay = localCall("E", "0393916124", "FAILED", "not_answered", 0);
+        otherDay.setOrder(order);
+        otherDay.setCreatedAt(day.minusSeconds(86400));
+        when(autoCallRepository.findForConsole(eq("VTECH"), any(), any())).thenReturn(List.of(third, second, sendErr, first, otherDay));
+
+        @SuppressWarnings("unchecked")
+        List<JsonNode> rows = (List<JsonNode>) service.listCalls(null, null, null, null, null, null, 1, 50).get("data");
+        assertThat(rows)
+            .extracting(n -> n.path("refId").asText() + "=" + n.path("attemptCount").asInt())
+            .containsExactly("D=3", "C=2", "B=0", "A=1", "E=1");
+    }
+
+    @Test
     void listCalls_vtech_readsLocalTable_mapsStatus_filtersResultAndPhone_noHhvn() {
         stubVtech();
         com.mycompany.myapp.domain.AutoCall answered = localCall("R1", "0912345678", "COMPLETED", "answered", 1);
