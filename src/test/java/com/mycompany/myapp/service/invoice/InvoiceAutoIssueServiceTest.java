@@ -111,7 +111,7 @@ class InvoiceAutoIssueServiceTest {
         Instant paid = Instant.parse("2026-10-02T01:00:00Z");
         o.setInvoiceIssuedAt(paid.plus(Duration.ofHours(4)));
 
-        InvoiceAutoIssueService.InvoiceRow row = InvoiceAutoIssueService.toRow(o, paid);
+        InvoiceAutoIssueService.InvoiceRow row = InvoiceAutoIssueService.toRow(o, paid, paid);
 
         assertThat(row.payer()).isEqualTo("RECEIVER");
         assertThat(row.deadlineAt()).isEqualTo(paid.plus(Duration.ofHours(3)));
@@ -130,10 +130,33 @@ class InvoiceAutoIssueServiceTest {
         Instant paid = Instant.parse("2026-10-02T01:00:00Z");
 
         o.setInvoiceIssuedAt(paid.plus(Duration.ofHours(3)).plus(Duration.ofMinutes(15)));
-        assertThat(InvoiceAutoIssueService.toRow(o, paid).late()).isFalse();
+        assertThat(InvoiceAutoIssueService.toRow(o, paid, paid).late()).isFalse();
 
         o.setInvoiceIssuedAt(paid.plus(Duration.ofHours(3)).plus(Duration.ofMinutes(16)));
-        assertThat(InvoiceAutoIssueService.toRow(o, paid).late()).isTrue();
+        assertThat(InvoiceAutoIssueService.toRow(o, paid, paid).late()).isTrue();
+    }
+
+    @Test
+    void row_senderPaid_deadlineWaitsForDelivery() {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setOrderCode("X3");
+        o.setPaymentTerm(PaymentTerm.GUI_TRA);
+        Instant pickedUp = Instant.parse("2026-10-02T01:00:00Z");
+        o.setPickedUpAt(pickedUp);
+
+        o.setStatus(OrderStatus.IN_TRANSIT);
+        assertThat(InvoiceAutoIssueService.toRow(o, pickedUp, null).deadlineAt()).isNull();
+
+        o.setStatus(OrderStatus.DELIVERED);
+        Instant deliveredEarly = pickedUp.plus(Duration.ofHours(1));
+        assertThat(InvoiceAutoIssueService.toRow(o, pickedUp, deliveredEarly).deadlineAt()).isEqualTo(pickedUp.plus(Duration.ofHours(3)));
+
+        Instant deliveredLate = pickedUp.plus(Duration.ofDays(2));
+        o.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
+        o.setInvoiceIssuedAt(deliveredLate.plus(Duration.ofMinutes(5)));
+        InvoiceAutoIssueService.InvoiceRow row = InvoiceAutoIssueService.toRow(o, pickedUp, deliveredLate);
+        assertThat(row.deadlineAt()).isEqualTo(deliveredLate);
+        assertThat(row.late()).isFalse();
     }
 
     private static ShipmentOrder invoicedBy(String code, String senderPhone, String receiverPhone, String tax, String company) {

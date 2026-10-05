@@ -34,7 +34,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Tự xuất HĐĐT sau mốc thanh toán + 3 tiếng (khi bật công tắc), xuất bù hàng loạt, danh sách cho kế toán.
+ * Tự xuất HĐĐT khi đã qua mốc thanh toán + 3 tiếng và đơn đã hoàn tất (khi bật công tắc), xuất bù hàng loạt,
+ * danh sách cho kế toán.
  * Mọi lần gửi MISA chạy trên MỘT luồng riêng để job tự xuất và xuất bù không cùng gửi một đơn.
  */
 @Service
@@ -97,7 +98,7 @@ public class InvoiceAutoIssueService {
         }
     }
 
-    /** Một lượt: đơn có mốc thanh toán trong [lúc bật công tắc, now − 3h]. Trả số đơn đã thử. */
+    /** Một lượt: đơn đã hoàn tất, mốc thanh toán trong [lúc bật công tắc, now − 3h]. Trả số đơn đã thử. */
     int runAutoIssue(Instant now) {
         IntegrationConfig cfg = issueService.autoIssueConfig();
         if (cfg == null) {
@@ -192,8 +193,12 @@ public class InvoiceAutoIssueService {
         Instant end = to.plusDays(1).atStartOfDay(VN).toInstant();
 
         List<InvoiceRow> rows = new ArrayList<>();
-        for (ShipmentOrder o : shipmentOrderRepository.findInvoiceWarehouseInBetween(start, end, LIST_EXCLUDED_STATUSES)) {
-            rows.add(toRow(o, o.getPickedUpAt()));
+        List<ShipmentOrder> warehouseIn = shipmentOrderRepository.findInvoiceWarehouseInBetween(start, end, LIST_EXCLUDED_STATUSES);
+        Map<Long, Instant> warehouseInDone = doneAtByOrderId(
+            warehouseIn.stream().filter(InvoicePolicy::isDone).map(ShipmentOrder::getId).toList()
+        );
+        for (ShipmentOrder o : warehouseIn) {
+            rows.add(toRow(o, o.getPickedUpAt(), warehouseInDone.get(o.getId())));
         }
         Map<Long, Instant> delivered = new LinkedHashMap<>();
         for (Object[] r : orderEventRepository.findInvoiceDeliveredBetween(InvoicePolicy.DELIVERED_ACTIONS, start, end)) {
@@ -201,7 +206,8 @@ public class InvoiceAutoIssueService {
         }
         if (!delivered.isEmpty()) {
             for (ShipmentOrder o : shipmentOrderRepository.findAllWithOfficesByIdIn(delivered.keySet())) {
-                rows.add(toRow(o, delivered.get(o.getId())));
+                Instant at = delivered.get(o.getId());
+                rows.add(toRow(o, at, at));
             }
         }
         String office = scopedOfficeCode.orElse(null);
@@ -212,9 +218,22 @@ public class InvoiceAutoIssueService {
             .toList();
     }
 
-    static InvoiceRow toRow(ShipmentOrder o, Instant paidAt) {
+    private Map<Long, Instant> doneAtByOrderId(List<Long> orderIds) {
+        Map<Long, Instant> out = new HashMap<>();
+        if (orderIds.isEmpty()) {
+            return out;
+        }
+        for (Object[] r : orderEventRepository.latestEventAtByOrderIds(orderIds, InvoicePolicy.DONE_ACTIONS)) {
+            if (r[0] != null && r[1] != null) {
+                out.put((Long) r[0], (Instant) r[1]);
+            }
+        }
+        return out;
+    }
+
+    static InvoiceRow toRow(ShipmentOrder o, Instant paidAt, Instant doneAt) {
         Office to = o.getFinalToOffice() != null ? o.getFinalToOffice() : o.getToOffice();
-        Instant deadline = InvoicePolicy.deadline(paidAt);
+        Instant deadline = InvoicePolicy.deadline(o, doneAt);
         String st = o.getInvoiceStatus();
         boolean done = MeInvoiceIssueService.isIssued(o) || MeInvoiceIssueService.STATUS_MANUAL.equals(st);
         boolean late = done && InvoicePolicy.issuedLate(deadline, o.getInvoiceIssuedAt());

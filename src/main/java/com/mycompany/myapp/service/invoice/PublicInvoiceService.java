@@ -123,7 +123,7 @@ public class PublicInvoiceService {
             );
         }
 
-        Instant deadline = InvoicePolicy.deadline(InvoicePolicy.paidAt(order, deliveredAt(order)));
+        Instant deadline = InvoicePolicy.deadline(order, deliveredAt(order));
         if (deadline != null && Instant.now().isAfter(deadline)) {
             throw bad("Đã quá 3 tiếng kể từ khi thanh toán — vui lòng liên hệ văn phòng để được hỗ trợ xuất hoá đơn", "invoiceLate");
         }

@@ -188,7 +188,7 @@ public class MeInvoiceIssueService {
     }
 
     /**
-     * Tự xuất khi đã quá mốc thanh toán + 3 tiếng (gọi từ job, mỗi đơn một transaction).
+     * Tự xuất khi đã quá mốc thanh toán + 3 tiếng và đơn đã hoàn tất — giao thành công / hoàn xong (gọi từ job).
      * Bỏ qua đơn công nợ, đơn còn nợ cước, đơn đã có trạng thái HĐ (trừ SKIPPED của luồng cũ).
      */
     @Transactional
@@ -210,6 +210,9 @@ public class MeInvoiceIssueService {
         }
         if (!paymentReached(order)) {
             return "NOT_PAID_YET";
+        }
+        if (!InvoicePolicy.isDone(order)) {
+            return "NOT_DONE";
         }
         if (OrderMoney.hasUnpaidResidue(order)) {
             return "UNPAID_RESIDUE";

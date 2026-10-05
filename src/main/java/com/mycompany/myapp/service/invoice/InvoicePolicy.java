@@ -1,6 +1,7 @@
 package com.mycompany.myapp.service.invoice;
 
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import java.time.Duration;
 import java.time.Instant;
@@ -12,7 +13,8 @@ import java.util.List;
  *   <li>Gửi trả (GUI_TRA, kể cả công nợ) và trả chia tỉ lệ (P30_70…): người mua = người gửi.</li>
  *   <li>Nhận trả / COD: người mua = người nhận.</li>
  *   <li>Mốc thanh toán: gửi trả = lúc nhập kho gửi ({@code pickedUpAt}); còn lại = lúc giao thành công.</li>
- *   <li>Hạn = mốc + 3 tiếng: khách phải yêu cầu HĐ công ty trước hạn, hết hạn hệ thống tự xuất HĐ cá nhân.</li>
+ *   <li>Hạn = mốc + 3 tiếng và đơn đã hoàn tất (giao thành công / hoàn xong về người gửi): khách yêu cầu HĐ công ty
+ *   trước hạn, hết hạn hệ thống tự xuất HĐ cá nhân.</li>
  * </ul>
  */
 public final class InvoicePolicy {
@@ -26,6 +28,15 @@ public final class InvoicePolicy {
 
     /** Sự kiện giao thành công (lấy max eventAt). */
     public static final List<String> DELIVERED_ACTIONS = List.of("POD", "POD_QUAY", "DELIVERED", "TRANSITION_DELIVERED");
+    /** Sự kiện đơn hoàn tất: giao thành công hoặc hoàn xong về người gửi. */
+    public static final List<String> DONE_ACTIONS = List.of(
+        "POD",
+        "POD_QUAY",
+        "DELIVERED",
+        "TRANSITION_DELIVERED",
+        "RT_DONE",
+        "TRANSITION_RETURNED"
+    );
 
     private InvoicePolicy() {}
 
@@ -52,8 +63,22 @@ public final class InvoicePolicy {
         return paidAtWarehouseIn(order) ? order.getPickedUpAt() : deliveredAt;
     }
 
-    public static Instant deadline(Instant paidAt) {
-        return paidAt == null ? null : paidAt.plus(WINDOW);
+    /** Đơn đã hoàn tất: giao thành công, hoặc đơn hoàn đã trả xong về người gửi. */
+    public static boolean isDone(ShipmentOrder order) {
+        return order.getStatus() == OrderStatus.DELIVERED || order.getStatus() == OrderStatus.RETURNED;
+    }
+
+    /**
+     * Hạn tự xuất (cũng là hạn khách yêu cầu HĐ công ty): mốc thanh toán + 3 tiếng và đơn phải đã hoàn tất.
+     * Gửi trả hoàn tất sau mốc + 3 tiếng thì hạn = lúc hoàn tất; chưa hoàn tất ({@code doneAt} null) → null.
+     */
+    public static Instant deadline(ShipmentOrder order, Instant doneAt) {
+        Instant paid = paidAt(order, doneAt);
+        if (paid == null || doneAt == null) {
+            return null;
+        }
+        Instant d = paid.plus(WINDOW);
+        return doneAt.isAfter(d) ? doneAt : d;
     }
 
     public static boolean issuedLate(Instant deadline, Instant issuedAt) {

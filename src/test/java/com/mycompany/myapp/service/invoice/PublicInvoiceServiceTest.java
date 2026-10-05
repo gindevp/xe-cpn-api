@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.Test;
 class PublicInvoiceServiceTest {
 
     private ShipmentOrderRepository orders;
+    private OrderEventRepository events;
     private MeInvoiceIssueService issue;
     private TaxCodeLookupService tax;
     private PublicInvoiceService service;
@@ -36,7 +38,7 @@ class PublicInvoiceServiceTest {
     @BeforeEach
     void setUp() {
         orders = mock(ShipmentOrderRepository.class);
-        OrderEventRepository events = mock(OrderEventRepository.class);
+        events = mock(OrderEventRepository.class);
         issue = mock(MeInvoiceIssueService.class);
         tax = mock(TaxCodeLookupService.class);
         service = new PublicInvoiceService(orders, events, issue, tax);
@@ -96,8 +98,23 @@ class PublicInvoiceServiceTest {
     }
 
     @Test
-    void afterThreeHoursIsBlocked() {
+    void senderPaidOverThreeHoursButNotDeliveredStillIssues() {
         order.setPickedUpAt(Instant.now().minus(Duration.ofHours(4)));
+        when(issue.paymentReached(order)).thenReturn(true);
+        ShipmentOrder done = new ShipmentOrder();
+        done.setInvoiceStatus("ISSUED");
+        when(issue.issueManual(eq("BC0310AAAA"), any(), eq(PublicInvoiceService.ACTOR))).thenReturn(done);
+        assertThat(service.submit(req("5678"), "ip1").action()).isEqualTo("ISSUED");
+    }
+
+    @Test
+    void deliveredAndOverThreeHoursIsBlocked() {
+        order.setPickedUpAt(Instant.now().minus(Duration.ofHours(6)));
+        order.setStatus(OrderStatus.DELIVERED);
+        OrderEvent pod = new OrderEvent();
+        pod.setAction("POD");
+        pod.setEventAt(Instant.now().minus(Duration.ofHours(4)));
+        when(events.findByOrder_IdOrderByEventAtAsc(1L)).thenReturn(List.of(pod));
         when(issue.paymentReached(order)).thenReturn(true);
         assertThatThrownBy(() -> service.submit(req("5678"), "ip1")).hasMessageContaining("quá 3 tiếng");
         verify(issue, never()).issueManual(anyString(), any(), anyString());

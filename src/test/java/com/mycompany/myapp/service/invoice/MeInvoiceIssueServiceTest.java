@@ -430,6 +430,19 @@ class MeInvoiceIssueServiceTest {
     }
 
     @Test
+    void autoIssue_senderPaidNotYetDone_waits() {
+        order.setId(7L);
+        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        for (OrderStatus s : List.of(OrderStatus.IN_TRANSIT, OrderStatus.AT_DEST, OrderStatus.RETURNING)) {
+            paidSenderOrder(s);
+            assertThat(service.autoIssueOne(7L)).isEqualTo("NOT_DONE");
+        }
+        paidSenderOrder(OrderStatus.DELIVERED);
+        publishOk();
+        assertThat(service.autoIssueOne(7L)).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
+    }
+
+    @Test
     void autoIssue_onCredit_skipped() {
         order.setId(7L);
         order.setOnCredit(true);

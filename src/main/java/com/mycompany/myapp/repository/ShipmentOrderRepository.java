@@ -89,6 +89,7 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
         where (o.paymentTerm is null or o.paymentTerm = com.mycompany.myapp.domain.enumeration.PaymentTerm.GUI_TRA)
         and (iss is null or iss.issueStatus <> com.mycompany.myapp.domain.enumeration.IssueStatus.OPEN)
         and o.pickedUpAt >= :from and o.pickedUpAt <= :to
+        and o.status in (com.mycompany.myapp.domain.enumeration.OrderStatus.DELIVERED, com.mycompany.myapp.domain.enumeration.OrderStatus.RETURNED)
         and o.status not in :excluded
         and (o.invoiceStatus is null or o.invoiceStatus = 'SKIPPED')
         and (o.onCredit is null or o.onCredit = false)
