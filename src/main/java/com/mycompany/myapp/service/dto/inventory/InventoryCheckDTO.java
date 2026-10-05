@@ -21,6 +21,90 @@ public class InventoryCheckDTO {
     private List<String> systemCodes = new ArrayList<>();
     private List<String> scannedCodes = new ArrayList<>();
     private List<String> missingCodes = new ArrayList<>();
+    private String status;
+    private String sessionKey;
+    private Instant openedAt;
+    private String openedByUsername;
+    private String openedByName;
+    private Instant reopenedAt;
+    private String reopenedByUsername;
+    private long scanCount;
+    private List<Participant> participants = new ArrayList<>();
+
+    /** Người đã quét trong phiên dùng chung và số kiện họ quét. */
+    public record Participant(String username, String name, String staffCode, long scanCount) {}
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getSessionKey() {
+        return sessionKey;
+    }
+
+    public void setSessionKey(String sessionKey) {
+        this.sessionKey = sessionKey;
+    }
+
+    public Instant getOpenedAt() {
+        return openedAt;
+    }
+
+    public void setOpenedAt(Instant openedAt) {
+        this.openedAt = openedAt;
+    }
+
+    public String getOpenedByUsername() {
+        return openedByUsername;
+    }
+
+    public void setOpenedByUsername(String openedByUsername) {
+        this.openedByUsername = openedByUsername;
+    }
+
+    public String getOpenedByName() {
+        return openedByName;
+    }
+
+    public void setOpenedByName(String openedByName) {
+        this.openedByName = openedByName;
+    }
+
+    public Instant getReopenedAt() {
+        return reopenedAt;
+    }
+
+    public void setReopenedAt(Instant reopenedAt) {
+        this.reopenedAt = reopenedAt;
+    }
+
+    public String getReopenedByUsername() {
+        return reopenedByUsername;
+    }
+
+    public void setReopenedByUsername(String reopenedByUsername) {
+        this.reopenedByUsername = reopenedByUsername;
+    }
+
+    public long getScanCount() {
+        return scanCount;
+    }
+
+    public void setScanCount(long scanCount) {
+        this.scanCount = scanCount;
+    }
+
+    public List<Participant> getParticipants() {
+        return participants;
+    }
+
+    public void setParticipants(List<Participant> participants) {
+        this.participants = participants;
+    }
 
     public Long getId() {
         return id;

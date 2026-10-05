@@ -75,6 +75,78 @@ public class InventoryCheck implements Serializable {
     @Column(name = "session_key", length = 64)
     private String sessionKey;
 
+    @NotNull
+    @Size(max = 16)
+    @Column(name = "status", length = 16, nullable = false)
+    private String status = InventoryCheckStatus.COMPLETED;
+
+    @Column(name = "opened_at")
+    private Instant openedAt;
+
+    @Size(max = 50)
+    @Column(name = "opened_by_username", length = 50)
+    private String openedByUsername;
+
+    @Column(name = "reopened_at")
+    private Instant reopenedAt;
+
+    @Size(max = 50)
+    @Column(name = "reopened_by_username", length = 50)
+    private String reopenedByUsername;
+
+    /** Chỉ có giá trị khi phiên OPEN — unique index chặn 2 phiên mở trong cùng VP. */
+    @Size(max = 20)
+    @Column(name = "open_office_code", length = 20, unique = true)
+    private String openOfficeCode;
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public Instant getOpenedAt() {
+        return openedAt;
+    }
+
+    public void setOpenedAt(Instant openedAt) {
+        this.openedAt = openedAt;
+    }
+
+    public String getOpenedByUsername() {
+        return openedByUsername;
+    }
+
+    public void setOpenedByUsername(String openedByUsername) {
+        this.openedByUsername = openedByUsername;
+    }
+
+    public Instant getReopenedAt() {
+        return reopenedAt;
+    }
+
+    public void setReopenedAt(Instant reopenedAt) {
+        this.reopenedAt = reopenedAt;
+    }
+
+    public String getReopenedByUsername() {
+        return reopenedByUsername;
+    }
+
+    public void setReopenedByUsername(String reopenedByUsername) {
+        this.reopenedByUsername = reopenedByUsername;
+    }
+
+    public String getOpenOfficeCode() {
+        return openOfficeCode;
+    }
+
+    public void setOpenOfficeCode(String openOfficeCode) {
+        this.openOfficeCode = openOfficeCode;
+    }
+
     public String getSessionKey() {
         return sessionKey;
     }

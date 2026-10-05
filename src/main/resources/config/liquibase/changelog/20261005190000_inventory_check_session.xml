@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261005190000-inventory-check-status" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="inventory_check" columnName="status"/>
+            </not>
+        </preConditions>
+        <comment>Phiên kiểm kho dùng chung trong VP: OPEN / COMPLETED / ABANDONED. Biên bản cũ = COMPLETED.</comment>
+        <addColumn tableName="inventory_check">
+            <column name="status" type="varchar(16)" defaultValue="COMPLETED">
+                <constraints nullable="false"/>
+            </column>
+            <column name="opened_at" type="${datetimeType}"/>
+            <column name="opened_by_username" type="varchar(50)"/>
+            <column name="reopened_at" type="${datetimeType}"/>
+            <column name="reopened_by_username" type="varchar(50)"/>
+            <column name="open_office_code" type="varchar(20)"/>
+        </addColumn>
+        <addUniqueConstraint
+            tableName="inventory_check"
+            columnNames="open_office_code"
+            constraintName="ux_inventory_check_open_office"
+        />
+    </changeSet>
+
+    <changeSet id="20261005190000-inventory-check-scan" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="inventory_check_scan"/>
+            </not>
+        </preConditions>
+        <comment>Kiện đã quét trong phiên kiểm kho dùng chung (mỗi kiện một dòng).</comment>
+        <createTable tableName="inventory_check_scan">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="check_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="order_code" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="package_seq" type="int">
+                <constraints nullable="false"/>
+            </column>
+            <column name="scanned_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="scanned_by_username" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint
+            tableName="inventory_check_scan"
+            columnNames="check_id, order_code, package_seq"
+            constraintName="ux_inventory_check_scan_pkg"
+        />
+        <addForeignKeyConstraint
+            baseTableName="inventory_check_scan"
+            baseColumnNames="check_id"
+            constraintName="fk_inventory_check_scan_check"
+            referencedTableName="inventory_check"
+            referencedColumnNames="id"
+        />
+    </changeSet>
+</databaseChangeLog>

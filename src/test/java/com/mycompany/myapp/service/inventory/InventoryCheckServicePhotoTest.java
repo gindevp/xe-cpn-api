@@ -14,6 +14,7 @@ import com.mycompany.myapp.domain.InventoryCheckPhoto;
 import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.repository.InventoryCheckPhotoRepository;
 import com.mycompany.myapp.repository.InventoryCheckRepository;
+import com.mycompany.myapp.repository.InventoryCheckScanRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.security.StaffAccessService;
@@ -52,6 +53,9 @@ class InventoryCheckServicePhotoTest {
     @Mock
     private StaffProfileRepository staffProfileRepository;
 
+    @Mock
+    private InventoryCheckScanRepository scanRepository;
+
     private InventoryCheckService service;
 
     @BeforeEach
@@ -62,7 +66,8 @@ class InventoryCheckServicePhotoTest {
             officeRepository,
             staffAccessService,
             new ObjectMapper(),
-            staffProfileRepository
+            staffProfileRepository,
+            scanRepository
         );
         lenient().when(staffAccessService.scopedOfficeCode()).thenReturn(Optional.of("VP_HD"));
     }
@@ -201,6 +206,35 @@ class InventoryCheckServicePhotoTest {
 
         assertThatThrownBy(() -> service.photos(6L, "HD1")).isInstanceOf(ResponseStatusException.class);
         verify(photoRepository, never()).findBySessionKeyAndOrderCodeIgnoreCaseOrderByPackageSeqAscCapturedAtAsc(any(), any());
+    }
+
+    @Test
+    void sharedSession_lastScannerFromScansEvenWithoutPhoto() {
+        InventoryCheck check = new InventoryCheck();
+        check.setId(8L);
+        check.setOfficeCode("VP_HD");
+        check.setSessionKey(SESSION);
+        when(checkRepository.findById(8L)).thenReturn(Optional.of(check));
+        Instant t1 = Instant.parse("2026-10-05T03:00:00Z");
+        Instant t2 = Instant.parse("2026-10-05T03:05:00Z");
+        when(photoRepository.scanMetaBySession(SESSION)).thenReturn(List.<Object[]>of(new Object[] { "HD1", t1, "nam" }));
+        when(scanRepository.findByCheckIdOrderByIdAsc(8L)).thenReturn(
+            List.of(scan("HD1", t1, "nam"), scan("HD1", t2, "ngoc"), scan("HD2", t2, "nam"))
+        );
+
+        assertThat(service.photoOrders(8L)).containsExactly(
+            new InventoryCheckService.PhotoOrderCount("HD1", 1L, t2, "ngoc", null, null),
+            new InventoryCheckService.PhotoOrderCount("HD2", 0L, t2, "nam", null, null)
+        );
+    }
+
+    private static com.mycompany.myapp.domain.InventoryCheckScan scan(String code, Instant at, String by) {
+        com.mycompany.myapp.domain.InventoryCheckScan s = new com.mycompany.myapp.domain.InventoryCheckScan();
+        s.setOrderCode(code);
+        s.setPackageSeq(1);
+        s.setScannedAt(at);
+        s.setScannedByUsername(by);
+        return s;
     }
 
     @Test

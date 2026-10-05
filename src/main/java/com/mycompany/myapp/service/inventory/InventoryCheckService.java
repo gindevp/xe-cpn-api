@@ -4,9 +4,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mycompany.myapp.domain.InventoryCheck;
 import com.mycompany.myapp.domain.InventoryCheckPhoto;
+import com.mycompany.myapp.domain.InventoryCheckScan;
+import com.mycompany.myapp.domain.InventoryCheckStatus;
 import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.repository.InventoryCheckPhotoRepository;
 import com.mycompany.myapp.repository.InventoryCheckRepository;
+import com.mycompany.myapp.repository.InventoryCheckScanRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.security.SecurityUtils;
@@ -38,6 +41,7 @@ public class InventoryCheckService {
     private final StaffAccessService staffAccessService;
     private final ObjectMapper objectMapper;
     private final StaffProfileRepository staffProfileRepository;
+    private final InventoryCheckScanRepository scanRepository;
 
     public InventoryCheckService(
         InventoryCheckRepository inventoryCheckRepository,
@@ -45,7 +49,8 @@ public class InventoryCheckService {
         OfficeRepository officeRepository,
         StaffAccessService staffAccessService,
         ObjectMapper objectMapper,
-        StaffProfileRepository staffProfileRepository
+        StaffProfileRepository staffProfileRepository,
+        InventoryCheckScanRepository scanRepository
     ) {
         this.inventoryCheckRepository = inventoryCheckRepository;
         this.photoRepository = photoRepository;
@@ -53,10 +58,12 @@ public class InventoryCheckService {
         this.staffAccessService = staffAccessService;
         this.objectMapper = objectMapper;
         this.staffProfileRepository = staffProfileRepository;
+        this.scanRepository = scanRepository;
     }
 
+    /** Phiên Bỏ dở mặc định ẩn — không phải biên bản. */
     @Transactional(readOnly = true)
-    public List<InventoryCheckDTO> list(String officeCode) {
+    public List<InventoryCheckDTO> list(String officeCode, boolean includeAbandoned) {
         String scoped = staffAccessService.scopedOfficeCode().orElse(null);
         String office = officeCode != null && !officeCode.isBlank() ? officeCode.trim().toUpperCase(Locale.ROOT) : null;
         if (scoped != null) {
@@ -64,11 +71,18 @@ public class InventoryCheckService {
         }
         List<InventoryCheck> rows;
         if (office == null || office.isBlank()) {
-            rows = inventoryCheckRepository.findAllByOrderByCheckedAtDesc();
+            rows = includeAbandoned
+                ? inventoryCheckRepository.findAllByOrderByCheckedAtDesc()
+                : inventoryCheckRepository.findByStatusNotOrderByCheckedAtDesc(InventoryCheckStatus.ABANDONED);
         } else {
-            rows = inventoryCheckRepository.findByOfficeCodeIgnoreCaseOrderByCheckedAtDesc(office);
+            rows = includeAbandoned
+                ? inventoryCheckRepository.findByOfficeCodeIgnoreCaseOrderByCheckedAtDesc(office)
+                : inventoryCheckRepository.findByOfficeCodeIgnoreCaseAndStatusNotOrderByCheckedAtDesc(
+                    office,
+                    InventoryCheckStatus.ABANDONED
+                );
         }
-        return rows.stream().limit(100).map(this::toDto).toList();
+        return toDtos(rows.stream().limit(100).toList());
     }
 
     @Transactional(readOnly = true)
@@ -80,11 +94,11 @@ public class InventoryCheckService {
         return toDto(row);
     }
 
-    public InventoryCheckDTO create(CreateInventoryCheckRequest req) {
+    /** NV bó VP → luôn ghi theo VP tài khoản; AD/ALL dùng office gửi lên. */
+    String resolveWriteOffice(String requestedOffice) {
         staffAccessService.requireWritable();
         String scoped = staffAccessService.scopedOfficeCode().orElse(null);
-        String requested = req != null && req.getOfficeCode() != null ? req.getOfficeCode().trim() : "";
-        // NV bó VP → luôn ghi theo VP tài khoản; AD/ALL dùng office gửi lên.
+        String requested = requestedOffice != null ? requestedOffice.trim() : "";
         String office = scoped != null && !scoped.isBlank() ? scoped.trim().toUpperCase(Locale.ROOT) : requested.toUpperCase(Locale.ROOT);
         if (office.isBlank()) {
             throw new BadRequestAlertException("officeCode required", ENTITY, "officeRequired");
@@ -95,7 +109,11 @@ public class InventoryCheckService {
                 throw new BadRequestAlertException("Unknown office: " + office, ENTITY, "officeUnknown");
             }
         }
-        office = office.toUpperCase(Locale.ROOT);
+        return office.toUpperCase(Locale.ROOT);
+    }
+
+    public InventoryCheckDTO create(CreateInventoryCheckRequest req) {
+        String office = resolveWriteOffice(req != null ? req.getOfficeCode() : null);
 
         List<String> system = nzList(req.getSystemCodes());
         List<String> scanned = nzList(req.getScannedCodes());
@@ -190,46 +208,67 @@ public class InventoryCheckService {
         photoRepository.save(row);
     }
 
+    /** Phiên dùng chung lấy lần quét cuối từ bảng quét; biên bản cũ suy từ ảnh. */
     @Transactional(readOnly = true)
     public List<PhotoOrderCount> photoOrders(Long checkId) {
         InventoryCheck check = requireViewable(checkId);
-        if (check.getSessionKey() == null) {
-            return List.of();
-        }
         java.util.Map<String, long[]> counts = new java.util.LinkedHashMap<>();
         java.util.Map<String, Object[]> last = new java.util.HashMap<>();
-        for (Object[] r : photoRepository.scanMetaBySession(check.getSessionKey())) {
-            if (r[0] == null) {
-                continue;
+        if (check.getSessionKey() != null) {
+            for (Object[] r : photoRepository.scanMetaBySession(check.getSessionKey())) {
+                if (r[0] == null) {
+                    continue;
+                }
+                String code = ((String) r[0]).trim().toUpperCase(Locale.ROOT);
+                counts.computeIfAbsent(code, k -> new long[1])[0]++;
+                keepLatest(last, code, (Instant) r[1], (String) r[2]);
             }
-            String code = ((String) r[0]).trim().toUpperCase(Locale.ROOT);
-            counts.computeIfAbsent(code, k -> new long[1])[0]++;
-            Instant at = (Instant) r[1];
-            Object[] prev = last.get(code);
-            if (prev == null || (at != null && (prev[1] == null || at.isAfter((Instant) prev[1])))) {
-                last.put(code, r);
+        }
+        List<InventoryCheckScan> scans = check.getId() == null ? List.of() : scanRepository.findByCheckIdOrderByIdAsc(check.getId());
+        if (!scans.isEmpty()) {
+            last.clear();
+            for (InventoryCheckScan s : scans) {
+                String code = s.getOrderCode().trim().toUpperCase(Locale.ROOT);
+                counts.computeIfAbsent(code, k -> new long[1]);
+                keepLatest(last, code, s.getScannedAt(), s.getScannedByUsername());
             }
         }
         java.util.Map<String, java.util.Optional<StaffProfile>> staff = new java.util.HashMap<>();
         List<PhotoOrderCount> out = new ArrayList<>();
         counts.forEach((code, n) -> {
             Object[] l = last.get(code);
-            String by = l == null ? null : (String) l[2];
-            StaffProfile sp = by == null || staffProfileRepository == null
-                ? null
-                : staff.computeIfAbsent(by.toLowerCase(Locale.ROOT), staffProfileRepository::findOneByUserLoginIgnoreCase).orElse(null);
+            String by = l == null ? null : (String) l[1];
+            StaffProfile sp = profile(staff, by);
             out.add(
                 new PhotoOrderCount(
                     code,
                     n[0],
-                    l == null ? null : (Instant) l[1],
+                    l == null ? null : (Instant) l[0],
                     by,
                     sp == null ? null : sp.getStaffCode(),
-                    sp == null || sp.getDisplayName() == null || sp.getDisplayName().isBlank() ? null : sp.getDisplayName().trim()
+                    displayName(sp)
                 )
             );
         });
         return out;
+    }
+
+    private static void keepLatest(java.util.Map<String, Object[]> last, String code, Instant at, String by) {
+        Object[] prev = last.get(code);
+        if (prev == null || (at != null && (prev[0] == null || at.isAfter((Instant) prev[0])))) {
+            last.put(code, new Object[] { at, by });
+        }
+    }
+
+    private StaffProfile profile(java.util.Map<String, java.util.Optional<StaffProfile>> cache, String login) {
+        if (login == null || staffProfileRepository == null) {
+            return null;
+        }
+        return cache.computeIfAbsent(login.toLowerCase(Locale.ROOT), staffProfileRepository::findOneByUserLoginIgnoreCase).orElse(null);
+    }
+
+    private static String displayName(StaffProfile sp) {
+        return sp == null || sp.getDisplayName() == null || sp.getDisplayName().isBlank() ? null : sp.getDisplayName().trim();
     }
 
     /** Ảnh đầu tiên của từng đơn (ảnh đại diện trong bảng chi tiết phiên); tối đa 100 đơn một lần. */
@@ -287,15 +326,59 @@ public class InventoryCheckService {
         return SESSION_KEY.matcher(key).matches() ? key : null;
     }
 
-    private void assertCanView(String officeCode) {
+    void assertCanView(String officeCode) {
         String scoped = staffAccessService.scopedOfficeCode().orElse(null);
         if (scoped != null && !scoped.equalsIgnoreCase(officeCode)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Office scope denied");
         }
     }
 
-    private InventoryCheckDTO toDto(InventoryCheck row) {
+    InventoryCheckDTO toDto(InventoryCheck row) {
+        return toDtos(List.of(row)).get(0);
+    }
+
+    List<InventoryCheckDTO> toDtos(List<InventoryCheck> rows) {
+        List<Long> ids = rows.stream().map(InventoryCheck::getId).filter(java.util.Objects::nonNull).toList();
+        java.util.Map<Long, List<Object[]>> byCheck = new java.util.HashMap<>();
+        if (!ids.isEmpty() && scanRepository != null) {
+            for (Object[] r : scanRepository.participants(ids)) {
+                byCheck.computeIfAbsent((Long) r[0], k -> new ArrayList<>()).add(r);
+            }
+        }
+        java.util.Map<String, java.util.Optional<StaffProfile>> staff = new java.util.HashMap<>();
+        return rows
+            .stream()
+            .map(row -> {
+                InventoryCheckDTO dto = baseDto(row);
+                long total = 0;
+                List<InventoryCheckDTO.Participant> people = new ArrayList<>();
+                for (Object[] r : byCheck.getOrDefault(row.getId(), List.of())) {
+                    String login = (String) r[1];
+                    long n = ((Number) r[2]).longValue();
+                    total += n;
+                    StaffProfile sp = profile(staff, login);
+                    people.add(new InventoryCheckDTO.Participant(login, displayName(sp), sp == null ? null : sp.getStaffCode(), n));
+                }
+                people.sort((a, b) -> Long.compare(b.scanCount(), a.scanCount()));
+                dto.setScanCount(total);
+                dto.setParticipants(people);
+                if (row.getOpenedByUsername() != null) {
+                    String name = displayName(profile(staff, row.getOpenedByUsername()));
+                    dto.setOpenedByName(name != null ? name : row.getOpenedByUsername());
+                }
+                return dto;
+            })
+            .toList();
+    }
+
+    private InventoryCheckDTO baseDto(InventoryCheck row) {
         InventoryCheckDTO dto = new InventoryCheckDTO();
+        dto.setStatus(row.getStatus() != null ? row.getStatus() : InventoryCheckStatus.COMPLETED);
+        dto.setSessionKey(row.getSessionKey());
+        dto.setOpenedAt(row.getOpenedAt());
+        dto.setOpenedByUsername(row.getOpenedByUsername());
+        dto.setReopenedAt(row.getReopenedAt());
+        dto.setReopenedByUsername(row.getReopenedByUsername());
         dto.setId(row.getId());
         dto.setOfficeCode(row.getOfficeCode());
         dto.setCheckedAt(row.getCheckedAt());
