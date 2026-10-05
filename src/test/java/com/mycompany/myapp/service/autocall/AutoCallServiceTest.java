@@ -1169,6 +1169,22 @@ class AutoCallServiceTest {
     }
 
     @Test
+    void vtech_webhook_laterAttemptOfSameContact_doesNotOverwriteAnswered() throws Exception {
+        AutoCall c = pendingCall();
+        c.setProvider("VTECH");
+        c.setStatus("QUEUED");
+        when(autoCallRepository.findOneByRefId(c.getRefId())).thenReturn(Optional.of(c));
+
+        service.applyVtechWebhook(JSON.readTree(vtechEvent(c.getRefId(), "0912345678", "COMPLETED", "CONNECTED")));
+        service.applyVtechWebhook(JSON.readTree(vtechEvent(c.getRefId(), "0912345678", "CANCELLED", "REJECTED")));
+        service.applyVtechWebhook(JSON.readTree(vtechEvent(c.getRefId(), "0912345678", "NO_ANSWER", "NO_ANSWER")));
+
+        assertThat(c.getStatus()).isEqualTo("COMPLETED");
+        assertThat(c.getResult()).isEqualTo("answered");
+        assertThat(c.getNextRetryAt()).isNull();
+    }
+
+    @Test
     void vtech_webhook_unknownCall_andOtherEvents() throws Exception {
         when(autoCallRepository.findOneByRefId("CPN-GIAO-NOPE")).thenReturn(Optional.empty());
         when(autoCallRepository.findFirstByProviderAndPhoneAndStatusOrderByCreatedAtDesc(any(), any(), any())).thenReturn(Optional.empty());

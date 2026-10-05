@@ -619,6 +619,10 @@ public class AutoCallService {
         if (FINAL_STATUSES.contains(prevStatus) && prevStatus.equals(status)) {
             return true;
         }
+        // Vtech tự gọi lại cùng 1 contact: kết quả lần sau không được đè lần khách đã nghe máy.
+        if ("COMPLETED".equals(prevStatus) && !"COMPLETED".equals(status)) {
+            return true;
+        }
         if (callId != null) call.setCallId(callId);
         if (text(data, "requestId") != null) call.setRequestId(text(data, "requestId"));
         if (status != null) call.setStatus(status);
