@@ -61,8 +61,12 @@ public final class VehicleBoardDtos {
         String reportedBy,
         String reportedByName,
         String reason,
-        Instant pickupAt
+        Instant pickupAt,
+        /** Lượt báo rời có ảnh xe — xem qua {@code GET /api/vehicle-events/{id}/photo}. */
+        boolean hasPhoto
     ) {}
+
+    public record EventPhoto(Long eventId, String photo, Instant capturedAt, String capturedBy) {}
 
     /** {@code itineraries}: lộ trình báo giờ của VP đang xem (rỗng khi xem toàn hệ thống). */
     public record Report(List<ReportItem> events, List<ItineraryOption> itineraries) {}
@@ -93,8 +97,37 @@ public final class VehicleBoardDtos {
         Instant plannedDepartAt,
         String reason,
         /** Mã lộ trình đang chọn trên app — để lấy phút lệch giờ đón; app cũ không gửi thì suy theo tên tuyến. */
-        String itineraryCode
+        String itineraryCode,
+        /** Ảnh xe (data URL) — bắt buộc khi báo xe rời. */
+        String photo
     ) {
+        public ReportRequest(
+            String eventType,
+            String source,
+            String tripCode,
+            String externalTripId,
+            String vehiclePlate,
+            String driverName,
+            String routeLabel,
+            Instant plannedDepartAt,
+            String reason,
+            String itineraryCode
+        ) {
+            this(
+                eventType,
+                source,
+                tripCode,
+                externalTripId,
+                vehiclePlate,
+                driverName,
+                routeLabel,
+                plannedDepartAt,
+                reason,
+                itineraryCode,
+                null
+            );
+        }
+
         public ReportRequest(
             String eventType,
             String source,
@@ -105,7 +138,7 @@ public final class VehicleBoardDtos {
             String routeLabel,
             Instant plannedDepartAt
         ) {
-            this(eventType, source, tripCode, externalTripId, vehiclePlate, driverName, routeLabel, plannedDepartAt, null, null);
+            this(eventType, source, tripCode, externalTripId, vehiclePlate, driverName, routeLabel, plannedDepartAt, null, null, null);
         }
 
         public ReportRequest(
@@ -119,7 +152,7 @@ public final class VehicleBoardDtos {
             Instant plannedDepartAt,
             String reason
         ) {
-            this(eventType, source, tripCode, externalTripId, vehiclePlate, driverName, routeLabel, plannedDepartAt, reason, null);
+            this(eventType, source, tripCode, externalTripId, vehiclePlate, driverName, routeLabel, plannedDepartAt, reason, null, null);
         }
     }
 }

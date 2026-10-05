@@ -18,12 +18,14 @@ import com.mycompany.myapp.domain.Route;
 import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.domain.Trip;
 import com.mycompany.myapp.domain.Vehicle;
+import com.mycompany.myapp.domain.VehicleEventPhoto;
 import com.mycompany.myapp.domain.VehicleOfficeEvent;
 import com.mycompany.myapp.domain.VehicleOfficeEvent.EventType;
 import com.mycompany.myapp.repository.ItineraryRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OfficeVehicleItineraryRepository;
 import com.mycompany.myapp.repository.TripRepository;
+import com.mycompany.myapp.repository.VehicleEventPhotoRepository;
 import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.dto.trip.AvailableTripDTO;
@@ -72,6 +74,9 @@ class VehicleBoardServiceTest {
     @Mock
     private OfficeRepository officeRepository;
 
+    @Mock
+    private VehicleEventPhotoRepository photoRepository;
+
     private VehicleBoardService service;
     private Office ga;
     private Office yb;
@@ -86,7 +91,8 @@ class VehicleBoardServiceTest {
             vthkClient,
             staffAccessService,
             officeItineraryRepository,
-            officeRepository
+            officeRepository,
+            photoRepository
         );
         ga = office(1L, "GA");
         yb = office(2L, "YB");
@@ -242,11 +248,33 @@ class VehicleBoardServiceTest {
         when(eventRepository.saveAndFlush(any(VehicleOfficeEvent.class))).thenAnswer(inv -> inv.getArgument(0));
         loginAt(ga);
 
-        VehicleBoardDtos.Item item = service.report(
-            new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, Instant.now())
-        );
+        VehicleBoardDtos.Item item = service.report(depart(Instant.now(), null, null, null, PHOTO));
         assertThat(item.eventType()).isEqualTo("DEPART");
         assertThat(item.reportedAt()).isNotNull();
+    }
+
+    private static final String PHOTO = "data:image/jpeg;base64,AAAA";
+
+    private static VehicleBoardDtos.ReportRequest depart(
+        Instant planned,
+        String reason,
+        String routeLabel,
+        String itineraryCode,
+        String photo
+    ) {
+        return new VehicleBoardDtos.ReportRequest(
+            "DEPART",
+            "CRM",
+            null,
+            "CH123",
+            "30H-83330",
+            null,
+            routeLabel,
+            planned,
+            reason,
+            itineraryCode,
+            photo
+        );
     }
 
     private void arrivedAtGa() {
@@ -287,10 +315,59 @@ class VehicleBoardServiceTest {
         arrivedAtGa();
         when(eventRepository.saveAndFlush(any(VehicleOfficeEvent.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        VehicleBoardDtos.Item item = service.report(
-            new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, Instant.now().plusSeconds(600))
-        );
+        VehicleBoardDtos.Item item = service.report(depart(Instant.now().plusSeconds(600), null, null, null, PHOTO));
         assertThat(item.reportedAt()).isNotNull();
+    }
+
+    @Test
+    void departWithoutPhotoIsRejected() {
+        arrivedAtGa();
+
+        assertThatThrownBy(() -> service.report(depart(Instant.now(), null, null, null, "  ")))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("photoRequired");
+        verify(eventRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void departWithNonImagePhotoIsRejected() {
+        arrivedAtGa();
+
+        assertThatThrownBy(() -> service.report(depart(Instant.now(), null, null, null, "hello")))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("photoInvalid");
+    }
+
+    @Test
+    void departSavesPhotoLinkedToEvent() {
+        arrivedAtGa();
+        when(eventRepository.saveAndFlush(any(VehicleOfficeEvent.class))).thenAnswer(inv -> {
+            VehicleOfficeEvent e = inv.getArgument(0);
+            e.setId(77L);
+            return e;
+        });
+        ArgumentCaptor<VehicleEventPhoto> photo = ArgumentCaptor.forClass(VehicleEventPhoto.class);
+
+        service.report(depart(Instant.now(), null, null, null, PHOTO));
+
+        verify(photoRepository).save(photo.capture());
+        assertThat(photo.getValue().getEventId()).isEqualTo(77L);
+        assertThat(photo.getValue().getPhotoUrl()).isEqualTo(PHOTO);
+        assertThat(photo.getValue().getCapturedAt()).isNotNull();
+    }
+
+    @Test
+    void arriveDoesNotNeedOrStorePhoto() {
+        when(eventRepository.findOneByOffice_IdAndEventTypeAndTripKey(1L, EventType.ARRIVE, "C:CH123")).thenReturn(Optional.empty());
+        when(eventRepository.saveAndFlush(any(VehicleOfficeEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+        loginAt(ga);
+
+        service.report(
+            new VehicleBoardDtos.ReportRequest("ARRIVE", "CRM", null, "CH123", "30H-83330", null, null, Instant.now(), null, null, PHOTO)
+        );
+        verify(photoRepository, never()).save(any());
     }
 
     @Test
@@ -300,7 +377,7 @@ class VehicleBoardServiceTest {
         when(eventRepository.saveAndFlush(saved.capture())).thenAnswer(inv -> inv.getArgument(0));
         Instant planned = Instant.now().minusSeconds(20 * 60);
 
-        service.report(new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, planned, " Chờ hàng "));
+        service.report(depart(planned, " Chờ hàng ", null, null, PHOTO));
         assertThat(saved.getValue().getReason()).isEqualTo("Chờ hàng");
         assertThat(saved.getValue().getPickupAt()).isEqualTo(planned);
     }
@@ -314,7 +391,7 @@ class VehicleBoardServiceTest {
         when(eventRepository.saveAndFlush(saved.capture())).thenAnswer(inv -> inv.getArgument(0));
         Instant planned = Instant.now().minusSeconds(20 * 60);
 
-        service.report(new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, null, planned, null, "GA-YB"));
+        service.report(depart(planned, null, null, "GA-YB", PHOTO));
         assertThat(saved.getValue().getPickupAt()).isEqualTo(planned.plusSeconds(30 * 60));
         assertThat(saved.getValue().getReason()).isNull();
     }
@@ -328,9 +405,7 @@ class VehicleBoardServiceTest {
         when(eventRepository.saveAndFlush(saved.capture())).thenAnswer(inv -> inv.getArgument(0));
         Instant planned = Instant.now().plusSeconds(150 * 60);
 
-        service.report(
-            new VehicleBoardDtos.ReportRequest("DEPART", "CRM", null, "CH123", "30H-83330", null, "GA - YB", planned, "Đợi khách")
-        );
+        service.report(depart(planned, "Đợi khách", "GA - YB", null, PHOTO));
         assertThat(saved.getValue().getPickupAt()).isEqualTo(planned.minusSeconds(120 * 60));
     }
 

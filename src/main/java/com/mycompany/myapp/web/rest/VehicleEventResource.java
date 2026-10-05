@@ -62,6 +62,11 @@ public class VehicleEventResource {
         return vehicleBoardService.reportList(from, to, officeCode);
     }
 
+    @GetMapping("/vehicle-events/{id}/photo")
+    public VehicleBoardDtos.EventPhoto eventPhoto(@PathVariable Long id) {
+        return vehicleBoardService.eventPhoto(id);
+    }
+
     /** Ghi: NV có quyền Lên hàng hoặc Xuống hàng (StaffWriteGuardFilter). Báo lại cùng chuyến trả về giờ đã ghi. */
     @PostMapping("/vehicle-events")
     public VehicleBoardDtos.Item report(@RequestBody VehicleBoardDtos.ReportRequest body) {

@@ -6,6 +6,7 @@ import com.mycompany.myapp.domain.OfficeVehicleItinerary;
 import com.mycompany.myapp.domain.Route;
 import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.domain.Trip;
+import com.mycompany.myapp.domain.VehicleEventPhoto;
 import com.mycompany.myapp.domain.VehicleOfficeEvent;
 import com.mycompany.myapp.domain.VehicleOfficeEvent.EventType;
 import com.mycompany.myapp.domain.VehicleOfficeEvent.Source;
@@ -13,6 +14,7 @@ import com.mycompany.myapp.repository.ItineraryRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OfficeVehicleItineraryRepository;
 import com.mycompany.myapp.repository.TripRepository;
+import com.mycompany.myapp.repository.VehicleEventPhotoRepository;
 import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
 import com.mycompany.myapp.security.ScreenKey;
 import com.mycompany.myapp.security.SecurityUtils;
@@ -60,6 +62,7 @@ public class VehicleBoardService {
     static final int LATE_MINUTES = 5;
     /** Phút lệch giờ đón tối đa so với giờ xuất bến (± 12 tiếng). */
     static final int MAX_OFFSET_MINUTES = 720;
+    static final int MAX_PHOTO_LENGTH = 4_000_000;
 
     private final TripRepository tripRepository;
     private final ItineraryRepository itineraryRepository;
@@ -69,6 +72,7 @@ public class VehicleBoardService {
     private final StaffAccessService staffAccessService;
     private final OfficeVehicleItineraryRepository officeItineraryRepository;
     private final OfficeRepository officeRepository;
+    private final VehicleEventPhotoRepository photoRepository;
 
     public VehicleBoardService(
         TripRepository tripRepository,
@@ -78,10 +82,12 @@ public class VehicleBoardService {
         VthkTripSearchClient vthkClient,
         StaffAccessService staffAccessService,
         OfficeVehicleItineraryRepository officeItineraryRepository,
-        OfficeRepository officeRepository
+        OfficeRepository officeRepository,
+        VehicleEventPhotoRepository photoRepository
     ) {
         this.officeItineraryRepository = officeItineraryRepository;
         this.officeRepository = officeRepository;
+        this.photoRepository = photoRepository;
         this.tripRepository = tripRepository;
         this.itineraryRepository = itineraryRepository;
         this.eventRepository = eventRepository;
@@ -471,6 +477,7 @@ public class VehicleBoardService {
         }
         Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         String reason = cut(trimToNull(req.reason()), 500);
+        String photo = type == EventType.DEPART ? trimToNull(req.photo()) : null;
         if (type == EventType.DEPART) {
             eventRepository
                 .findOneByOffice_IdAndEventTypeAndTripKey(office.getId(), EventType.ARRIVE, c.tripKey())
@@ -483,6 +490,19 @@ public class VehicleBoardService {
                     ENTITY,
                     "lateReasonRequired"
                 );
+            }
+            if (photo == null) {
+                throw new BadRequestAlertException(
+                    "Cần chụp ảnh xe trước khi báo xe rời — cập nhật app nếu chưa thấy bước chụp ảnh",
+                    ENTITY,
+                    "photoRequired"
+                );
+            }
+            if (!photo.startsWith("data:image/") || !photo.contains(";base64,")) {
+                throw new BadRequestAlertException("Ảnh xe không hợp lệ", ENTITY, "photoInvalid");
+            }
+            if (photo.length() > MAX_PHOTO_LENGTH) {
+                throw new BadRequestAlertException("Ảnh xe quá lớn — chụp lại", ENTITY, "photoTooLarge");
             }
         }
         VehicleOfficeEvent e = new VehicleOfficeEvent();
@@ -505,7 +525,25 @@ public class VehicleBoardService {
         } catch (DataIntegrityViolationException dup) {
             throw new BadRequestAlertException("Chuyến này vừa được báo — tải lại danh sách", ENTITY, "alreadyReported");
         }
+        if (photo != null) {
+            VehicleEventPhoto p = new VehicleEventPhoto();
+            p.setEventId(e.getId());
+            p.setPhotoUrl(photo);
+            p.setCapturedAt(now);
+            p.setCapturedByUsername(e.getReportedBy());
+            photoRepository.save(p);
+        }
         return toItem(c, e, pickup);
+    }
+
+    /** Ảnh xe của một lượt báo (screen bao-gio-xe). */
+    @Transactional(readOnly = true)
+    public VehicleBoardDtos.EventPhoto eventPhoto(Long eventId) {
+        staffAccessService.requireScreenRead(ScreenKey.BAO_GIO_XE);
+        VehicleEventPhoto p = photoRepository
+            .findOneByEventId(eventId)
+            .orElseThrow(() -> new BadRequestAlertException("Lượt báo này không có ảnh", ENTITY, "photoNotFound"));
+        return new VehicleBoardDtos.EventPhoto(p.getEventId(), p.getPhotoUrl(), p.getCapturedAt(), p.getCapturedByUsername());
     }
 
     /**
@@ -546,6 +584,12 @@ public class VehicleBoardService {
                 }
             }
         }
+        List<Long> departIds = events
+            .stream()
+            .filter(e -> e.getEventType() == EventType.DEPART && e.getId() != null)
+            .map(VehicleOfficeEvent::getId)
+            .toList();
+        Set<Long> withPhoto = departIds.isEmpty() ? Set.of() : new HashSet<>(photoRepository.findEventIdsIn(departIds));
         List<VehicleBoardDtos.ReportItem> items = events
             .stream()
             .map(e ->
@@ -566,7 +610,8 @@ public class VehicleBoardService {
                     e.getReportedBy(),
                     e.getReportedBy() == null ? null : names.get(e.getReportedBy().toLowerCase(Locale.ROOT)),
                     e.getReason(),
-                    e.getPickupAt() != null ? e.getPickupAt() : e.getPlannedDepartAt()
+                    e.getPickupAt() != null ? e.getPickupAt() : e.getPlannedDepartAt(),
+                    withPhoto.contains(e.getId())
                 )
             )
             .toList();
