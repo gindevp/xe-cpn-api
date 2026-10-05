@@ -217,7 +217,7 @@ public class InvoiceAutoIssueService {
         Instant deadline = InvoicePolicy.deadline(paidAt);
         String st = o.getInvoiceStatus();
         boolean done = MeInvoiceIssueService.isIssued(o) || MeInvoiceIssueService.STATUS_MANUAL.equals(st);
-        boolean late = done && deadline != null && o.getInvoiceIssuedAt() != null && o.getInvoiceIssuedAt().isAfter(deadline);
+        boolean late = done && InvoicePolicy.issuedLate(deadline, o.getInvoiceIssuedAt());
         return new InvoiceRow(
             o.getOrderCode(),
             o.getStatus() != null ? o.getStatus().name() : null,

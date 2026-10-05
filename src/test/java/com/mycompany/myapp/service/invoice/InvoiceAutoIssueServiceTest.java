@@ -120,6 +120,22 @@ class InvoiceAutoIssueServiceTest {
         assertThat(row.invoiceAmount()).isEqualByComparingTo("110000");
     }
 
+    @Test
+    void row_notLateWithinGraceAfterDeadline() {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setOrderCode("X2");
+        o.setStatus(OrderStatus.DELIVERED);
+        o.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        o.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
+        Instant paid = Instant.parse("2026-10-02T01:00:00Z");
+
+        o.setInvoiceIssuedAt(paid.plus(Duration.ofHours(3)).plus(Duration.ofMinutes(15)));
+        assertThat(InvoiceAutoIssueService.toRow(o, paid).late()).isFalse();
+
+        o.setInvoiceIssuedAt(paid.plus(Duration.ofHours(3)).plus(Duration.ofMinutes(16)));
+        assertThat(InvoiceAutoIssueService.toRow(o, paid).late()).isTrue();
+    }
+
     private static ShipmentOrder invoicedBy(String code, String senderPhone, String receiverPhone, String tax, String company) {
         ShipmentOrder o = new ShipmentOrder();
         o.setOrderCode(code);

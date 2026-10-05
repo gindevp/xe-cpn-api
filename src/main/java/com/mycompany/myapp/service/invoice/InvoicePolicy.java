@@ -18,6 +18,8 @@ import java.util.List;
 public final class InvoicePolicy {
 
     public static final Duration WINDOW = Duration.ofHours(3);
+    /** Job tự xuất chạy theo chu kỳ nên HĐ có thể ra sau hạn vài phút — trễ quá mức này mới tính là xuất muộn. */
+    public static final Duration LATE_GRACE = Duration.ofMinutes(15);
 
     public static final String TYPE_COMPANY = "COMPANY";
     public static final String TYPE_PERSONAL = "PERSONAL";
@@ -52,6 +54,10 @@ public final class InvoicePolicy {
 
     public static Instant deadline(Instant paidAt) {
         return paidAt == null ? null : paidAt.plus(WINDOW);
+    }
+
+    public static boolean issuedLate(Instant deadline, Instant issuedAt) {
+        return deadline != null && issuedAt != null && issuedAt.isAfter(deadline.plus(LATE_GRACE));
     }
 
     /** Loại HĐ: cột invoice_type; đơn xuất trước khi có cột thì suy từ MST. */
