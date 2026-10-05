@@ -4,6 +4,7 @@ import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.service.finance.FinanceFacadeService;
+import com.mycompany.myapp.service.report.BusinessReportService;
 import com.mycompany.myapp.service.report.InventoryHourlyReportService;
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -19,17 +20,20 @@ public class ReportsResource {
     private final TripRepository tripRepository;
     private final FinanceFacadeService financeFacadeService;
     private final InventoryHourlyReportService inventoryHourlyReportService;
+    private final BusinessReportService businessReportService;
 
     public ReportsResource(
         ShipmentOrderRepository shipmentOrderRepository,
         TripRepository tripRepository,
         FinanceFacadeService financeFacadeService,
-        InventoryHourlyReportService inventoryHourlyReportService
+        InventoryHourlyReportService inventoryHourlyReportService,
+        BusinessReportService businessReportService
     ) {
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.tripRepository = tripRepository;
         this.financeFacadeService = financeFacadeService;
         this.inventoryHourlyReportService = inventoryHourlyReportService;
+        this.businessReportService = businessReportService;
     }
 
     @GetMapping("/dashboard")
@@ -49,6 +53,16 @@ public class ReportsResource {
             out.put("collections", financeFacadeService.collectionsReport(officeCode, date));
         }
         return out;
+    }
+
+    /** Báo cáo kinh doanh màn Tổng quan (KPI + số đơn theo VP), có kỳ so sánh lùi 1 tháng. */
+    @GetMapping("/business")
+    public BusinessReportService.Report business(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+        @RequestParam(required = false) String officeCode
+    ) {
+        return businessReportService.business(from, to, officeCode);
     }
 
     @GetMapping("/collections")
