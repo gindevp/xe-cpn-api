@@ -208,12 +208,18 @@ public class BusinessReportService {
 
     private List<OfficeRow> officeRows(String office, Map<String, long[]> delivered, Map<String, Object[]> backlog) {
         Map<String, String> names = new TreeMap<>();
+        java.util.Set<String> active = new java.util.HashSet<>();
         for (Office o : officeRepository.findAll()) {
             if (o.getCode() != null) {
-                names.put(o.getCode().toUpperCase(Locale.ROOT), o.getName());
+                String code = o.getCode().toUpperCase(Locale.ROOT);
+                names.put(code, o.getName());
+                if (!Boolean.FALSE.equals(o.getActive())) {
+                    active.add(code);
+                }
             }
         }
-        java.util.Set<String> codes = new java.util.LinkedHashSet<>();
+        // VP đang hoạt động luôn hiện (kể cả 0 đơn); VP ngừng chỉ hiện khi còn số liệu.
+        java.util.Set<String> codes = new java.util.LinkedHashSet<>(active);
         codes.addAll(delivered.keySet());
         codes.addAll(backlog.keySet());
         List<OfficeRow> out = new ArrayList<>();
@@ -223,7 +229,7 @@ public class BusinessReportService {
             }
             long d = delivered.containsKey(code) ? delivered.get(code)[0] : 0;
             long b = backlog.containsKey(code) ? (Long) backlog.get(code)[0] : 0;
-            if (d == 0 && b == 0) {
+            if (d == 0 && b == 0 && !active.contains(code)) {
                 continue;
             }
             out.add(new OfficeRow(code, names.getOrDefault(code, code.isEmpty() ? "Chưa rõ VP" : code), d, b));
