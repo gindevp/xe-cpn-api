@@ -124,5 +124,6 @@
     <include file="config/liquibase/changelog/20261005190000_inventory_check_session.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261005210000_ahamove_dispatch.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261005230000_shipper.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261006150000_partner_fee_expense.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 

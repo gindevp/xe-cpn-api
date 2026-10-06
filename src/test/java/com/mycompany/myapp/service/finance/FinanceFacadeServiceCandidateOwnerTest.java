@@ -15,6 +15,7 @@ import com.mycompany.myapp.repository.DayClosureRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
+import com.mycompany.myapp.repository.PartnerFeeExpenseRepository;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ReceiptRepository;
 import com.mycompany.myapp.repository.ReceiptWaiverRepository;
@@ -77,6 +78,9 @@ class FinanceFacadeServiceCandidateOwnerTest {
     @Mock
     private StaffAccessService staffAccessService;
 
+    @Mock
+    private PartnerFeeExpenseRepository partnerFeeExpenseRepository;
+
     private FinanceFacadeService service;
     private ShipmentOrder order;
 
@@ -95,7 +99,8 @@ class FinanceFacadeServiceCandidateOwnerTest {
             receiptWaiverRepository,
             auditRecorder,
             auditLogRepository,
-            staffAccessService
+            staffAccessService,
+            partnerFeeExpenseRepository
         );
         Office from = new Office();
         from.setCode("VP_NB");
@@ -143,5 +148,34 @@ class FinanceFacadeServiceCandidateOwnerTest {
         when(orderEventRepository.findByOrder_IdOrderByEventAtAsc(7L)).thenReturn(List.of(event("CREATE", "vietnc")));
 
         assertThat(senderOwner()).isEqualTo("vietnc");
+    }
+
+    @Test
+    void openPartnerFee_listedAsNegativeRowOfPayer_andFilteredByInvolvedLogin() {
+        when(orderEventRepository.findByOrder_IdOrderByEventAtAsc(7L)).thenReturn(List.of(event("CREATE", "vietnc")));
+        Office to = new Office();
+        to.setCode("VP_HN");
+        ShipmentOrder ah = new ShipmentOrder();
+        ah.setId(8L);
+        ah.setOrderCode("AH-1");
+        ah.setToOffice(to);
+        ah.setStatus(OrderStatus.OUT_FOR_DELIVERY);
+        com.mycompany.myapp.domain.PartnerFeeExpense e = new com.mycompany.myapp.domain.PartnerFeeExpense();
+        e.setOrder(ah);
+        e.setAmount(new BigDecimal("32000"));
+        e.setPayerUsername("dungtm");
+        e.setIncurredAt(Instant.now());
+        when(partnerFeeExpenseRepository.findOpenWithOrder()).thenReturn(List.of(e));
+
+        List<CandidateDTO> rows = service.candidates(null, null);
+        assertThat(rows).anySatisfy(r -> {
+            assertThat(r.orderCode()).isEqualTo("AH-1");
+            assertThat(r.portion()).isEqualTo(FinanceFacadeService.PARTNER_FEE);
+            assertThat(r.dueAmount()).isEqualByComparingTo("-32000");
+            assertThat(r.debtOwnerUsername()).isEqualTo("dungtm");
+        });
+        assertThat(service.candidates("VP_HN", null)).anySatisfy(r -> assertThat(r.orderCode()).isEqualTo("AH-1"));
+        assertThat(service.candidates("VP_XX", null)).noneSatisfy(r -> assertThat(r.orderCode()).isEqualTo("AH-1"));
+        assertThat(service.candidatesInvolving("other")).noneSatisfy(r -> assertThat(r.orderCode()).isEqualTo("AH-1"));
     }
 }

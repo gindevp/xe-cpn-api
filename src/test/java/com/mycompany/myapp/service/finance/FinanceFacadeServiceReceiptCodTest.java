@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderPayment;
+import com.mycompany.myapp.domain.PartnerFeeExpense;
 import com.mycompany.myapp.domain.Receipt;
 import com.mycompany.myapp.domain.ReceiptOrderLine;
 import com.mycompany.myapp.domain.ReceiptWaiver;
@@ -24,6 +25,7 @@ import com.mycompany.myapp.repository.DayClosureRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
+import com.mycompany.myapp.repository.PartnerFeeExpenseRepository;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ReceiptRepository;
 import com.mycompany.myapp.repository.ReceiptWaiverRepository;
@@ -96,6 +98,9 @@ class FinanceFacadeServiceReceiptCodTest {
     @Mock
     private StaffAccessService staffAccessService;
 
+    @Mock
+    private PartnerFeeExpenseRepository partnerFeeExpenseRepository;
+
     private FinanceFacadeService service;
     private ShipmentOrder order;
 
@@ -114,7 +119,8 @@ class FinanceFacadeServiceReceiptCodTest {
             receiptWaiverRepository,
             auditRecorder,
             auditLogRepository,
-            staffAccessService
+            staffAccessService,
+            partnerFeeExpenseRepository
         );
 
         order = new ShipmentOrder();
@@ -482,6 +488,120 @@ class FinanceFacadeServiceReceiptCodTest {
         verify(receiptOrderLineRepository).deleteAll(List.of(line));
         verify(receiptRepository).delete(receipt);
         verify(auditRecorder).record(eq("RECEIPT_CANCEL"), eq("Receipt"), eq("PT-1"), org.mockito.ArgumentMatchers.contains("Lập nhầm"));
+    }
+
+    private PartnerFeeExpense fee(String orderCode, long orderId, String amount, String payer) {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setId(orderId);
+        o.setOrderCode(orderCode);
+        o.setStatus(OrderStatus.DELIVERED);
+        lenient().when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode(orderCode)).thenReturn(Optional.of(o));
+        PartnerFeeExpense e = new PartnerFeeExpense();
+        e.setId(orderId * 100);
+        e.setOrder(o);
+        e.setPartnerCode("AHAMOVE");
+        e.setPartnerOrderId("AH" + orderId);
+        e.setAmount(new BigDecimal(amount));
+        e.setPayerUsername(payer);
+        e.setIncurredAt(Instant.now());
+        return e;
+    }
+
+    @Test
+    void createReceipt_deductsPartnerFeeFromTotal() {
+        PartnerFeeExpense e = fee("AH-ORDER", 2L, "32000", "nva");
+        when(partnerFeeExpenseRepository.findOpenByOrderAndPayer(2L, "NVA")).thenReturn(List.of(e));
+        CreateReceiptRequest req = new CreateReceiptRequest(
+            "NV A",
+            "NVA",
+            null,
+            List.of(
+                new ReceiptLineRequest("GP-COD-001", new BigDecimal("80000"), ReceiptSettlement.DELIVERY),
+                new ReceiptLineRequest("AH-ORDER", new BigDecimal("-32000"), FinanceFacadeService.PARTNER_FEE)
+            )
+        );
+
+        ReceiptDTO dto = service.createReceipt(req);
+
+        assertThat(dto.totalAmount()).isEqualByComparingTo("48000");
+        assertThat(dto.lines()).hasSize(1);
+        assertThat(e.getReceipt()).isNotNull();
+        assertThat(e.getReceipt().getReceiptCode()).isEqualTo(dto.receiptCode());
+        verify(partnerFeeExpenseRepository).save(e);
+        verify(receiptOrderLineRepository, org.mockito.Mockito.times(1)).save(any(ReceiptOrderLine.class));
+    }
+
+    @Test
+    void createReceipt_feeOnly_negativeTotalAllowed() {
+        PartnerFeeExpense e = fee("AH-ORDER", 2L, "32000", "nva");
+        when(partnerFeeExpenseRepository.findOpenByOrderAndPayer(2L, "NVA")).thenReturn(List.of(e));
+        CreateReceiptRequest req = new CreateReceiptRequest(
+            "NV A",
+            "NVA",
+            null,
+            List.of(new ReceiptLineRequest("AH-ORDER", new BigDecimal("-32000"), FinanceFacadeService.PARTNER_FEE))
+        );
+
+        ReceiptDTO dto = service.createReceipt(req);
+
+        assertThat(dto.totalAmount()).isEqualByComparingTo("-32000");
+        assertThat(e.getReceipt()).isNotNull();
+    }
+
+    @Test
+    void createReceipt_rejectsChangedPartnerFee() {
+        PartnerFeeExpense e = fee("AH-ORDER", 2L, "32000", "nva");
+        when(partnerFeeExpenseRepository.findOpenByOrderAndPayer(2L, "NVA")).thenReturn(List.of(e));
+        CreateReceiptRequest req = new CreateReceiptRequest(
+            "NV A",
+            "NVA",
+            null,
+            List.of(new ReceiptLineRequest("AH-ORDER", new BigDecimal("-30000"), FinanceFacadeService.PARTNER_FEE))
+        );
+
+        assertThatThrownBy(() -> service.createReceipt(req))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("partnerFeeChanged");
+        verify(receiptRepository, never()).save(any());
+    }
+
+    @Test
+    void createReceipt_rejectsFeeNotOpenForPayer() {
+        fee("AH-ORDER", 2L, "32000", "other");
+        CreateReceiptRequest req = new CreateReceiptRequest(
+            "NV A",
+            "NVA",
+            null,
+            List.of(new ReceiptLineRequest("AH-ORDER", new BigDecimal("-32000"), FinanceFacadeService.PARTNER_FEE))
+        );
+
+        assertThatThrownBy(() -> service.createReceipt(req))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("partnerFeeNotOpen");
+    }
+
+    @Test
+    void cancelReceipt_releasesPartnerFee() {
+        when(staffAccessService.isSystemAdmin()).thenReturn(true);
+        Receipt receipt = new Receipt();
+        receipt.setId(6L);
+        receipt.setReceiptCode("PT-6");
+        receipt.setPayerName("NV A");
+        receipt.setTotalAmount(new BigDecimal("-32000"));
+        receipt.setCreatedAt(Instant.now());
+        PartnerFeeExpense e = fee("AH-ORDER", 2L, "32000", "nva");
+        e.setReceipt(receipt);
+        when(receiptRepository.findOneByReceiptCode("PT-6")).thenReturn(Optional.of(receipt));
+        when(receiptOrderLineRepository.findByReceipt_Id(6L)).thenReturn(List.of());
+        when(partnerFeeExpenseRepository.findByReceipt_Id(6L)).thenReturn(List.of(e));
+
+        service.cancelReceipt("PT-6", "Lập nhầm");
+
+        assertThat(e.getReceipt()).isNull();
+        verify(partnerFeeExpenseRepository).save(e);
+        verify(receiptRepository).delete(receipt);
     }
 
     @Test

@@ -15,6 +15,7 @@ import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderDeliveryAttempt;
 import com.mycompany.myapp.domain.OrderPayment;
+import com.mycompany.myapp.domain.PartnerFeeExpense;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.DeliveryPartner;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
@@ -22,6 +23,7 @@ import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import com.mycompany.myapp.repository.OrderDeliveryAttemptRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
+import com.mycompany.myapp.repository.PartnerFeeExpenseRepository;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.service.day.DayClosureGuard;
@@ -51,6 +53,7 @@ class AhamoveDispatchServiceFlowTest {
     private OrderPaymentRepository paymentRepo;
     private ReceiptOrderLineRepository receiptLineRepo;
     private OrderDeliveryAttemptRepository attemptRepo;
+    private PartnerFeeExpenseRepository feeRepo;
     private AhamoveDispatchService service;
     private ShipmentOrder order;
 
@@ -64,6 +67,7 @@ class AhamoveDispatchServiceFlowTest {
         paymentRepo = mock(OrderPaymentRepository.class);
         receiptLineRepo = mock(ReceiptOrderLineRepository.class);
         attemptRepo = mock(OrderDeliveryAttemptRepository.class);
+        feeRepo = mock(PartnerFeeExpenseRepository.class);
         service = new AhamoveDispatchService(
             orderRepo,
             cfgRepo,
@@ -74,6 +78,7 @@ class AhamoveDispatchServiceFlowTest {
             mock(DayClosureGuard.class),
             paymentRepo,
             receiptLineRepo,
+            feeRepo,
             mock(PlatformTransactionManager.class)
         );
 
@@ -401,6 +406,60 @@ class AhamoveDispatchServiceFlowTest {
         verify(delivery, never()).pod(anyString(), any());
         verify(delivery, never()).failDelivery(anyString(), any());
         verify(orders, never()).transition(anyString(), any());
+    }
+
+    private void cashConfig() {
+        IntegrationConfig cfg = new IntegrationConfig();
+        cfg.setAhamovePaymentMethod("CASH");
+        when(cfgRepo.findAll()).thenReturn(List.of(cfg));
+        OrderDeliveryAttempt assign = new OrderDeliveryAttempt();
+        assign.setDeliveryPartner(DeliveryPartner.AHAMOVE);
+        assign.setReason("ASSIGN_PARTNER");
+        assign.setHandledByUsername("dungtm");
+        when(attemptRepo.findByOrder_IdOrderByAttemptAtAsc(10L)).thenReturn(List.of(assign));
+    }
+
+    @Test
+    void webhook_cashPickedUp_recordsFeeOwedToDispatcher() throws Exception {
+        outForDelivery();
+        cashConfig();
+        order.setPartnerFeeAmount(new BigDecimal("32000"));
+        service.applyWebhook(om.readTree("{\"_id\":\"AHA1\",\"status\":\"IN PROCESS\"}"));
+        ArgumentCaptor<PartnerFeeExpense> cap = ArgumentCaptor.forClass(PartnerFeeExpense.class);
+        verify(feeRepo).save(cap.capture());
+        assertThat(cap.getValue().getAmount()).isEqualByComparingTo("32000");
+        assertThat(cap.getValue().getPayerUsername()).isEqualTo("dungtm");
+        assertThat(cap.getValue().getPartnerOrderId()).isEqualTo("AHA1");
+        assertThat(cap.getValue().getReceipt()).isNull();
+        verify(orders).recordEvent(eq(order), eq("AHAMOVE_FEE"), org.mockito.ArgumentMatchers.contains("32000"), eq("ahamove"));
+    }
+
+    @Test
+    void webhook_cashAlreadyRecorded_noDuplicate() throws Exception {
+        outForDelivery();
+        cashConfig();
+        order.setPartnerFeeAmount(new BigDecimal("32000"));
+        when(feeRepo.existsByPartnerOrderId("AHA1")).thenReturn(true);
+        service.applyWebhook(om.readTree("{\"_id\":\"AHA1\",\"status\":\"COMPLETED\",\"path\":[{},{\"status\":\"COMPLETED\"}]}"));
+        verify(feeRepo, never()).save(any());
+    }
+
+    @Test
+    void webhook_cashBeforePickup_noFee() throws Exception {
+        outForDelivery();
+        cashConfig();
+        order.setPartnerFeeAmount(new BigDecimal("32000"));
+        service.applyWebhook(om.readTree("{\"_id\":\"AHA1\",\"status\":\"ACCEPTED\"}"));
+        service.applyWebhook(om.readTree("{\"_id\":\"AHA1\",\"status\":\"CANCELLED\"}"));
+        verify(feeRepo, never()).save(any());
+    }
+
+    @Test
+    void webhook_balancePayment_noFee() throws Exception {
+        outForDelivery();
+        order.setPartnerFeeAmount(new BigDecimal("32000"));
+        service.applyWebhook(om.readTree("{\"_id\":\"AHA1\",\"status\":\"IN PROCESS\"}"));
+        verify(feeRepo, never()).save(any());
     }
 
     @Test

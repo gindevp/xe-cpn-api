@@ -5,6 +5,7 @@ import com.mycompany.myapp.domain.DayClosure;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.OrderPayment;
+import com.mycompany.myapp.domain.PartnerFeeExpense;
 import com.mycompany.myapp.domain.Receipt;
 import com.mycompany.myapp.domain.ReceiptOrderLine;
 import com.mycompany.myapp.domain.ReceiptWaiver;
@@ -20,6 +21,7 @@ import com.mycompany.myapp.repository.DayClosureRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
+import com.mycompany.myapp.repository.PartnerFeeExpenseRepository;
 import com.mycompany.myapp.repository.ReceiptListRow;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ReceiptRepository;
@@ -67,6 +69,8 @@ public class FinanceFacadeService {
     private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final String AUDIT_RECEIPT = "Receipt";
     private static final String AUDIT_DUE = "ReceiptDue";
+    /** Dòng phiếu thu/candidate là phí đối tác người nộp đã trả (số âm), không phải tiền thu khách. */
+    public static final String PARTNER_FEE = "PARTNER_FEE";
     private static final Set<String> CUSTOMER_PAID_EVENT_ACTIONS = Set.of(
         "POD",
         "POD_QUAY",
@@ -89,6 +93,7 @@ public class FinanceFacadeService {
     private final AuditRecorder auditRecorder;
     private final AuditLogRepository auditLogRepository;
     private final StaffAccessService staffAccessService;
+    private final PartnerFeeExpenseRepository partnerFeeExpenseRepository;
 
     public FinanceFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -103,8 +108,10 @@ public class FinanceFacadeService {
         ReceiptWaiverRepository receiptWaiverRepository,
         AuditRecorder auditRecorder,
         AuditLogRepository auditLogRepository,
-        StaffAccessService staffAccessService
+        StaffAccessService staffAccessService,
+        PartnerFeeExpenseRepository partnerFeeExpenseRepository
     ) {
+        this.partnerFeeExpenseRepository = partnerFeeExpenseRepository;
         this.receiptWaiverRepository = receiptWaiverRepository;
         this.auditRecorder = auditRecorder;
         this.auditLogRepository = auditLogRepository;
@@ -211,7 +218,51 @@ public class FinanceFacadeService {
                 out.add(toCandidate(o, outs[1], ReceiptSettlement.DELIVERY, owner, ownerName(ownerNames, owner)));
             }
         }
+        String kw = keyword == null || keyword.isBlank() ? null : keyword.trim().toLowerCase();
+        for (PartnerFeeExpense e : partnerFeeExpenseRepository.findOpenWithOrder()) {
+            ShipmentOrder o = e.getOrder();
+            String payer = e.getPayerUsername();
+            if (involvedLogin != null && (payer == null || !payer.trim().equalsIgnoreCase(involvedLogin))) {
+                continue;
+            }
+            String fromCode = o.getFromOffice() != null ? o.getFromOffice().getCode() : null;
+            if (scoped != null && !scoped.equals(fromCode) && !atReceiverOffice(o, scoped)) {
+                continue;
+            }
+            if (
+                kw != null &&
+                !containsLower(o.getOrderCode(), kw) &&
+                !containsLower(o.getReceiverPhone(), kw) &&
+                !containsLower(o.getSenderPhone(), kw)
+            ) {
+                continue;
+            }
+            out.add(toFeeCandidate(e, ownerName(ownerNames, payer)));
+        }
         return out;
+    }
+
+    /** Phí Ahamove người bàn giao đã trả tài xế: dòng âm, trừ vào tiền phải nộp của người đó. */
+    private CandidateDTO toFeeCandidate(PartnerFeeExpense e, String ownerName) {
+        ShipmentOrder o = e.getOrder();
+        return new CandidateDTO(
+            o.getOrderCode(),
+            o.getReceiverName(),
+            o.getReceiverPhone(),
+            o.getFareAmount(),
+            o.getPaidAmount(),
+            OrderMoney.nz(e.getAmount()).negate(),
+            o.getStatus().name(),
+            o.getFromOffice() != null ? o.getFromOffice().getCode() : null,
+            e.getPayerUsername(),
+            ownerName == null || ownerName.isEmpty() ? null : ownerName,
+            PARTNER_FEE,
+            e.getIncurredAt()
+        );
+    }
+
+    private static boolean containsLower(String s, String kw) {
+        return s != null && s.toLowerCase().contains(kw);
     }
 
     private String ownerName(Map<String, String> cache, String login) {
@@ -489,10 +540,18 @@ public class FinanceFacadeService {
         if (office != null) {
             dayClosureGuard.assertOfficeOpen(office);
         }
+        List<ReceiptLineRequest> orderLines = new ArrayList<>();
+        List<ReceiptLineRequest> feeLines = new ArrayList<>();
+        for (ReceiptLineRequest line : req.lines()) {
+            (line != null && line.portion() != null && PARTNER_FEE.equalsIgnoreCase(line.portion().trim()) ? feeLines : orderLines).add(
+                    line
+                );
+        }
+        List<PartnerFeeExpense> fees = openFeesFor(feeLines, req.payerCode());
         BigDecimal total = BigDecimal.ZERO;
         List<ReceiptOrderLine> lines = new ArrayList<>();
         Set<Long> seenOrderIds = new HashSet<>();
-        for (ReceiptLineRequest line : req.lines()) {
+        for (ReceiptLineRequest line : orderLines) {
             if (line == null || line.orderCode() == null || line.orderCode().isBlank()) {
                 throw new BadRequestAlertException("orderCode required on receipt line", ENTITY, "orderCodeRequired");
             }
@@ -569,6 +628,8 @@ public class FinanceFacadeService {
             rol.setOrder(order);
             lines.add(rol);
         }
+        BigDecimal feeTotal = fees.stream().map(e -> OrderMoney.nz(e.getAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        total = total.subtract(feeTotal);
 
         Receipt receipt = new Receipt();
         receipt.setReceiptCode(nextReceiptCode(office));
@@ -590,13 +651,85 @@ public class FinanceFacadeService {
                 now
             );
         }
+        for (PartnerFeeExpense e : fees) {
+            e.setReceipt(receipt);
+            partnerFeeExpenseRepository.save(e);
+            appendReceiptEvent(
+                e.getOrder(),
+                "RECEIPT_CREATE",
+                receipt.getReceiptCode() +
+                " · trừ phí Ahamove " +
+                money(OrderMoney.nz(e.getAmount()).negate()) +
+                " (" +
+                e.getPartnerOrderId() +
+                ")",
+                actor,
+                now
+            );
+        }
         auditRecorder.record(
             "RECEIPT_CREATE",
             AUDIT_RECEIPT,
             receipt.getReceiptCode(),
-            "Người nộp: " + receipt.getPayerName() + " · " + lines.size() + " đơn · " + money(total) + " · " + orderCodes(lines)
+            "Người nộp: " +
+            receipt.getPayerName() +
+            " · " +
+            lines.size() +
+            " đơn · " +
+            money(total) +
+            (fees.isEmpty() ? "" : " (đã trừ phí Ahamove " + money(feeTotal) + " · " + feeOrderCodes(fees) + ")") +
+            " · " +
+            orderCodes(lines)
         );
         return toReceiptDto(receipt, lines);
+    }
+
+    /**
+     * Dòng {@link #PARTNER_FEE}: lấy toàn bộ phí Ahamove chưa trừ của người nộp trên đơn đó. amountCollected (nếu gửi) phải bằng
+     * âm tổng phí — FE hiển thị lệch thì chặn để không trừ sai số.
+     */
+    private List<PartnerFeeExpense> openFeesFor(List<ReceiptLineRequest> feeLines, String payerCode) {
+        if (feeLines.isEmpty()) {
+            return List.of();
+        }
+        if (!notBlank(payerCode)) {
+            throw new BadRequestAlertException("Phí Ahamove chỉ trừ được trên phiếu có người nộp", ENTITY, "partnerFeeNoPayer");
+        }
+        List<PartnerFeeExpense> out = new ArrayList<>();
+        Set<Long> seen = new HashSet<>();
+        for (ReceiptLineRequest line : feeLines) {
+            if (line.orderCode() == null || line.orderCode().isBlank()) {
+                throw new BadRequestAlertException("orderCode required on receipt line", ENTITY, "orderCodeRequired");
+            }
+            ShipmentOrder order = shipmentOrderRepository
+                .findOneByOrderCodeOrDraftCode(line.orderCode().trim())
+                .orElseThrow(() -> new BadRequestAlertException("Order not found: " + line.orderCode(), ENTITY, "orderNotFound"));
+            if (!seen.add(order.getId())) {
+                throw new BadRequestAlertException("Duplicate order on receipt: " + order.getOrderCode(), ENTITY, "duplicateOrderLine");
+            }
+            List<PartnerFeeExpense> open = partnerFeeExpenseRepository.findOpenByOrderAndPayer(order.getId(), payerCode.trim());
+            if (open.isEmpty()) {
+                throw new BadRequestAlertException(
+                    "Phí Ahamove đơn " + order.getOrderCode() + " không còn chờ trừ cho " + payerCode.trim(),
+                    ENTITY,
+                    "partnerFeeNotOpen"
+                );
+            }
+            BigDecimal sum = open.stream().map(e -> OrderMoney.nz(e.getAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (line.amountCollected() != null && line.amountCollected().negate().compareTo(sum) != 0) {
+                throw new BadRequestAlertException(
+                    "Phí Ahamove đơn " + order.getOrderCode() + " đã thay đổi (" + money(sum.negate()) + ") — tải lại danh sách",
+                    ENTITY,
+                    "partnerFeeChanged"
+                );
+            }
+            out.addAll(open);
+        }
+        return out;
+    }
+
+    private static String feeOrderCodes(List<PartnerFeeExpense> fees) {
+        return String.join(", ", fees.stream().map(e -> e.getOrder().getOrderCode()).distinct().toList());
     }
 
     private static String money(BigDecimal v) {
@@ -987,6 +1120,17 @@ public class FinanceFacadeService {
         String actor = actor();
         for (ReceiptOrderLine line : lines) {
             appendReceiptEvent(line.getOrder(), "RECEIPT_CANCEL", receipt.getReceiptCode() + " · lý do: " + reason, actor, now);
+        }
+        for (PartnerFeeExpense e : partnerFeeExpenseRepository.findByReceipt_Id(receipt.getId())) {
+            e.setReceipt(null);
+            partnerFeeExpenseRepository.save(e);
+            appendReceiptEvent(
+                e.getOrder(),
+                "RECEIPT_CANCEL",
+                receipt.getReceiptCode() + " · phí Ahamove " + money(e.getAmount()) + " chờ trừ lại · lý do: " + reason,
+                actor,
+                now
+            );
         }
         receiptOrderLineRepository.deleteAll(lines);
         receiptRepository.delete(receipt);

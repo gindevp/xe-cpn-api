@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261006150000-1" author="cpn">
+        <comment>Phí Ahamove (thanh toán tiền mặt) người bàn giao đã trả tài xế — trừ vào phiếu thu của người đó.</comment>
+        <createTable tableName="partner_fee_expense">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="order_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="partner_code" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="partner_order_id" type="varchar(64)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_partner_fee_expense__partner_order"/>
+            </column>
+            <column name="amount" type="decimal(21,2)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="payer_username" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="incurred_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="receipt_id" type="bigint"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="partner_fee_expense" baseColumnNames="order_id"
+                                 constraintName="fk_partner_fee_expense__order_id"
+                                 referencedTableName="shipment_order" referencedColumnNames="id"/>
+        <addForeignKeyConstraint baseTableName="partner_fee_expense" baseColumnNames="receipt_id"
+                                 constraintName="fk_partner_fee_expense__receipt_id"
+                                 referencedTableName="receipt" referencedColumnNames="id"/>
+        <createIndex tableName="partner_fee_expense" indexName="ix_partner_fee_expense__payer_open">
+            <column name="payer_username"/>
+            <column name="receipt_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

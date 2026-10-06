@@ -69,6 +69,22 @@ class StaffDepositServiceTest {
     }
 
     @Test
+    void partnerFeesOfMineDeductedOnSelfDeposit_notMergedAsOrders() {
+        List<CandidateDTO> all = List.of(
+            cand("A1", "50000", "DELIVERY", "anhnh", AT),
+            cand("A1", "-32000", FinanceFacadeService.PARTNER_FEE, "AnhNH", AT),
+            cand("A1", "-10000", FinanceFacadeService.PARTNER_FEE, "anhnh", AT),
+            cand("B2", "-20000", FinanceFacadeService.PARTNER_FEE, "khac", AT)
+        );
+        assertThat(StaffDepositService.mergeOwn(all, "anhnh").get("A1").amount()).isEqualByComparingTo("50000");
+        var fees = StaffDepositService.partnerFeeLines(all, "anhnh");
+        assertThat(fees).hasSize(1);
+        assertThat(fees.get(0).orderCode()).isEqualTo("A1");
+        assertThat(fees.get(0).amountCollected()).isEqualByComparingTo("-42000");
+        assertThat(fees.get(0).portion()).isEqualTo(FinanceFacadeService.PARTNER_FEE);
+    }
+
+    @Test
     void receiptDateIsLatestCustomerPaymentElseCreatedAt() {
         Instant created = Instant.parse("2026-10-04T05:00:00Z");
         Instant paid1 = Instant.parse("2026-10-02T09:00:00Z");

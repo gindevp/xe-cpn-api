@@ -5,6 +5,7 @@ import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderDeliveryAttempt;
 import com.mycompany.myapp.domain.OrderPayment;
+import com.mycompany.myapp.domain.PartnerFeeExpense;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.DeliveryAttemptResult;
 import com.mycompany.myapp.domain.enumeration.DeliveryPartner;
@@ -12,6 +13,7 @@ import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import com.mycompany.myapp.repository.OrderDeliveryAttemptRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
+import com.mycompany.myapp.repository.PartnerFeeExpenseRepository;
 import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.security.SecurityUtils;
@@ -53,6 +55,8 @@ public class AhamoveDispatchService {
     private static final String ENTITY = "ahamove";
     public static final String PARTNER_CODE = "AHAMOVE";
     private static final java.util.Set<String> PARTNER_DONE = java.util.Set.of("CANCELLED", "COMPLETED", "FAILED");
+    /** Tài xế đã lấy hàng — phí Ahamove phát sinh (huỷ trước lúc này thì không mất phí). */
+    static final java.util.Set<String> PARTNER_PICKED_UP = java.util.Set.of("IN PROCESS", "IN_PROCESS", "COMPLETED", "FAILED");
 
     /** Đơn Ahamove còn chạy bên đối tác (chưa huỷ / giao xong / thất bại) — không được chuyển giao thất bại thủ công. */
     public static boolean partnerActive(ShipmentOrder order) {
@@ -82,6 +86,7 @@ public class AhamoveDispatchService {
     private final DayClosureGuard dayClosureGuard;
     private final OrderPaymentRepository orderPaymentRepository;
     private final ReceiptOrderLineRepository receiptOrderLineRepository;
+    private final PartnerFeeExpenseRepository partnerFeeExpenseRepository;
     private final TransactionTemplate tx;
 
     public AhamoveDispatchService(
@@ -94,8 +99,10 @@ public class AhamoveDispatchService {
         DayClosureGuard dayClosureGuard,
         OrderPaymentRepository orderPaymentRepository,
         ReceiptOrderLineRepository receiptOrderLineRepository,
+        PartnerFeeExpenseRepository partnerFeeExpenseRepository,
         PlatformTransactionManager transactionManager
     ) {
+        this.partnerFeeExpenseRepository = partnerFeeExpenseRepository;
         this.orderPaymentRepository = orderPaymentRepository;
         this.receiptOrderLineRepository = receiptOrderLineRepository;
         this.shipmentOrderRepository = shipmentOrderRepository;
@@ -613,6 +620,47 @@ public class AhamoveDispatchService {
                 (notBlank(u.failReason()) ? " · " + u.failReason() : "");
             orderFacadeService.recordEvent(order, "AHAMOVE_STATUS", detail, "ahamove");
         }
+        recordCashFeeIfPickedUp(order, newStatus);
+    }
+
+    /**
+     * Thanh toán Ahamove tiền mặt: tài xế lấy hàng thì người bàn giao trả phí (báo giá lúc tạo đơn) — ghi 1 khoản/đơn Ahamove,
+     * trừ vào phiếu thu tiếp theo của người đó.
+     */
+    void recordCashFeeIfPickedUp(ShipmentOrder order, String partnerStatus) {
+        String partnerOrderId = order.getPartnerOrderId();
+        BigDecimal fee = OrderMoney.nz(order.getPartnerFeeAmount());
+        if (
+            partnerStatus == null ||
+            !PARTNER_PICKED_UP.contains(partnerStatus.trim().toUpperCase()) ||
+            !PARTNER_CODE.equals(order.getPartnerCode()) ||
+            !notBlank(partnerOrderId) ||
+            fee.signum() <= 0
+        ) {
+            return;
+        }
+        IntegrationConfig cfg = integrationConfigRepository.findAll().stream().findFirst().orElse(null);
+        if (cfg == null || !"CASH".equalsIgnoreCase(cfg.getAhamovePaymentMethod())) {
+            return;
+        }
+        if (partnerFeeExpenseRepository.existsByPartnerOrderId(partnerOrderId)) {
+            return;
+        }
+        String payer = dispatcherOf(order);
+        PartnerFeeExpense e = new PartnerFeeExpense();
+        e.setOrder(order);
+        e.setPartnerCode(PARTNER_CODE);
+        e.setPartnerOrderId(partnerOrderId);
+        e.setAmount(fee);
+        e.setPayerUsername(truncate(payer, 50));
+        e.setIncurredAt(Instant.now());
+        partnerFeeExpenseRepository.save(e);
+        orderFacadeService.recordEvent(
+            order,
+            "AHAMOVE_FEE",
+            "Phí Ahamove " + PartnerAdvance.money(fee) + "đ (" + partnerOrderId + ") · " + payer + " trả tài xế, trừ vào phiếu thu",
+            "ahamove"
+        );
     }
 
     /** Token webhook: query {@code ?token=} hoặc header {@code apikey}. */

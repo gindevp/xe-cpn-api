@@ -154,7 +154,8 @@ public class StaffDepositService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chưa chọn đơn để nộp");
         }
         String login = currentLogin();
-        Map<String, Merged> own = mergeOwn(financeFacadeService.candidatesInvolving(login), login);
+        List<CandidateDTO> all = financeFacadeService.candidatesInvolving(login);
+        Map<String, Merged> own = mergeOwn(all, login);
         List<ReceiptLineRequest> lines = new ArrayList<>();
         for (String raw : orderCodes.stream().filter(s -> s != null && !s.isBlank()).map(String::trim).distinct().toList()) {
             Merged m = own.get(raw);
@@ -166,13 +167,33 @@ public class StaffDepositService {
         if (lines.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chưa chọn đơn để nộp");
         }
+        int orderCount = lines.size();
+        lines.addAll(partnerFeeLines(all, login));
         StaffProfile me = staffProfileRepository.findOneByUserLoginIgnoreCase(login).orElse(null);
         String payerName = me != null && notBlank(me.getDisplayName()) ? me.getDisplayName().trim() : login;
         ReceiptDTO dto = financeFacadeService.createReceipt(
             new CreateReceiptRequest(payerName, login.toUpperCase(Locale.ROOT), null, lines)
         );
         Receipt receipt = requireOwnReceipt(dto.receiptCode(), login);
-        return toMyReceipt(receipt, lines.size(), currentConfig(), me);
+        return toMyReceipt(receipt, orderCount, currentConfig(), me);
+    }
+
+    /** Phí Ahamove NV đã trả tài xế (chưa trừ) — tự trừ vào phiếu NV tự nộp, gộp theo đơn. */
+    static List<ReceiptLineRequest> partnerFeeLines(List<CandidateDTO> all, String login) {
+        Map<String, BigDecimal> byOrder = new LinkedHashMap<>();
+        for (CandidateDTO c : all) {
+            if (
+                FinanceFacadeService.PARTNER_FEE.equals(c.portion()) &&
+                c.debtOwnerUsername() != null &&
+                c.debtOwnerUsername().trim().equalsIgnoreCase(login) &&
+                c.dueAmount() != null
+            ) {
+                byOrder.merge(c.orderCode(), c.dueAmount(), BigDecimal::add);
+            }
+        }
+        List<ReceiptLineRequest> out = new ArrayList<>();
+        byOrder.forEach((code, amount) -> out.add(new ReceiptLineRequest(code, amount, FinanceFacadeService.PARTNER_FEE)));
+        return out;
     }
 
     // ---------------------------------------------------------------- danh sách đã nộp

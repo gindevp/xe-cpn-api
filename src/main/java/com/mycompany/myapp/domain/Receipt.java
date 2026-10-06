@@ -35,8 +35,8 @@ public class Receipt implements Serializable {
     @Column(name = "payer_code", length = 40)
     private String payerCode;
 
+    /** Có thể âm khi phí đối tác người nộp đã trả (PartnerFeeExpense) lớn hơn tiền thu. */
     @NotNull
-    @DecimalMin(value = "0")
     @Column(name = "total_amount", precision = 21, scale = 2, nullable = false)
     private BigDecimal totalAmount;
 
