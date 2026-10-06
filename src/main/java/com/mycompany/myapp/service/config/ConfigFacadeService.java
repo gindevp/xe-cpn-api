@@ -10,6 +10,8 @@ import com.mycompany.myapp.service.partner.AhamoveAuthClient.AhamoveAuthExceptio
 import com.mycompany.myapp.service.partner.AhamoveTokenService;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
 import com.mycompany.myapp.service.partner.VtechAutoCallClient;
+import com.mycompany.myapp.service.storage.MinioBlobMigration;
+import com.mycompany.myapp.service.storage.StoredMedia;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
@@ -32,15 +34,21 @@ public class ConfigFacadeService {
     private final SurchargePolicyRepository surchargePolicyRepository;
     private final IntegrationConfigRepository integrationConfigRepository;
     private final AhamoveTokenService ahamoveTokenService;
+    private final StoredMedia storedMedia;
+    private final MinioBlobMigration minioBlobMigration;
 
     public ConfigFacadeService(
         SurchargePolicyRepository surchargePolicyRepository,
         IntegrationConfigRepository integrationConfigRepository,
-        AhamoveTokenService ahamoveTokenService
+        AhamoveTokenService ahamoveTokenService,
+        StoredMedia storedMedia,
+        MinioBlobMigration minioBlobMigration
     ) {
         this.surchargePolicyRepository = surchargePolicyRepository;
         this.integrationConfigRepository = integrationConfigRepository;
         this.ahamoveTokenService = ahamoveTokenService;
+        this.storedMedia = storedMedia;
+        this.minioBlobMigration = minioBlobMigration;
     }
 
     @Transactional(readOnly = true)
@@ -117,6 +125,11 @@ public class ConfigFacadeService {
         if (incoming.getTelegramChatId() != null) current.setTelegramChatId(incoming.getTelegramChatId());
         if (incoming.getWebhookUrl() != null) current.setWebhookUrl(incoming.getWebhookUrl());
         if (incoming.getWebhookSecret() != null) current.setWebhookSecret(incoming.getWebhookSecret());
+        if (notBlank(incoming.getMinioEndpoint())) current.setMinioEndpoint(incoming.getMinioEndpoint().trim());
+        if (notBlank(incoming.getMinioBucket())) current.setMinioBucket(incoming.getMinioBucket().trim());
+        if (notBlank(incoming.getMinioRegion())) current.setMinioRegion(incoming.getMinioRegion().trim());
+        if (notBlank(incoming.getMinioAccessKey())) current.setMinioAccessKey(incoming.getMinioAccessKey().trim());
+        if (notBlank(incoming.getMinioSecretKey())) current.setMinioSecretKey(incoming.getMinioSecretKey().trim());
         mergeAutoCall(current, incoming);
 
         if (current.getMapProvider() == null || current.getMapProvider().isBlank()) {
@@ -169,6 +182,42 @@ public class ConfigFacadeService {
         out.put("testedBy", SecurityUtils.getCurrentUserLogin().orElse("system"));
         out.put("testedAt", Instant.now().toString());
         return out;
+    }
+
+    /** Thử ghi/đọc/xóa một file trên MinIO. Không lưu cấu hình. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public Map<String, Object> testMinio(IntegrationConfig incoming) {
+        Map<String, Object> out = new HashMap<>();
+        try {
+            String message = storedMedia.probe(
+                incoming == null ? null : incoming.getMinioEndpoint(),
+                incoming == null ? null : incoming.getMinioBucket(),
+                incoming == null ? null : incoming.getMinioRegion(),
+                incoming == null ? null : incoming.getMinioAccessKey(),
+                incoming == null ? null : incoming.getMinioSecretKey()
+            );
+            out.put("ok", true);
+            out.put("message", message);
+        } catch (Exception e) {
+            out.put("ok", false);
+            out.put("message", rootMessage(e));
+        }
+        out.put("testedAt", Instant.now().toString());
+        return out;
+    }
+
+    /** Một lô ảnh/file data-URL → MinIO. Gọi lại đến khi hasMore=false. */
+    public Map<String, Object> migrateMinioBlobs() {
+        try {
+            Map<String, Object> out = minioBlobMigration.migrateBatch();
+            out.put("ok", true);
+            return out;
+        } catch (Exception e) {
+            Map<String, Object> out = new HashMap<>();
+            out.put("ok", false);
+            out.put("message", rootMessage(e));
+            return out;
+        }
     }
 
     /**

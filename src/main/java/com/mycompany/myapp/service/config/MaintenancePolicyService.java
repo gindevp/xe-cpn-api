@@ -3,7 +3,9 @@ package com.mycompany.myapp.service.config;
 import com.mycompany.myapp.domain.MaintenancePolicy;
 import com.mycompany.myapp.repository.MaintenancePolicyRepository;
 import com.mycompany.myapp.service.dto.MaintenancePolicyDTO;
+import com.mycompany.myapp.service.storage.StoredMedia;
 import java.time.Instant;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,9 +20,23 @@ public class MaintenancePolicyService {
     public static final int MAX_IMAGE_CHARS = 2_000_000;
 
     private final MaintenancePolicyRepository repository;
+    private StoredMedia storedMedia;
 
     public MaintenancePolicyService(MaintenancePolicyRepository repository) {
         this.repository = repository;
+    }
+
+    @Autowired(required = false)
+    void setStoredMedia(StoredMedia storedMedia) {
+        this.storedMedia = storedMedia;
+    }
+
+    private String storeMedia(String value, String folder) {
+        return storedMedia == null || value == null ? value : storedMedia.store(value, folder);
+    }
+
+    private String showMedia(String value) {
+        return storedMedia == null || value == null ? value : storedMedia.expose(value);
     }
 
     @Transactional(readOnly = true)
@@ -43,7 +59,7 @@ public class MaintenancePolicyService {
         if (image != null && image.length() > MAX_IMAGE_CHARS) {
             throw new IllegalArgumentException("Ảnh bảo trì quá lớn (tối đa ~2MB data-URL)");
         }
-        current.setImageUrl(image == null || image.isBlank() ? null : image.trim());
+        current.setImageUrl(image == null || image.isBlank() ? null : storeMedia(image.trim(), "maintenance"));
         current.setUpdatedAt(Instant.now());
         return toDto(repository.save(current));
     }
@@ -62,7 +78,7 @@ public class MaintenancePolicyService {
         return p;
     }
 
-    private static MaintenancePolicyDTO toDto(MaintenancePolicy p) {
+    private MaintenancePolicyDTO toDto(MaintenancePolicy p) {
         MaintenancePolicyDTO dto = new MaintenancePolicyDTO();
         dto.setEnabled(Boolean.TRUE.equals(p.getEnabled()));
         dto.setBlockAll(Boolean.TRUE.equals(p.getBlockAll()));
@@ -72,7 +88,7 @@ public class MaintenancePolicyService {
         dto.setBlockWebCustomer(Boolean.TRUE.equals(p.getBlockWebCustomer()));
         dto.setTitle(p.getTitle());
         dto.setMessage(p.getMessage());
-        dto.setImageUrl(p.getImageUrl());
+        dto.setImageUrl(showMedia(p.getImageUrl()));
         return dto;
     }
 

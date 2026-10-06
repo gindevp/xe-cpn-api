@@ -18,6 +18,7 @@ import com.mycompany.myapp.service.finance.FinanceFacadeService.CandidateDTO;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.CreateReceiptRequest;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.ReceiptDTO;
 import com.mycompany.myapp.service.finance.FinanceFacadeService.ReceiptLineRequest;
+import com.mycompany.myapp.service.storage.StoredMedia;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -37,6 +38,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -256,7 +258,7 @@ public class StaffDepositService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Phiếu đã được kế toán xác nhận, không đổi ảnh được");
         }
         boolean replaced = notBlank(receipt.getTransferProofImage());
-        receipt.setTransferProofImage(image.trim());
+        receipt.setTransferProofImage(storeMedia(image.trim(), "receipt"));
         receipt.setTransferProofAt(Instant.now());
         receipt = receiptRepository.save(receipt);
         auditRecorder.record(
@@ -272,7 +274,8 @@ public class StaffDepositService {
     @Transactional(readOnly = true)
     public String myProofImage(String receiptCode) {
         Receipt receipt = requireOwnReceipt(receiptCode, currentLogin());
-        return notBlank(receipt.getTransferProofImage()) ? receipt.getTransferProofImage() : receipt.getConfirmProofImage();
+        String proof = notBlank(receipt.getTransferProofImage()) ? receipt.getTransferProofImage() : receipt.getConfirmProofImage();
+        return showMedia(proof);
     }
 
     // ---------------------------------------------------------------- cấu hình tài khoản nhận
@@ -553,6 +556,21 @@ public class StaffDepositService {
         OfficeView fromOffice,
         OfficeView toOffice
     ) {}
+
+    private StoredMedia storedMedia;
+
+    @Autowired(required = false)
+    void setStoredMedia(StoredMedia storedMedia) {
+        this.storedMedia = storedMedia;
+    }
+
+    private String storeMedia(String value, String folder) {
+        return storedMedia == null || value == null ? value : storedMedia.store(value, folder);
+    }
+
+    private String showMedia(String value) {
+        return storedMedia == null || value == null ? value : storedMedia.expose(value);
+    }
 
     public record TransferInfo(String bankBin, String bankName, String accountNo, String accountName, String content, String qrUrl) {}
 

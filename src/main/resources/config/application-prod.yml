@@ -171,3 +171,10 @@ cpn:
     nominatim-base-url: ${CPN_OSM_NOMINATIM_BASE_URL:https://nominatim.openstreetmap.org}
     photon-base-url: ${CPN_OSM_PHOTON_BASE_URL:https://photon.komoot.io}
     user-agent: ${CPN_OSM_USER_AGENT:CPN-XE/1.0 (office-geo; contact=ops@xevietnam.local)}
+  minio:
+    enabled: ${CPN_MINIO_ENABLED:false}
+    endpoint: ${CPN_MINIO_ENDPOINT:}
+    bucket: ${CPN_MINIO_BUCKET:cpn}
+    region: ${CPN_MINIO_REGION:us-east-1}
+    access-key: ${CPN_MINIO_ACCESS_KEY:}
+    secret-key: ${CPN_MINIO_SECRET_KEY:}

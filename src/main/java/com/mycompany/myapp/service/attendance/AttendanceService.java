@@ -15,6 +15,7 @@ import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.dto.attendance.AttendanceAdminRecordDTO;
 import com.mycompany.myapp.service.dto.attendance.AttendanceDtos;
 import com.mycompany.myapp.service.dto.attendance.AttendanceItemDTO;
+import com.mycompany.myapp.service.storage.StoredMedia;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.net.InetAddress;
 import java.time.Instant;
@@ -43,6 +44,20 @@ public class AttendanceService {
     private final OfficeNetworkRepository officeNetworkRepository;
     private final OfficeRepository officeRepository;
     private final StaffAccessService staffAccessService;
+    private StoredMedia storedMedia;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setStoredMedia(StoredMedia storedMedia) {
+        this.storedMedia = storedMedia;
+    }
+
+    private String storeMedia(String value, String folder) {
+        return storedMedia == null || value == null ? value : storedMedia.store(value, folder);
+    }
+
+    private String showMedia(String value) {
+        return storedMedia == null || value == null ? value : storedMedia.expose(value);
+    }
 
     public AttendanceService(
         AttendanceRecordRepository attendanceRecordRepository,
@@ -95,7 +110,8 @@ public class AttendanceService {
         r.setOffice(office);
         r.setCheckedAt(Instant.now().truncatedTo(ChronoUnit.SECONDS));
         r.setClientIp(clientIp);
-        r.setPhoto(photo.startsWith("data:") ? photo : "data:image/jpeg;base64," + photo);
+        String dataUrl = photo.startsWith("data:") ? photo : "data:image/jpeg;base64," + photo;
+        r.setPhoto(storeMedia(dataUrl, "attendance"));
         r = attendanceRecordRepository.save(r);
         return new AttendanceItemDTO(r.getId(), r.getCheckedAt(), office.getCode(), office.getName());
     }
@@ -145,7 +161,7 @@ public class AttendanceService {
         String photo = attendanceRecordRepository
             .findPhotoById(id)
             .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy lượt chấm công", ENTITY, "recordNotFound"));
-        return new AttendanceDtos.Photo(id, photo);
+        return new AttendanceDtos.Photo(id, showMedia(photo));
     }
 
     private static String blankToNull(String s) {

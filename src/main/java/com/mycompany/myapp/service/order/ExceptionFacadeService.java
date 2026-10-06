@@ -26,11 +26,13 @@ import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.OrderDetailDTO;
 import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
 import com.mycompany.myapp.service.dto.order.ReturnCompleteRequest;
+import com.mycompany.myapp.service.storage.StoredMedia;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +45,28 @@ public class ExceptionFacadeService {
     private static final String ENTITY = "order";
     private static final Pattern FROM_STAGE_SUFFIX = Pattern.compile("\\s*\\|\\s*FROM=(WH_IN|DEST_WH_IN)\\s*$");
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    private StoredMedia storedMedia;
+
+    @Autowired(required = false)
+    void setStoredMedia(StoredMedia storedMedia) {
+        this.storedMedia = storedMedia;
+    }
+
+    private String storeMedia(String value, String folder) {
+        return storedMedia == null || value == null ? value : storedMedia.store(value, folder);
+    }
+
+    private String showMedia(String value) {
+        return storedMedia == null || value == null ? value : storedMedia.expose(value);
+    }
+
+    private OrderDetailDTO.OrderIssueViewDTO exposeIssue(OrderDetailDTO.OrderIssueViewDTO view) {
+        if (view.getPhotos() != null) {
+            view.setPhotos(view.getPhotos().stream().map(this::showMedia).toList());
+        }
+        return view;
+    }
 
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final OrderIssueRepository orderIssueRepository;
@@ -451,7 +475,7 @@ public class ExceptionFacadeService {
         int seq = (int) podPhotoRepository.countByOrder_Id(order.getId()) + 1;
         for (String photo : photos) {
             OrderPodPhoto row = new OrderPodPhoto();
-            row.setPhotoUrl(truncateUrl(photo));
+            row.setPhotoUrl(storeMedia(truncateUrl(photo), "pod"));
             row.setCapturedAt(now);
             row.setCapturedByUsername(actor);
             row.setSequenceNo(Math.min(seq, 3));
@@ -672,7 +696,7 @@ public class ExceptionFacadeService {
         return orderIssueRepository
             .findByOrder_IdOrderByOpenedAtAscIdAsc(order.getId())
             .stream()
-            .map(ExceptionFacadeService::toIssueView)
+            .map(issue -> exposeIssue(ExceptionFacadeService.toIssueView(issue)))
             .toList();
     }
 
@@ -702,7 +726,7 @@ public class ExceptionFacadeService {
     }
 
     private String encodePhotos(List<String> photos) {
-        List<String> cleaned = normalizePhotos(photos);
+        List<String> cleaned = normalizePhotos(photos).stream().map(p -> storeMedia(p, "issue")).toList();
         if (cleaned.isEmpty()) {
             return null;
         }

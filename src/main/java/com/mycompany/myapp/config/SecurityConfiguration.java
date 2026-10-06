@@ -73,6 +73,8 @@ public class SecurityConfiguration {
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/mobile/app-version")).permitAll()
                     // Web/app hỏi trạng thái bảo trì trước khi vào (không cần token)
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/maintenance")).permitAll()
+                    // Ảnh MinIO: thẻ img không gửi JWT, URL có chữ ký hạn dùng
+                    .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/media/**")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/session-policy")).permitAll()
                     // Webhook Auto Call HHVN: xác thực bằng chữ ký HMAC trong AutoCallResource
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/hhvn/webhook")).permitAll()

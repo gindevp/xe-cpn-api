@@ -70,6 +70,16 @@ public class ConfigFacadeResource {
         return configFacadeService.testAhamove(body);
     }
 
+    @PostMapping("/api/integration-config/test-minio")
+    public Map<String, Object> testMinio(@RequestBody(required = false) IntegrationConfig body) {
+        return configFacadeService.testMinio(body);
+    }
+
+    @PostMapping("/api/integration-config/minio/migrate")
+    public Map<String, Object> migrateMinio() {
+        return configFacadeService.migrateMinioBlobs();
+    }
+
     @PostMapping("/api/integration-config/test-autocall")
     public Map<String, Object> testAutoCall(@RequestBody(required = false) Map<String, String> body) {
         return autoCallConfigService.test(body);

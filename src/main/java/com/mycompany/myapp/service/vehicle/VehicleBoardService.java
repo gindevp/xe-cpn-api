@@ -24,6 +24,7 @@ import com.mycompany.myapp.service.dto.trip.AvailableTripDTO;
 import com.mycompany.myapp.service.dto.vehicle.VehicleBoardDtos;
 import com.mycompany.myapp.service.partner.AvailableTripSearchService;
 import com.mycompany.myapp.service.partner.VthkTripSearchClient;
+import com.mycompany.myapp.service.storage.StoredMedia;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.text.Normalizer;
 import java.time.Instant;
@@ -73,6 +74,20 @@ public class VehicleBoardService {
     private final OfficeVehicleItineraryRepository officeItineraryRepository;
     private final OfficeRepository officeRepository;
     private final VehicleEventPhotoRepository photoRepository;
+    private StoredMedia storedMedia;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setStoredMedia(StoredMedia storedMedia) {
+        this.storedMedia = storedMedia;
+    }
+
+    private String storeMedia(String value, String folder) {
+        return storedMedia == null || value == null ? value : storedMedia.store(value, folder);
+    }
+
+    private String showMedia(String value) {
+        return storedMedia == null || value == null ? value : storedMedia.expose(value);
+    }
 
     public VehicleBoardService(
         TripRepository tripRepository,
@@ -528,7 +543,7 @@ public class VehicleBoardService {
         if (photo != null) {
             VehicleEventPhoto p = new VehicleEventPhoto();
             p.setEventId(e.getId());
-            p.setPhotoUrl(photo);
+            p.setPhotoUrl(storeMedia(photo, "vehicle"));
             p.setCapturedAt(now);
             p.setCapturedByUsername(e.getReportedBy());
             photoRepository.save(p);
@@ -543,7 +558,7 @@ public class VehicleBoardService {
         VehicleEventPhoto p = photoRepository
             .findOneByEventId(eventId)
             .orElseThrow(() -> new BadRequestAlertException("Lượt báo này không có ảnh", ENTITY, "photoNotFound"));
-        return new VehicleBoardDtos.EventPhoto(p.getEventId(), p.getPhotoUrl(), p.getCapturedAt(), p.getCapturedByUsername());
+        return new VehicleBoardDtos.EventPhoto(p.getEventId(), showMedia(p.getPhotoUrl()), p.getCapturedAt(), p.getCapturedByUsername());
     }
 
     /**

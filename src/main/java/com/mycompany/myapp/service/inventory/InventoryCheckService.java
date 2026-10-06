@@ -16,6 +16,7 @@ import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.dto.inventory.CreateInventoryCheckRequest;
 import com.mycompany.myapp.service.dto.inventory.InventoryCheckDTO;
+import com.mycompany.myapp.service.storage.StoredMedia;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -42,6 +43,20 @@ public class InventoryCheckService {
     private final ObjectMapper objectMapper;
     private final StaffProfileRepository staffProfileRepository;
     private final InventoryCheckScanRepository scanRepository;
+    private StoredMedia storedMedia;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setStoredMedia(StoredMedia storedMedia) {
+        this.storedMedia = storedMedia;
+    }
+
+    private String storeMedia(String value, String folder) {
+        return storedMedia == null || value == null ? value : storedMedia.store(value, folder);
+    }
+
+    private String showMedia(String value) {
+        return storedMedia == null || value == null ? value : storedMedia.expose(value);
+    }
 
     public InventoryCheckService(
         InventoryCheckRepository inventoryCheckRepository,
@@ -202,7 +217,7 @@ public class InventoryCheckService {
         row.setOfficeCode(office.trim().toUpperCase(Locale.ROOT));
         row.setOrderCode(orderCode);
         row.setPackageSeq(seq);
-        row.setPhotoUrl(photo);
+        row.setPhotoUrl(storeMedia(photo, "inventory"));
         row.setCapturedAt(parseInstant(req.capturedAt()));
         row.setCapturedByUsername(SecurityUtils.getCurrentUserLogin().orElse("system"));
         photoRepository.save(row);
@@ -295,7 +310,7 @@ public class InventoryCheckService {
         return photoRepository
             .findAllById(ids)
             .stream()
-            .map(p -> new ThumbnailDTO(p.getOrderCode().trim().toUpperCase(Locale.ROOT), p.getPhotoUrl()))
+            .map(p -> new ThumbnailDTO(p.getOrderCode().trim().toUpperCase(Locale.ROOT), showMedia(p.getPhotoUrl())))
             .toList();
     }
 
@@ -308,7 +323,7 @@ public class InventoryCheckService {
         return photoRepository
             .findBySessionKeyAndOrderCodeIgnoreCaseOrderByPackageSeqAscCapturedAtAsc(check.getSessionKey(), orderCode.trim())
             .stream()
-            .map(p -> new PhotoDTO(p.getId(), p.getPackageSeq(), p.getPhotoUrl(), p.getCapturedAt(), p.getCapturedByUsername()))
+            .map(p -> new PhotoDTO(p.getId(), p.getPackageSeq(), showMedia(p.getPhotoUrl()), p.getCapturedAt(), p.getCapturedByUsername()))
             .toList();
     }
 

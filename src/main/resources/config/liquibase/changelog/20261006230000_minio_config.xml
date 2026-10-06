@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261006230000-minio-config" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="integration_config" columnName="minio_endpoint"/>
+            </not>
+        </preConditions>
+        <comment>MinIO: endpoint, bucket, region, access key, secret. Ảnh/file nặng lưu object, DB chỉ giữ minio:key.</comment>
+        <addColumn tableName="integration_config">
+            <column name="minio_endpoint" type="varchar(255)"/>
+            <column name="minio_bucket" type="varchar(64)"/>
+            <column name="minio_region" type="varchar(32)"/>
+            <column name="minio_access_key" type="varchar(128)"/>
+            <column name="minio_secret_key" type="varchar(255)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

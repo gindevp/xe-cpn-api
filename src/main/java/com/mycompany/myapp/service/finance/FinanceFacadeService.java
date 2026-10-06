@@ -35,6 +35,7 @@ import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.service.order.OrderStatusTransitions;
 import com.mycompany.myapp.service.order.PartnerAdvance;
+import com.mycompany.myapp.service.storage.StoredMedia;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import jakarta.persistence.criteria.JoinType;
 import java.math.BigDecimal;
@@ -51,6 +52,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -935,11 +937,11 @@ public class FinanceFacadeService {
         }
         if (notBlank(r.getConfirmProofImage())) {
             List<String> out = new ArrayList<>();
-            out.add(r.getConfirmProofImage());
-            out.addAll(splitProofExtra(r.getConfirmProofExtra()));
+            out.add(showMedia(r.getConfirmProofImage()));
+            out.addAll(splitProofExtra(r.getConfirmProofExtra()).stream().map(this::showMedia).toList());
             return out;
         }
-        return notBlank(r.getTransferProofImage()) ? List.of(r.getTransferProofImage()) : List.of();
+        return notBlank(r.getTransferProofImage()) ? List.of(showMedia(r.getTransferProofImage())) : List.of();
     }
 
     static final int MAX_CONFIRM_PROOFS = 5;
@@ -1012,8 +1014,8 @@ public class FinanceFacadeService {
         }
         receipt.setConfirmedAt(Instant.now());
         receipt.setConfirmedByUsername(actor());
-        receipt.setConfirmProofImage(proof);
-        receipt.setConfirmProofExtra(extra.isEmpty() ? null : String.join("\n", extra));
+        receipt.setConfirmProofImage(storeMedia(proof, "receipt"));
+        receipt.setConfirmProofExtra(extra.isEmpty() ? null : storeMediaLines(String.join("\n", extra), "receipt"));
         receipt.setConfirmNote(note);
         receipt = receiptRepository.save(receipt);
         auditRecorder.record(
@@ -1708,6 +1710,25 @@ public class FinanceFacadeService {
         /** Nội dung nhập khi xác nhận thu (cấn trừ, ghi chú). */
         String confirmNote
     ) {}
+
+    private StoredMedia storedMedia;
+
+    @Autowired(required = false)
+    void setStoredMedia(StoredMedia storedMedia) {
+        this.storedMedia = storedMedia;
+    }
+
+    private String storeMedia(String value, String folder) {
+        return storedMedia == null || value == null ? value : storedMedia.store(value, folder);
+    }
+
+    private String storeMediaLines(String value, String folder) {
+        return storedMedia == null || value == null ? value : storedMedia.storeLines(value, folder);
+    }
+
+    private String showMedia(String value) {
+        return storedMedia == null || value == null ? value : storedMedia.expose(value);
+    }
 
     public record DayClosureDTO(
         Long id,

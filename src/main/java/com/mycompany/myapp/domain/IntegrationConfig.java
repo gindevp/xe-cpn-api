@@ -198,6 +198,28 @@ public class IntegrationConfig implements Serializable {
     @Column(name = "deposit_content_template", length = 255)
     private String depositContentTemplate;
 
+    /** MinIO (S3 path-style). Ảnh/file nặng; DB chỉ giữ minio:key. */
+    @Size(max = 255)
+    @Column(name = "minio_endpoint", length = 255)
+    private String minioEndpoint;
+
+    @Size(max = 64)
+    @Column(name = "minio_bucket", length = 64)
+    private String minioBucket;
+
+    @Size(max = 32)
+    @Column(name = "minio_region", length = 32)
+    private String minioRegion;
+
+    @Size(max = 128)
+    @Column(name = "minio_access_key", length = 128)
+    private String minioAccessKey;
+
+    @Size(max = 255)
+    @Column(name = "minio_secret_key", length = 255)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String minioSecretKey;
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 
@@ -680,6 +702,65 @@ public class IntegrationConfig implements Serializable {
     @JsonProperty(value = "autocallWebhookSecretConfigured", access = JsonProperty.Access.READ_ONLY)
     public boolean isAutocallWebhookSecretConfigured() {
         return autocallWebhookSecret != null && !autocallWebhookSecret.isBlank();
+    }
+
+    public String getMinioEndpoint() {
+        return minioEndpoint;
+    }
+
+    public void setMinioEndpoint(String minioEndpoint) {
+        this.minioEndpoint = minioEndpoint;
+    }
+
+    public String getMinioBucket() {
+        return minioBucket;
+    }
+
+    public void setMinioBucket(String minioBucket) {
+        this.minioBucket = minioBucket;
+    }
+
+    public String getMinioRegion() {
+        return minioRegion;
+    }
+
+    public void setMinioRegion(String minioRegion) {
+        this.minioRegion = minioRegion;
+    }
+
+    public String getMinioAccessKey() {
+        return minioAccessKey;
+    }
+
+    public void setMinioAccessKey(String minioAccessKey) {
+        this.minioAccessKey = minioAccessKey;
+    }
+
+    @JsonIgnore
+    public String getMinioSecretKey() {
+        return minioSecretKey;
+    }
+
+    public void setMinioSecretKey(String minioSecretKey) {
+        this.minioSecretKey = minioSecretKey;
+    }
+
+    @JsonProperty(value = "minioSecretConfigured", access = JsonProperty.Access.READ_ONLY)
+    public boolean isMinioSecretConfigured() {
+        return minioSecretKey != null && !minioSecretKey.isBlank();
+    }
+
+    @JsonProperty(value = "minioConfigured", access = JsonProperty.Access.READ_ONLY)
+    public boolean isMinioConfigured() {
+        return (
+            minioEndpoint != null &&
+            !minioEndpoint.isBlank() &&
+            minioBucket != null &&
+            !minioBucket.isBlank() &&
+            minioAccessKey != null &&
+            !minioAccessKey.isBlank() &&
+            isMinioSecretConfigured()
+        );
     }
 
     public Instant getUpdatedAt() {

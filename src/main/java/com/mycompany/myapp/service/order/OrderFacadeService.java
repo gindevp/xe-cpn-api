@@ -39,6 +39,7 @@ import com.mycompany.myapp.service.dto.order.TrackOrderResponse;
 import com.mycompany.myapp.service.invoice.OrderDeliveredEvent;
 import com.mycompany.myapp.service.invoice.VietnamTaxCode;
 import com.mycompany.myapp.service.partner.AhamoveDispatchService;
+import com.mycompany.myapp.service.storage.StoredMedia;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -668,7 +669,7 @@ public class OrderFacadeService {
         if (goodsPhoto != null && goodsPhotoRepository != null) {
             OrderGoodsPhoto photo = new OrderGoodsPhoto();
             photo.setOrderId(order.getId());
-            photo.setPhotoUrl(goodsPhoto);
+            photo.setPhotoUrl(storeMedia(goodsPhoto, "goods"));
             photo.setCapturedAt(Instant.now());
             photo.setCapturedByUsername("customer");
             goodsPhotoRepository.save(photo);
@@ -1312,6 +1313,21 @@ public class OrderFacadeService {
         this.goodsPhotoRepository = goodsPhotoRepository;
     }
 
+    private StoredMedia storedMedia;
+
+    @Autowired(required = false)
+    void setStoredMedia(StoredMedia storedMedia) {
+        this.storedMedia = storedMedia;
+    }
+
+    private String storeMedia(String value, String folder) {
+        return storedMedia == null || value == null ? value : storedMedia.store(value, folder);
+    }
+
+    private String showMedia(String value) {
+        return storedMedia == null || value == null ? value : storedMedia.expose(value);
+    }
+
     /** Ảnh đơn hàng khách gửi khi tạo đơn; null nếu không có. */
     @Transactional(readOnly = true)
     public String goodsPhoto(String code) {
@@ -1319,7 +1335,7 @@ public class OrderFacadeService {
         if (goodsPhotoRepository == null) {
             return null;
         }
-        return goodsPhotoRepository.findOneByOrderId(order.getId()).map(OrderGoodsPhoto::getPhotoUrl).orElse(null);
+        return goodsPhotoRepository.findOneByOrderId(order.getId()).map(p -> showMedia(p.getPhotoUrl())).orElse(null);
     }
 
     /** Ảnh từ endpoint công khai: chỉ nhận data-URL ảnh, giới hạn dung lượng. */
@@ -1934,9 +1950,21 @@ public class OrderFacadeService {
         dto.setReceiverActualPhone(o.getReceiverActualPhone());
         dto.setFailCount(o.getFailCount());
         dto.setEvents(withActorInfo(mapEvents(o.getId())));
-        dto.setPodPhotos(orderPodPhotoRepository.findByOrder_IdOrderBySequenceNoAsc(o.getId()).stream().map(p -> p.getPhotoUrl()).toList());
+        dto.setPodPhotos(
+            orderPodPhotoRepository.findByOrder_IdOrderBySequenceNoAsc(o.getId()).stream().map(p -> showMedia(p.getPhotoUrl())).toList()
+        );
         dto.setIssues(
-            orderIssueRepository.findByOrder_IdOrderByOpenedAtAscIdAsc(o.getId()).stream().map(ExceptionFacadeService::toIssueView).toList()
+            orderIssueRepository
+                .findByOrder_IdOrderByOpenedAtAscIdAsc(o.getId())
+                .stream()
+                .map(issue -> {
+                    OrderDetailDTO.OrderIssueViewDTO view = ExceptionFacadeService.toIssueView(issue);
+                    if (view.getPhotos() != null) {
+                        view.setPhotos(view.getPhotos().stream().map(this::showMedia).toList());
+                    }
+                    return view;
+                })
+                .toList()
         );
         dto.setCurrentIssueId(o.getIssue() != null ? o.getIssue().getId() : null);
         return dto;

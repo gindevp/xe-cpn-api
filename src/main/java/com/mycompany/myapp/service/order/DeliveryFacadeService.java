@@ -18,7 +18,6 @@ import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.repository.ShipperRepository;
 import com.mycompany.myapp.security.AuthoritiesConstants;
 import com.mycompany.myapp.security.SecurityUtils;
-import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.AddPaymentRequest;
 import com.mycompany.myapp.service.dto.order.AssignShipperRequest;
@@ -29,12 +28,14 @@ import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
 import com.mycompany.myapp.service.dto.order.PodRequest;
 import com.mycompany.myapp.service.dto.order.PodResponse;
 import com.mycompany.myapp.service.partner.AhamoveDispatchService;
+import com.mycompany.myapp.service.storage.StoredMedia;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -102,7 +103,7 @@ public class DeliveryFacadeService {
         List<String> savedUrls = new ArrayList<>();
         int seq = (int) podPhotoRepository.countByOrder_Id(order.getId()) + 1;
         for (String photo : req.getPhotos()) {
-            String url = truncateUrl(photo);
+            String url = storeMedia(truncateUrl(photo), "pod");
             OrderPodPhoto row = new OrderPodPhoto();
             row.setPhotoUrl(url);
             row.setCapturedAt(now);
@@ -110,7 +111,7 @@ public class DeliveryFacadeService {
             row.setSequenceNo(Math.min(seq, 3));
             row.setOrder(order);
             podPhotoRepository.save(row);
-            savedUrls.add(url);
+            savedUrls.add(showMedia(url));
             seq++;
         }
 
@@ -454,6 +455,21 @@ public class DeliveryFacadeService {
         return shipmentOrderRepository
             .findOneByOrderCodeOrDraftCode(code.trim())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + code));
+    }
+
+    private StoredMedia storedMedia;
+
+    @Autowired(required = false)
+    void setStoredMedia(StoredMedia storedMedia) {
+        this.storedMedia = storedMedia;
+    }
+
+    private String storeMedia(String value, String folder) {
+        return storedMedia == null || value == null ? value : storedMedia.store(value, folder);
+    }
+
+    private String showMedia(String value) {
+        return storedMedia == null || value == null ? value : storedMedia.expose(value);
     }
 
     private static String truncateUrl(String url) {
