@@ -180,7 +180,9 @@ class AutoCallConsoleServiceTest {
         Map<String, Object> err = service.listCalls(null, null, null, null, "ERROR", null, 1, 20);
         assertThat((List<JsonNode>) err.get("data")).extracting(n -> n.path("callId").asText()).containsExactly("c");
         Map<String, Object> no = service.listCalls(null, null, null, null, "not_answered", null, 1, 20);
-        assertThat((List<JsonNode>) no.get("data")).extracting(n -> n.path("callId").asText()).containsExactlyInAnyOrder("b", "e");
+        assertThat((List<JsonNode>) no.get("data")).extracting(n -> n.path("callId").asText()).containsExactly("b");
+        Map<String, Object> cancelled = service.listCalls(null, null, null, null, "cancelled", null, 1, 20);
+        assertThat((List<JsonNode>) cancelled.get("data")).extracting(n -> n.path("callId").asText()).containsExactly("e");
 
         assertThatThrownBy(() -> service.listCalls(null, null, null, null, "busy", null, 1, 20)).hasMessageContaining("Kết quả");
     }

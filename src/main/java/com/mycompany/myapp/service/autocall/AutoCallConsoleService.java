@@ -50,7 +50,7 @@ public class AutoCallConsoleService {
     static final int MAX_FETCH_PAGES = 10;
     static final Set<String> CALL_TYPES = Set.of("giao", "hoan");
     static final Set<String> CALL_STATUSES = Set.of("queued", "calling", "retrying", "completed", "failed", "cancelled");
-    static final Set<String> CALL_RESULTS = Set.of("answered", "not_answered", "error");
+    static final Set<String> CALL_RESULTS = Set.of("answered", "not_answered", "error", "cancelled");
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
     private static final DateTimeFormatter REF_TIME = DateTimeFormatter.ofPattern("yyMMddHHmmss");
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -176,16 +176,13 @@ public class AutoCallConsoleService {
         return out;
     }
 
-    /** Lọc "Không nghe" gồm cả cuộc đã huỷ. */
+    /** "cancelled": HHVN có thể chỉ trả status cancelled, không có result. */
     static boolean matchesResult(String filter, JsonNode call) {
         String result = call.path("result").asText("");
         if (filter.equals(result)) {
             return true;
         }
-        return (
-            "not_answered".equals(filter) &&
-            ("cancelled".equalsIgnoreCase(result) || "cancelled".equalsIgnoreCase(call.path("status").asText("")))
-        );
+        return "cancelled".equals(filter) && "cancelled".equalsIgnoreCase(call.path("status").asText(""));
     }
 
     /**
