@@ -8,6 +8,7 @@ import static org.mockito.Mockito.*;
 
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderDeliveryAttempt;
+import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.Shipper;
 import com.mycompany.myapp.domain.enumeration.DeliveryPartner;
@@ -33,6 +34,7 @@ class DeliveryFacadeServiceAssignShipperTest {
     private OrderFacadeService orderFacade;
     private DayClosureGuard dayClosureGuard;
     private ShipperRepository shipperRepo;
+    private OrderPaymentRepository paymentRepo;
     private DeliveryFacadeService service;
     private ShipmentOrder order;
 
@@ -62,7 +64,7 @@ class DeliveryFacadeServiceAssignShipperTest {
         service = new DeliveryFacadeService(
             orderRepo,
             mock(OrderPodPhotoRepository.class),
-            mock(OrderPaymentRepository.class),
+            paymentRepo = mock(OrderPaymentRepository.class),
             attemptRepo,
             orderFacade,
             dayClosureGuard,
@@ -178,10 +180,13 @@ class DeliveryFacadeServiceAssignShipperTest {
         order.setPaidAmount(java.math.BigDecimal.ZERO);
         order.setPartnerCodAmount(new java.math.BigDecimal("50000"));
 
-        service.recordPartnerAdvance(order, new java.math.BigDecimal("50000"), "POD AHAMOVE ỨNG");
+        service.recordPartnerAdvance(order, new java.math.BigDecimal("50000"), "POD AHAMOVE ỨNG", "dungtm");
 
         assertThat(order.getPartnerCodCollectedAt()).isNotNull();
         assertThat(order.getPaidAmount()).isEqualByComparingTo("50000");
+        ArgumentCaptor<OrderPayment> pay = ArgumentCaptor.forClass(OrderPayment.class);
+        verify(paymentRepo).save(pay.capture());
+        assertThat(pay.getValue().getCollectorUsername()).isEqualTo("dungtm");
     }
 
     @Test

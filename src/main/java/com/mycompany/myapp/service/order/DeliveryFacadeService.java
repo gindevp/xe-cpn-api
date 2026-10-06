@@ -409,11 +409,12 @@ public class DeliveryFacadeService {
      * NV quầy nhận tiền mặt tài xế đối tác ứng: đánh dấu đã nhận rồi ghi khoản thu (người thu = NV đang thao tác).
      * Vẫn qua guard chốt ngày + không vượt số còn nợ.
      */
-    public void recordPartnerAdvance(ShipmentOrder order, BigDecimal amount, String note) {
+    /** {@code collector} = người nhận nợ khoản ứng (người bàn giao Ahamove); người bấm xác nhận ghi ở partnerCodCollectedBy. */
+    public void recordPartnerAdvance(ShipmentOrder order, BigDecimal amount, String note, String collector) {
         String actor = currentActor();
         order.setPartnerCodCollectedAt(Instant.now());
         order.setPartnerCodCollectedBy(actor);
-        addPaymentInternal(order, amount, PaymentMethod.TM, PaymentKind.SAU, note, actor);
+        addPaymentInternal(order, amount, PaymentMethod.TM, PaymentKind.SAU, note, collector != null ? collector : actor);
         shipmentOrderRepository.save(order);
     }
 

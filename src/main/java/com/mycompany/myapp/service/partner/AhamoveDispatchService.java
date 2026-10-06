@@ -9,7 +9,6 @@ import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.DeliveryAttemptResult;
 import com.mycompany.myapp.domain.enumeration.DeliveryPartner;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
-import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import com.mycompany.myapp.repository.OrderDeliveryAttemptRepository;
 import com.mycompany.myapp.repository.OrderPaymentRepository;
@@ -43,8 +42,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Giao tận nơi qua Ahamove (không COD hàng). Đơn đã thu đủ, hoặc đơn người nhận trả còn nợ → tài xế ứng cước
- * ({@code partnerCodAmount}) cho VP rồi thu lại người nhận. Phí Ahamove = chi phí đối tác ({@code partnerFeeAmount}),
+ * Giao tận nơi qua Ahamove (không COD hàng). Đơn còn nợ cước (người gửi hay người nhận trả) → tài xế ứng cước
+ * ({@code partnerCodAmount}) cho người bàn giao rồi thu lại người nhận; người bàn giao nhận nợ nộp về công ty. Phí Ahamove = chi phí đối tác ({@code partnerFeeAmount}),
  * không đụng cước khách.
  */
 @Service
@@ -383,8 +382,8 @@ public class AhamoveDispatchService {
     }
 
     /**
-     * Số tài xế ứng = cước còn nợ. Chỉ đơn người nhận trả; đơn người gửi trả / ghi nợ cước còn nợ thì chặn
-     * (người nhận không phải trả phần đó).
+     * Số tài xế ứng = toàn bộ cước còn nợ, cả đơn người gửi trả (vd. người nhận xin giao tận nơi sau khi hàng tới).
+     * Đơn ghi nợ cước thì chặn.
      */
     static BigDecimal advanceFor(ShipmentOrder order) {
         BigDecimal due = OrderMoney.due(order);
@@ -394,14 +393,22 @@ public class AhamoveDispatchService {
         if (Boolean.TRUE.equals(order.getOnCredit())) {
             throw new BadRequestAlertException("Đơn ghi nợ cước — không gọi Ahamove ứng cước", ENTITY, "ahamoveOnCredit");
         }
-        if (order.getPaymentTerm() != PaymentTerm.NHAN_TRA) {
-            throw new BadRequestAlertException(
-                "Đơn người gửi trả còn nợ " + PartnerAdvance.money(due) + "đ — VP gửi thu trước khi gọi Ahamove",
-                ENTITY,
-                "ahamoveSenderUnpaid"
-            );
-        }
         return due.setScale(0, RoundingMode.HALF_UP);
+    }
+
+    /** Người bấm bàn giao Ahamove gần nhất — nhận nợ tiền tài xế ứng để nộp về công ty. */
+    String dispatcherOf(ShipmentOrder order) {
+        String who = null;
+        for (OrderDeliveryAttempt a : deliveryAttemptRepository.findByOrder_IdOrderByAttemptAtAsc(order.getId())) {
+            if (
+                a.getDeliveryPartner() == DeliveryPartner.AHAMOVE &&
+                "ASSIGN_PARTNER".equals(a.getReason()) &&
+                notBlank(a.getHandledByUsername())
+            ) {
+                who = a.getHandledByUsername();
+            }
+        }
+        return who != null ? who : currentActor();
     }
 
     /** NV quầy xác nhận đã nhận tiền mặt tài xế Ahamove ứng → ghi khoản thu (người thu = NV). */
@@ -421,11 +428,12 @@ public class AhamoveDispatchService {
             }
             String driver = notBlank(order.getPartnerDriverName()) ? " · tài xế " + order.getPartnerDriverName().trim() : "";
             String note = truncate(PartnerAdvance.PAYMENT_NOTE_PREFIX + driver, 255);
-            deliveryFacadeService.recordPartnerAdvance(order, amount, note);
+            String debtor = dispatcherOf(order);
+            deliveryFacadeService.recordPartnerAdvance(order, amount, note, debtor);
             orderFacadeService.recordEvent(
                 order,
                 "AHAMOVE_ADVANCE_IN",
-                "Nhận " + PartnerAdvance.money(amount) + "đ tài xế Ahamove ứng" + driver,
+                "Nhận " + PartnerAdvance.money(amount) + "đ tài xế Ahamove ứng" + driver + " · người nhận nợ " + debtor,
                 currentActor()
             );
         });

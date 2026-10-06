@@ -13,8 +13,10 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.domain.Office;
+import com.mycompany.myapp.domain.OrderDeliveryAttempt;
 import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.DeliveryPartner;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
@@ -48,6 +50,7 @@ class AhamoveDispatchServiceFlowTest {
     private OrderFacadeService orders;
     private OrderPaymentRepository paymentRepo;
     private ReceiptOrderLineRepository receiptLineRepo;
+    private OrderDeliveryAttemptRepository attemptRepo;
     private AhamoveDispatchService service;
     private ShipmentOrder order;
 
@@ -60,10 +63,11 @@ class AhamoveDispatchServiceFlowTest {
         orders = mock(OrderFacadeService.class);
         paymentRepo = mock(OrderPaymentRepository.class);
         receiptLineRepo = mock(ReceiptOrderLineRepository.class);
+        attemptRepo = mock(OrderDeliveryAttemptRepository.class);
         service = new AhamoveDispatchService(
             orderRepo,
             cfgRepo,
-            mock(OrderDeliveryAttemptRepository.class),
+            attemptRepo,
             client,
             delivery,
             orders,
@@ -106,14 +110,17 @@ class AhamoveDispatchServiceFlowTest {
     }
 
     @Test
-    void dispatch_senderPaysUnpaid_rejectedWithoutCallingAhamove() {
+    void dispatch_senderPaysUnpaid_driverAdvancesWholeDue() {
         order.setPaidAmount(new BigDecimal("20000"));
         order.setPaymentTerm(PaymentTerm.GUI_TRA);
-        assertThatThrownBy(() -> service.dispatch("GP-0001", pin()))
-            .isInstanceOf(BadRequestAlertException.class)
-            .extracting(e -> ((BadRequestAlertException) e).getErrorKey())
-            .isEqualTo("ahamoveSenderUnpaid");
-        verify(client, never()).createOrder(any(), any(), any());
+        when(client.createOrder(any(), any(), any())).thenReturn(
+            new AhamoveOrderClient.CreatedOrder("AHA6", "ASSIGNING", null, new BigDecimal("25000"), null)
+        );
+        service.dispatch("GP-0001", pin());
+        ArgumentCaptor<AhamoveOrderClient.Stop> drop = ArgumentCaptor.forClass(AhamoveOrderClient.Stop.class);
+        verify(client).createOrder(any(), drop.capture(), any());
+        assertThat(drop.getValue().cod()).isEqualTo(30000L);
+        assertThat(order.getPartnerCodAmount()).isEqualByComparingTo("30000");
     }
 
     @Test
@@ -207,13 +214,26 @@ class AhamoveDispatchServiceFlowTest {
     }
 
     @Test
-    void confirmAdvance_recordsCashPaymentByStaff() {
+    void confirmAdvance_recordsCashPaymentOwedByDispatcher() {
         advancePending();
+        OrderDeliveryAttempt first = new OrderDeliveryAttempt();
+        first.setDeliveryPartner(DeliveryPartner.AHAMOVE);
+        first.setReason("ASSIGN_PARTNER");
+        first.setHandledByUsername("old_dispatcher");
+        OrderDeliveryAttempt last = new OrderDeliveryAttempt();
+        last.setDeliveryPartner(DeliveryPartner.AHAMOVE);
+        last.setReason("ASSIGN_PARTNER");
+        last.setHandledByUsername("dungtm");
+        when(attemptRepo.findByOrder_IdOrderByAttemptAtAsc(10L)).thenReturn(List.of(first, last));
+
         service.confirmAdvance("GP-0001");
+
         ArgumentCaptor<String> note = ArgumentCaptor.forClass(String.class);
-        verify(delivery).recordPartnerAdvance(eq(order), eq(new BigDecimal("30000")), note.capture());
+        verify(delivery).recordPartnerAdvance(eq(order), eq(new BigDecimal("30000")), note.capture(), eq("dungtm"));
         assertThat(note.getValue()).startsWith("POD AHAMOVE ỨNG").contains("Anh Tú");
-        verify(orders).recordEvent(eq(order), eq("AHAMOVE_ADVANCE_IN"), anyString(), anyString());
+        ArgumentCaptor<String> detail = ArgumentCaptor.forClass(String.class);
+        verify(orders).recordEvent(eq(order), eq("AHAMOVE_ADVANCE_IN"), detail.capture(), anyString());
+        assertThat(detail.getValue()).contains("người nhận nợ dungtm");
     }
 
     @Test
@@ -223,7 +243,7 @@ class AhamoveDispatchServiceFlowTest {
         assertThatThrownBy(() -> service.confirmAdvance("GP-0001"))
             .extracting(e -> ((BadRequestAlertException) e).getErrorKey())
             .isEqualTo("ahamoveAdvanceDone");
-        verify(delivery, never()).recordPartnerAdvance(any(), any(), any());
+        verify(delivery, never()).recordPartnerAdvance(any(), any(), any(), any());
     }
 
     private OrderPayment advancePaid() {
