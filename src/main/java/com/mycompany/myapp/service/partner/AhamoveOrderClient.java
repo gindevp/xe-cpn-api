@@ -101,8 +101,8 @@ public class AhamoveOrderClient {
         double fromLat,
         double fromLng,
         String fromAddress,
-        double toLat,
-        double toLng,
+        Double toLat,
+        Double toLng,
         String toAddress
     ) {
         if (serviceId == null || serviceId.isBlank()) {
@@ -164,14 +164,14 @@ public class AhamoveOrderClient {
 
     /**
      * Convenience: ưu tiên group_services BIKE (Ahamove tự gắn HAN-BIKE/SGN-BIKE theo GPS),
-     * fallback list /services rồi estimate theo _id.
+     * fallback list /services rồi estimate theo _id. {@code pinLat/pinLng} null → ước tính theo {@code pinAddress}.
      */
     public Map<String, Object> estimatePickupDistance(
         double officeLat,
         double officeLng,
         String officeAddress,
-        double pinLat,
-        double pinLng,
+        Double pinLat,
+        Double pinLng,
         String pinAddress
     ) {
         // 1) group_services BIKE — đúng docs, tránh nhầm SGN-BIKE ở Hà Nội.
@@ -227,8 +227,8 @@ public class AhamoveOrderClient {
         double fromLat,
         double fromLng,
         String fromAddress,
-        double toLat,
-        double toLng,
+        Double toLat,
+        Double toLng,
         String toAddress
     ) throws Exception {
         String token = requireToken();
@@ -433,13 +433,7 @@ public class AhamoveOrderClient {
     }
 
     private ObjectNode stop(Stop s) {
-        ObjectNode p;
-        if (s.lat() != null && s.lng() != null) {
-            p = point(s.lat(), s.lng(), s.address());
-        } else {
-            p = objectMapper.createObjectNode();
-            p.put("address", s.address() != null ? s.address().trim() : "");
-        }
+        ObjectNode p = point(s.lat(), s.lng(), s.address());
         if (s.name() != null && !s.name().isBlank()) {
             p.put("name", s.name().trim());
         }
@@ -456,11 +450,16 @@ public class AhamoveOrderClient {
         return p;
     }
 
-    private ObjectNode point(double lat, double lng, String address) {
+    /** {@code lat/lng} null → chỉ gửi {@code address}, Ahamove tự geocode. */
+    private ObjectNode point(Double lat, Double lng, String address) {
         ObjectNode p = objectMapper.createObjectNode();
-        p.put("lat", lat);
-        p.put("lng", lng);
-        p.put("address", address != null && !address.isBlank() ? address : (lat + "," + lng));
+        boolean gps = lat != null && lng != null;
+        if (gps) {
+            p.put("lat", lat);
+            p.put("lng", lng);
+        }
+        String addr = address != null ? address.trim() : "";
+        p.put("address", !addr.isEmpty() || !gps ? addr : (lat + "," + lng));
         return p;
     }
 

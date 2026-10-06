@@ -1,6 +1,7 @@
 package com.mycompany.myapp.web.rest;
 
 import com.mycompany.myapp.service.partner.AhamoveOrderClient;
+import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,16 +30,23 @@ public class AhamoveFacadeResource {
 
     /**
      * KM giữa VP gửi và điểm lấy/giao (GPS pin).
-     * Body: officeLat, officeLng, officeAddress?, pinLat, pinLng, pinAddress?
+     * Body: officeLat, officeLng, officeAddress?, pinLat?, pinLng?, pinAddress? — thiếu pin GPS thì bắt buộc pinAddress.
      */
     @PostMapping("/api/ahamove/estimate-pickup-km")
     public Map<String, Object> estimatePickupKm(@RequestBody Map<String, Object> body) {
         double officeLat = toDouble(body.get("officeLat"));
         double officeLng = toDouble(body.get("officeLng"));
-        double pinLat = toDouble(body.get("pinLat"));
-        double pinLng = toDouble(body.get("pinLng"));
+        Double pinLat = body.get("pinLat") != null ? toDouble(body.get("pinLat")) : null;
+        Double pinLng = body.get("pinLng") != null ? toDouble(body.get("pinLng")) : null;
         String officeAddress = body.get("officeAddress") != null ? String.valueOf(body.get("officeAddress")) : null;
-        String pinAddress = body.get("pinAddress") != null ? String.valueOf(body.get("pinAddress")) : null;
+        String pinAddress = body.get("pinAddress") != null ? String.valueOf(body.get("pinAddress")).trim() : null;
+        if ((pinLat == null || pinLng == null) && (pinAddress == null || pinAddress.isEmpty())) {
+            throw new BadRequestAlertException("Cần GPS điểm giao hoặc địa chỉ giao", "ahamove", "ahamoveEstimateTarget");
+        }
+        if (pinLat == null || pinLng == null) {
+            pinLat = null;
+            pinLng = null;
+        }
         return ahamoveOrderClient.estimatePickupDistance(officeLat, officeLng, officeAddress, pinLat, pinLng, pinAddress);
     }
 
