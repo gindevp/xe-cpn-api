@@ -43,7 +43,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -128,7 +130,11 @@ public class TripFacadeService {
                 spec = spec.and((root, q, cb) -> cb.equal(root.get("office").get("code"), scoped));
             }
         }
-        return tripRepository.findAll(spec, pageable).map(t -> toSummary(t, false));
+        // Không sort thì DB trả chuyến cũ nhất trước — client tìm chuyến đang mở theo trang đầu sẽ hụt, tạo chuyến trùng.
+        Pageable paged = pageable.getSort().isSorted()
+            ? pageable
+            : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "id"));
+        return tripRepository.findAll(spec, paged).map(t -> toSummary(t, false));
     }
 
     @Transactional(readOnly = true)
