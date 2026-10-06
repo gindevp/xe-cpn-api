@@ -160,6 +160,32 @@ class AhamoveDispatchServiceFlowTest {
     }
 
     @Test
+    void dispatch_addressOnly_sendsNoCoordinates() {
+        when(client.createOrder(any(), any(), any())).thenReturn(
+            new AhamoveOrderClient.CreatedOrder("AHA5", "ASSIGNING", null, null, null)
+        );
+        AhamoveDispatchService.DispatchRequest r = new AhamoveDispatchService.DispatchRequest();
+        r.setAddress("12 Ngõ 34 Láng Hạ, Đống Đa, Hà Nội");
+        service.dispatch("GP-0001", r);
+        ArgumentCaptor<AhamoveOrderClient.Stop> drop = ArgumentCaptor.forClass(AhamoveOrderClient.Stop.class);
+        verify(client).createOrder(any(), drop.capture(), any());
+        assertThat(drop.getValue().lat()).isNull();
+        assertThat(drop.getValue().lng()).isNull();
+        assertThat(drop.getValue().address()).isEqualTo("12 Ngõ 34 Láng Hạ, Đống Đa, Hà Nội");
+        assertThat(order.getDeliveryLat()).isNull();
+    }
+
+    @Test
+    void dispatch_halfCoordinates_rejected() {
+        AhamoveDispatchService.DispatchRequest r = new AhamoveDispatchService.DispatchRequest();
+        r.setLat(21.02);
+        assertThatThrownBy(() -> service.dispatch("GP-0001", r))
+            .extracting(e -> ((BadRequestAlertException) e).getErrorKey())
+            .isEqualTo("ahamovePinInvalid");
+        verify(client, never()).createOrder(any(), any(), any());
+    }
+
+    @Test
     void dispatch_blockedWhileAdvanceNotRefunded() {
         order.setStatus(OrderStatus.FAILED_DELIVERY);
         order.setPartnerCodAmount(new BigDecimal("30000"));

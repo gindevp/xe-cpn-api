@@ -276,10 +276,13 @@ public class AhamoveOrderClient {
         return out;
     }
 
-    /** {@code cod} chỉ dùng ở điểm giao: tài xế ứng số này cho VP lúc lấy hàng, thu lại của người nhận. */
+    /**
+     * {@code cod} chỉ dùng ở điểm giao: tài xế ứng số này cho VP lúc lấy hàng, thu lại của người nhận.
+     * {@code lat/lng} null → chỉ gửi {@code address}, Ahamove tự geocode.
+     */
     public record Stop(
-        double lat,
-        double lng,
+        Double lat,
+        Double lng,
         String address,
         String name,
         String mobile,
@@ -430,7 +433,13 @@ public class AhamoveOrderClient {
     }
 
     private ObjectNode stop(Stop s) {
-        ObjectNode p = point(s.lat(), s.lng(), s.address());
+        ObjectNode p;
+        if (s.lat() != null && s.lng() != null) {
+            p = point(s.lat(), s.lng(), s.address());
+        } else {
+            p = objectMapper.createObjectNode();
+            p.put("address", s.address() != null ? s.address().trim() : "");
+        }
         if (s.name() != null && !s.name().isBlank()) {
             p.put("name", s.name().trim());
         }

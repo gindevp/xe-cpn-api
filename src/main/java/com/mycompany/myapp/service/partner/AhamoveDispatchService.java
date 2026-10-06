@@ -150,9 +150,10 @@ public class AhamoveDispatchService {
     }
 
     /** Gọi Ahamove giao đơn: AT_DEST / FAILED_DELIVERY → OUT_FOR_DELIVERY. */
-    public OrderDetailDTO dispatch(String orderCode, DispatchRequest req) {
-        if (req == null || req.getLat() == null || req.getLng() == null) {
-            throw new BadRequestAlertException("Chưa ghim vị trí giao trên bản đồ", ENTITY, "ahamovePinRequired");
+    public OrderDetailDTO dispatch(String orderCode, DispatchRequest request) {
+        final DispatchRequest req = request != null ? request : new DispatchRequest();
+        if ((req.getLat() == null) != (req.getLng() == null)) {
+            throw new BadRequestAlertException("Toạ độ giao thiếu lat hoặc lng", ENTITY, "ahamovePinInvalid");
         }
         ShipmentOrder order = requireOrder(orderCode);
         Dispatchable ok = assertDispatchable(order);
@@ -511,8 +512,9 @@ public class AhamoveDispatchService {
         order.setPartnerFailReason(null);
         order.setPartnerUpdatedAt(now);
         order.setShipper(null);
-        order.setDeliveryLat(BigDecimal.valueOf(req.getLat()).setScale(7, java.math.RoundingMode.HALF_UP));
-        order.setDeliveryLng(BigDecimal.valueOf(req.getLng()).setScale(7, java.math.RoundingMode.HALF_UP));
+        boolean pinned = req.getLat() != null && req.getLng() != null;
+        order.setDeliveryLat(pinned ? BigDecimal.valueOf(req.getLat()).setScale(7, java.math.RoundingMode.HALF_UP) : null);
+        order.setDeliveryLng(pinned ? BigDecimal.valueOf(req.getLng()).setScale(7, java.math.RoundingMode.HALF_UP) : null);
         shipmentOrderRepository.save(order);
 
         OrderDeliveryAttempt attempt = new OrderDeliveryAttempt();
@@ -532,7 +534,8 @@ public class AhamoveDispatchService {
             "AHAMOVE · " +
             created.orderId() +
             (created.totalPay() != null ? " · phí " + created.totalPay() : "") +
-            (advance.signum() > 0 ? " · tài xế ứng " + PartnerAdvance.money(advance) : "")
+            (advance.signum() > 0 ? " · tài xế ứng " + PartnerAdvance.money(advance) : "") +
+            (pinned ? "" : " · không ghim GPS, Ahamove tự dò địa chỉ")
         );
         orderFacadeService.transition(code, tr);
     }
