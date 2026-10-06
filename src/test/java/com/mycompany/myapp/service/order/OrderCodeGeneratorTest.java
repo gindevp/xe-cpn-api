@@ -112,4 +112,12 @@ class OrderCodeGeneratorTest {
 
         assertThat(generator.nextOrderCode("VP_TDN")).startsWith(prefix("TDN"));
     }
+
+    @Test
+    void officePrefixDropsInnerSeparators() {
+        assertThat(OrderCodeGenerator.normalizeOffice("VP_ND_77")).isEqualTo("ND77");
+        assertThat(OrderCodeGenerator.normalizeOffice("VP_YB_VP")).isEqualTo("YBVP");
+        assertThat(OrderCodeGenerator.normalizeOffice("vp-bc.hd")).isEqualTo("BCHD");
+        assertThat(OrderCodeGenerator.normalizeOffice("VP_")).isEqualTo("XX");
+    }
 }

@@ -97,12 +97,15 @@ public class OrderCodeGenerator {
         return new String(buf);
     }
 
-    /** Bỏ tiền tố VP / VP_ / VP- để mã ngắn (TDN thay vì VP_TDN). */
-    private static String normalizeOffice(String officeCode) {
+    /**
+     * Bỏ tiền tố VP / VP_ / VP- để mã ngắn (TDN thay vì VP_TDN), và bỏ ký tự không phải chữ/số còn lại:
+     * mã kiện là {@code mãđơn_STT} nên "_" trong mã đơn (VP_ND_77 → ND_77…) làm quét tem tách nhầm.
+     */
+    static String normalizeOffice(String officeCode) {
         if (officeCode == null || officeCode.isBlank()) {
             return "XX";
         }
-        String o = officeCode.trim().toUpperCase().replaceAll("^VP[_\\s.-]*", "").trim();
+        String o = officeCode.trim().toUpperCase().replaceAll("^VP[_\\s.-]*", "").replaceAll("[^A-Z0-9]", "");
         return o.isBlank() ? "XX" : o;
     }
 }
