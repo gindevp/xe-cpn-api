@@ -3,9 +3,12 @@ package com.mycompany.myapp.web.rest;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.repository.TripRepository;
+import com.mycompany.myapp.security.ScreenKey;
+import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.finance.FinanceFacadeService;
 import com.mycompany.myapp.service.report.BusinessReportService;
 import com.mycompany.myapp.service.report.InventoryHourlyReportService;
+import com.mycompany.myapp.service.report.RevenueReportService;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
@@ -21,19 +24,25 @@ public class ReportsResource {
     private final FinanceFacadeService financeFacadeService;
     private final InventoryHourlyReportService inventoryHourlyReportService;
     private final BusinessReportService businessReportService;
+    private final RevenueReportService revenueReportService;
+    private final StaffAccessService staffAccessService;
 
     public ReportsResource(
         ShipmentOrderRepository shipmentOrderRepository,
         TripRepository tripRepository,
         FinanceFacadeService financeFacadeService,
         InventoryHourlyReportService inventoryHourlyReportService,
-        BusinessReportService businessReportService
+        BusinessReportService businessReportService,
+        RevenueReportService revenueReportService,
+        StaffAccessService staffAccessService
     ) {
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.tripRepository = tripRepository;
         this.financeFacadeService = financeFacadeService;
         this.inventoryHourlyReportService = inventoryHourlyReportService;
         this.businessReportService = businessReportService;
+        this.revenueReportService = revenueReportService;
+        this.staffAccessService = staffAccessService;
     }
 
     @GetMapping("/dashboard")
@@ -63,6 +72,18 @@ public class ReportsResource {
         @RequestParam(required = false) String officeCode
     ) {
         return businessReportService.business(from, to, officeCode);
+    }
+
+    /** Báo cáo doanh thu theo đơn: tiền thu ở VP nào tính cho VP đó. */
+    @GetMapping("/revenue")
+    public RevenueReportService.Report revenue(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+        @RequestParam(required = false) String officeCode,
+        @RequestParam(required = false) RevenueReportService.Kind kind
+    ) {
+        staffAccessService.requireScreenRead(ScreenKey.BAO_CAO_DOANH_THU);
+        return revenueReportService.revenue(from, to, officeCode, kind);
     }
 
     @GetMapping("/collections")

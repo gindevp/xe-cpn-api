@@ -15,7 +15,7 @@ import java.math.BigDecimal;
  * </ul>
  * Số đã lập phiếu trừ vào phần SENDER trước, phần dư trừ vào DELIVERY.
  */
-final class ReceiptSettlement {
+public final class ReceiptSettlement {
 
     static final String SENDER = "SENDER";
     static final String DELIVERY = "DELIVERY";
@@ -70,7 +70,7 @@ final class ReceiptSettlement {
         }
     }
 
-    static boolean isDeliverySidePayment(PaymentKind kind, String note) {
+    public static boolean isDeliverySidePayment(PaymentKind kind, String note) {
         if (kind != PaymentKind.SAU) {
             return false;
         }
