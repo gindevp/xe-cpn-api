@@ -210,7 +210,8 @@ public class OrderFacadeService {
         String successOfficeCode,
         Boolean homeDelivery,
         boolean searchAllOffices,
-        CancelRequestMode cancelRequests
+        CancelRequestMode cancelRequests,
+        Boolean codOnly
     ) {
         public static final OrderListExtra NONE = new OrderListExtra(
             null,
@@ -221,7 +222,8 @@ public class OrderFacadeService {
             null,
             null,
             false,
-            CancelRequestMode.INCLUDE
+            CancelRequestMode.INCLUDE,
+            null
         );
     }
 
@@ -306,11 +308,13 @@ public class OrderFacadeService {
         if (status != null) {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), status));
         }
-        if (paymentTerm == PaymentTerm.COD) {
+        if (Boolean.TRUE.equals(ex.codOnly()) || paymentTerm == PaymentTerm.COD) {
+            // Đơn có thu hộ: nhận theo tiền COD; PaymentTerm.COD chỉ còn ở đơn cũ.
             spec = spec.and((root, q, cb) ->
                 cb.or(cb.equal(root.get("paymentTerm"), PaymentTerm.COD), cb.greaterThan(root.get("codAmount"), BigDecimal.ZERO))
             );
-        } else if (paymentTerm != null) {
+        }
+        if (paymentTerm != null && paymentTerm != PaymentTerm.COD) {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("paymentTerm"), paymentTerm));
         }
         if (fromOfficeCode != null && !fromOfficeCode.isBlank()) {
