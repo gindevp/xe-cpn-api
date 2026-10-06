@@ -3,10 +3,8 @@ package com.mycompany.myapp.service.report;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
-import com.mycompany.myapp.domain.enumeration.PaymentKind;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.security.StaffAccessService;
-import com.mycompany.myapp.service.finance.ReceiptSettlement;
 import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import jakarta.persistence.EntityManager;
@@ -26,14 +24,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Báo cáo doanh thu theo đơn: tiền thu ở VP nào tính doanh thu cho VP đó.
+ * Báo cáo doanh thu theo đơn — cùng logic và tổng với Báo cáo kinh doanh ({@link RevenueLedger}):
  * <ul>
- *   <li>Lọc đơn theo ngày tạo (giờ VN). Đơn tồn = chưa giao thành công (đang ở kho / trên xe / chờ giao); đơn giao thành công = DELIVERED.
- *       Đơn huỷ / hoàn không tính.</li>
- *   <li>Tiền thu phía gửi (thu trước, thu tay, phiếu thu phía gửi) → VP gửi; tiền thu lúc giao (POD / phiếu thu phía giao) → VP nhận.
- *       Đơn thu ở cả hai phía hiện ở cả 2 VP, mỗi VP phần mình thu. Tiền COD thu hộ không phải doanh thu.</li>
- *   <li>Các khoản phí của dòng = khoản phí của đơn × (tiền VP thu / tổng các khoản), làm tròn đồng; chênh làm tròn dồn vào cước hàng.</li>
- *   <li>Chưa thu đồng nào (vd. đơn tồn nhận trả, đơn công nợ chưa trả) → không có doanh thu, không hiện.</li>
+ *   <li>Dòng phiếu thu: phiếu đã xác nhận có ngày thu tiền trong khoảng, tính cho VP lập phiếu, chỉ phần cước (bỏ COD).</li>
+ *   <li>Dòng đơn tồn: đơn tạo trong khoảng chưa kết thúc tại cuối khoảng, tính cho VP gửi, cước còn lại chưa lên phiếu thu.</li>
+ *   <li>Các khoản phí của dòng = khoản phí của đơn × (số tiền dòng / tổng các khoản), làm tròn đồng; chênh làm tròn dồn vào cước hàng.</li>
  * </ul>
  */
 @Service
@@ -44,19 +39,10 @@ public class RevenueReportService {
     static final int MAX_RANGE_DAYS = 366;
     private static final int ID_CHUNK = 1000;
 
-    static final List<OrderStatus> BACKLOG = List.of(
-        OrderStatus.CONFIRMED,
-        OrderStatus.WAITING,
-        OrderStatus.IN_TRANSIT,
-        OrderStatus.AT_DEST,
-        OrderStatus.OUT_FOR_DELIVERY,
-        OrderStatus.FAILED_DELIVERY
-    );
-
     public enum Kind {
         ALL,
         BACKLOG,
-        DELIVERED,
+        RECEIPT,
     }
 
     public record Row(
@@ -64,8 +50,9 @@ public class RevenueReportService {
         Instant createdAt,
         String officeCode,
         String officeName,
-        /** SENDER = tiền thu phía gửi, DELIVERY = tiền thu lúc giao. */
-        String side,
+        /** RECEIPT = dòng phiếu thu, BACKLOG = đơn tồn còn phải thu. */
+        String source,
+        String receiptCode,
         OrderStatus status,
         BigDecimal goodsFare,
         BigDecimal deliveryFee,
@@ -111,11 +98,18 @@ public class RevenueReportService {
     ) {}
 
     private final EntityManager em;
+    private final RevenueLedger revenueLedger;
     private final OfficeRepository officeRepository;
     private final StaffAccessService staffAccessService;
 
-    public RevenueReportService(EntityManager em, OfficeRepository officeRepository, StaffAccessService staffAccessService) {
+    public RevenueReportService(
+        EntityManager em,
+        RevenueLedger revenueLedger,
+        OfficeRepository officeRepository,
+        StaffAccessService staffAccessService
+    ) {
         this.em = em;
+        this.revenueLedger = revenueLedger;
         this.officeRepository = officeRepository;
         this.staffAccessService = staffAccessService;
     }
@@ -134,66 +128,51 @@ public class RevenueReportService {
         }
         Kind k = kind == null ? Kind.ALL : kind;
         String office = resolveOffice(officeCode);
-        List<OrderStatus> statuses =
-            switch (k) {
-                case BACKLOG -> BACKLOG;
-                case DELIVERED -> List.of(OrderStatus.DELIVERED);
-                case ALL -> {
-                    List<OrderStatus> all = new ArrayList<>(BACKLOG);
-                    all.add(OrderStatus.DELIVERED);
-                    yield all;
-                }
-            };
-
-        String jpql =
-            "select o, f.code, coalesce(ft.code, tt.code) from ShipmentOrder o left join o.fromOffice f" +
-            " left join o.finalToOffice ft left join o.toOffice tt" +
-            " where o.createdAt >= :start and o.createdAt < :end and o.status in :statuses" +
-            (office != null ? " and (upper(f.code) = :office or upper(coalesce(ft.code, tt.code)) = :office)" : "");
-        var query = em
-            .createQuery(jpql, Object[].class)
-            .setParameter("start", f.atStartOfDay(VN).toInstant())
-            .setParameter("end", t.plusDays(1).atStartOfDay(VN).toInstant())
-            .setParameter("statuses", statuses);
-        if (office != null) {
-            query.setParameter("office", office);
-        }
-        List<Object[]> orders = query.getResultList();
-
-        Map<Long, BigDecimal[]> paid = paidBySide(orders.stream().map(r -> ((ShipmentOrder) r[0]).getId()).toList());
+        Instant start = f.atStartOfDay(VN).toInstant();
+        Instant end = t.plusDays(1).atStartOfDay(VN).toInstant();
         Map<String, String> names = officeNames();
-
         List<Row> rows = new ArrayList<>();
-        for (Object[] r : orders) {
-            ShipmentOrder o = (ShipmentOrder) r[0];
-            String fromCode = key(r[1]);
-            String toCode = key(r[2]);
-            BigDecimal[] sides = paid.getOrDefault(o.getId(), new BigDecimal[] { BigDecimal.ZERO, BigDecimal.ZERO });
-            Fees fees = feesOf(o);
-            addRow(rows, o, fromCode, "SENDER", share(fees, sides[0]), office, names);
-            addRow(rows, o, toCode, "DELIVERY", share(fees, sides[1]), office, names);
+
+        List<RevenueLedger.ReceiptLine> lines = revenueLedger.receiptLines(start, end);
+        if (k != Kind.BACKLOG) {
+            List<RevenueLedger.ReceiptLine> mine = lines
+                .stream()
+                .filter(l -> l.fare().signum() > 0 && (office == null || office.equals(l.officeCode())))
+                .toList();
+            Map<Long, ShipmentOrder> orders = ordersById(mine.stream().map(RevenueLedger.ReceiptLine::orderId).distinct().toList());
+            for (RevenueLedger.ReceiptLine l : mine) {
+                ShipmentOrder o = orders.get(l.orderId());
+                if (o != null) {
+                    addRow(rows, o, l.officeCode(), "RECEIPT", l.receiptCode(), share(feesOf(o), l.fare()), names);
+                }
+            }
+        }
+        if (k != Kind.RECEIPT) {
+            for (RevenueLedger.BacklogOrder b : revenueLedger.backlog(start, end, lines)) {
+                if (office == null || office.equals(b.officeCode())) {
+                    addRow(rows, b.order(), b.officeCode(), "BACKLOG", null, share(feesOf(b.order()), b.remaining()), names);
+                }
+            }
         }
         rows.sort(
             Comparator.comparing(Row::createdAt, Comparator.nullsLast(Comparator.reverseOrder()))
                 .thenComparing(Row::orderCode)
-                .thenComparing(Row::side, Comparator.reverseOrder())
+                .thenComparing(Row::source, Comparator.reverseOrder())
+                .thenComparing(Row::receiptCode, Comparator.nullsLast(Comparator.naturalOrder()))
         );
         return new Report(f, t, office, k, rows, totals(rows));
     }
 
-    private void addRow(
+    private static void addRow(
         List<Row> rows,
         ShipmentOrder o,
         String officeCode,
-        String side,
+        String source,
+        String receiptCode,
         Share s,
-        String office,
         Map<String, String> names
     ) {
         if (s == null || s.total().signum() <= 0) {
-            return;
-        }
-        if (office != null && !office.equals(officeCode)) {
             return;
         }
         rows.add(
@@ -202,7 +181,8 @@ public class RevenueReportService {
                 o.getCreatedAt(),
                 officeCode,
                 names.getOrDefault(officeCode, officeCode.isEmpty() ? "Chưa rõ VP" : officeCode),
-                side,
+                source,
+                receiptCode,
                 o.getStatus(),
                 s.goods(),
                 s.delivery(),
@@ -215,23 +195,14 @@ public class RevenueReportService {
         );
     }
 
-    /** orderId → [thu phía gửi, thu lúc giao]; chỉ tính cước (TRUOC / SAU), bỏ COD thu hộ. */
-    private Map<Long, BigDecimal[]> paidBySide(List<Long> ids) {
-        Map<Long, BigDecimal[]> out = new HashMap<>();
+    private Map<Long, ShipmentOrder> ordersById(List<Long> ids) {
+        Map<Long, ShipmentOrder> out = new HashMap<>();
         for (int i = 0; i < ids.size(); i += ID_CHUNK) {
-            List<Object[]> rows = em
-                .createQuery(
-                    "select p.order.id, p.paymentKind, p.note, p.amount from OrderPayment p" +
-                    " where p.order.id in :ids and p.paymentKind in :kinds",
-                    Object[].class
-                )
+            for (ShipmentOrder o : em
+                .createQuery("select o from ShipmentOrder o where o.id in :ids", ShipmentOrder.class)
                 .setParameter("ids", ids.subList(i, Math.min(ids.size(), i + ID_CHUNK)))
-                .setParameter("kinds", List.of(PaymentKind.TRUOC, PaymentKind.SAU))
-                .getResultList();
-            for (Object[] r : rows) {
-                BigDecimal[] sides = out.computeIfAbsent((Long) r[0], x -> new BigDecimal[] { BigDecimal.ZERO, BigDecimal.ZERO });
-                int idx = ReceiptSettlement.isDeliverySidePayment((PaymentKind) r[1], (String) r[2]) ? 1 : 0;
-                sides[idx] = sides[idx].add(OrderMoney.nz((BigDecimal) r[3]));
+                .getResultList()) {
+                out.put(o.getId(), o);
             }
         }
         return out;

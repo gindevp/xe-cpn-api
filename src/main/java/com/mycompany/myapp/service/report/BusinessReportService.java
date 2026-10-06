@@ -3,7 +3,6 @@ package com.mycompany.myapp.service.report;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.OfficeRepository;
-import com.mycompany.myapp.repository.ReceiptRepository;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.invoice.InvoicePolicy;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
@@ -26,9 +25,10 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Báo cáo kinh doanh màn Tổng quan, theo khoảng ngày (giờ VN):
  * <ul>
- *   <li>DT phiếu thu = tổng phiếu thu đã xác nhận, lọc theo ngày thu tiền, theo VP lập phiếu;</li>
+ *   <li>DT phiếu thu = phần cước (bỏ COD thu hộ) của phiếu thu đã xác nhận, lọc theo ngày thu tiền, theo VP lập phiếu;</li>
  *   <li>Đơn giao thành công = đơn DELIVERED có lần POD cuối trong khoảng, theo VP giao (VP nhận);</li>
- *   <li>Đơn tồn = đơn tạo trong khoảng, chưa kết thúc (giao / huỷ / hoàn xong) tại cuối khoảng, theo VP gửi; DT đơn tồn = tổng phải thu;</li>
+ *   <li>Đơn tồn = đơn tạo trong khoảng, chưa kết thúc (giao / huỷ / hoàn xong) tại cuối khoảng, theo VP gửi;
+ *       DT đơn tồn = cước còn lại chưa lên phiếu thu của kỳ (xem {@link RevenueLedger});</li>
  *   <li>Tổng DT = DT phiếu thu + DT đơn tồn; Tổng số đơn = giao thành công + đơn tồn.</li>
  * </ul>
  * Kỳ so sánh = cùng khoảng ngày lùi 1 tháng.
@@ -39,29 +39,20 @@ public class BusinessReportService {
 
     static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     static final int MAX_RANGE_DAYS = 366;
-    private static final List<OrderStatus> TERMINAL = List.of(OrderStatus.DELIVERED, OrderStatus.CANCELLED, OrderStatus.RETURNED);
-    private static final List<String> END_ACTIONS;
-
-    static {
-        List<String> end = new ArrayList<>(InvoicePolicy.DONE_ACTIONS);
-        end.add("CANCEL");
-        end.add("AUTO_CANCEL");
-        END_ACTIONS = List.copyOf(end);
-    }
 
     private final EntityManager em;
-    private final ReceiptRepository receiptRepository;
+    private final RevenueLedger revenueLedger;
     private final OfficeRepository officeRepository;
     private final StaffAccessService staffAccessService;
 
     public BusinessReportService(
         EntityManager em,
-        ReceiptRepository receiptRepository,
+        RevenueLedger revenueLedger,
         OfficeRepository officeRepository,
         StaffAccessService staffAccessService
     ) {
         this.em = em;
-        this.receiptRepository = receiptRepository;
+        this.revenueLedger = revenueLedger;
         this.officeRepository = officeRepository;
         this.staffAccessService = staffAccessService;
     }
@@ -121,9 +112,11 @@ public class BusinessReportService {
         Period prev = cur.previousMonth();
 
         Map<String, long[]> delivered = deliveredByOffice(cur);
-        Map<String, Object[]> backlog = backlogByOffice(cur);
-        Totals current = totals(cur, office, delivered, backlog);
-        Totals previous = totals(prev, office, deliveredByOffice(prev), backlogByOffice(prev));
+        List<RevenueLedger.ReceiptLine> curLines = revenueLedger.receiptLines(cur.start(), cur.end());
+        Map<String, Object[]> backlog = backlogByOffice(cur, curLines);
+        Totals current = totals(office, curLines, delivered, backlog);
+        List<RevenueLedger.ReceiptLine> prevLines = revenueLedger.receiptLines(prev.start(), prev.end());
+        Totals previous = totals(office, prevLines, deliveredByOffice(prev), backlogByOffice(prev, prevLines));
 
         return new Report(f, t, office, current, prev.from(), prev.to(), previous, officeRows(office, delivered, backlog));
     }
@@ -139,8 +132,18 @@ public class BusinessReportService {
         return requested.trim().toUpperCase(Locale.ROOT);
     }
 
-    private Totals totals(Period p, String office, Map<String, long[]> delivered, Map<String, Object[]> backlog) {
-        BigDecimal receipt = receiptRepository.sumListTotal(office, null, null, null, null, null, null, "CONFIRMED", p.start(), p.end());
+    private Totals totals(
+        String office,
+        List<RevenueLedger.ReceiptLine> lines,
+        Map<String, long[]> delivered,
+        Map<String, Object[]> backlog
+    ) {
+        BigDecimal receipt = BigDecimal.ZERO;
+        for (RevenueLedger.ReceiptLine l : lines) {
+            if (office == null || office.equalsIgnoreCase(l.officeCode())) {
+                receipt = receipt.add(l.fare());
+            }
+        }
         long d = 0;
         long b = 0;
         BigDecimal bRev = BigDecimal.ZERO;
@@ -181,27 +184,13 @@ public class BusinessReportService {
         return out;
     }
 
-    /** VP gửi → [số đơn tồn, tổng phải thu] của đơn tạo trong khoảng, chưa kết thúc tại cuối khoảng. */
-    private Map<String, Object[]> backlogByOffice(Period p) {
-        List<Object[]> rows = em
-            .createQuery(
-                "select f.code, count(o), coalesce(sum(o.fareAmount), 0) from ShipmentOrder o left join o.fromOffice f" +
-                " where o.createdAt >= :start and o.createdAt < :end and o.status <> :draft" +
-                " and (o.status not in :terminal or exists (select 1 from OrderEvent e where e.order = o" +
-                " and upper(e.action) in :endActs and e.eventAt >= :end))" +
-                " group by f.code",
-                Object[].class
-            )
-            .setParameter("start", p.start())
-            .setParameter("end", p.end())
-            .setParameter("draft", OrderStatus.DRAFT)
-            .setParameter("terminal", TERMINAL)
-            .setParameter("endActs", END_ACTIONS)
-            .getResultList();
+    /** VP gửi → [số đơn tồn, cước còn lại chưa lên phiếu thu của kỳ]. */
+    private Map<String, Object[]> backlogByOffice(Period p, List<RevenueLedger.ReceiptLine> periodLines) {
         Map<String, Object[]> out = new LinkedHashMap<>();
-        for (Object[] r : rows) {
-            BigDecimal sum = r[2] instanceof BigDecimal bd ? bd : new BigDecimal(String.valueOf(r[2]));
-            out.put(key(r[0]), new Object[] { ((Number) r[1]).longValue(), sum });
+        for (RevenueLedger.BacklogOrder b : revenueLedger.backlog(p.start(), p.end(), periodLines)) {
+            Object[] agg = out.computeIfAbsent(b.officeCode(), x -> new Object[] { 0L, BigDecimal.ZERO });
+            agg[0] = (Long) agg[0] + 1;
+            agg[1] = ((BigDecimal) agg[1]).add(b.remaining());
         }
         return out;
     }

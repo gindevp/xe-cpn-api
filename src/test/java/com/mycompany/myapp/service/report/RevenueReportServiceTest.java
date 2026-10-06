@@ -3,8 +3,6 @@ package com.mycompany.myapp.service.report;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mycompany.myapp.domain.ShipmentOrder;
-import com.mycompany.myapp.domain.enumeration.PaymentKind;
-import com.mycompany.myapp.service.finance.ReceiptSettlement;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 
@@ -73,13 +71,5 @@ class RevenueReportServiceTest {
         ShipmentOrder o = order();
         o.setGoodsFareAmount(null);
         assertThat(RevenueReportService.feesOf(o).goods()).isEqualByComparingTo("60000");
-    }
-
-    @Test
-    void paymentSideFollowsReceiptSettlement() {
-        assertThat(ReceiptSettlement.isDeliverySidePayment(PaymentKind.SAU, "POD QUAY")).isTrue();
-        assertThat(ReceiptSettlement.isDeliverySidePayment(PaymentKind.SAU, "RECEIPT")).isTrue();
-        assertThat(ReceiptSettlement.isDeliverySidePayment(PaymentKind.SAU, "RECEIPT_SENDER")).isFalse();
-        assertThat(ReceiptSettlement.isDeliverySidePayment(PaymentKind.TRUOC, null)).isFalse();
     }
 }

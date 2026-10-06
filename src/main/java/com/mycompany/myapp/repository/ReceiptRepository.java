@@ -68,6 +68,20 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long>, JpaSpec
         Pageable pageable
     );
 
+    @Query("select r.id from Receipt r left join r.office o" + LIST_WHERE)
+    List<Long> findListIds(
+        @Param("officeCode") String officeCode,
+        @Param("createdBy") String createdBy,
+        @Param("codeLike") String codeLike,
+        @Param("payerLike") String payerLike,
+        @Param("creatorLike") String creatorLike,
+        @Param("createdFrom") Instant createdFrom,
+        @Param("createdTo") Instant createdTo,
+        @Param("status") String status,
+        @Param("paidFrom") Instant paidFrom,
+        @Param("paidTo") Instant paidTo
+    );
+
     @Query("select coalesce(sum(r.totalAmount), 0) from Receipt r left join r.office o" + LIST_WHERE)
     java.math.BigDecimal sumListTotal(
         @Param("officeCode") String officeCode,
