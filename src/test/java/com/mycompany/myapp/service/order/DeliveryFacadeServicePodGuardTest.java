@@ -67,6 +67,34 @@ class DeliveryFacadeServicePodGuardTest {
         assertThatCode(() -> DeliveryFacadeService.assertReceiverCollectAllowed(o, new BigDecimal("60000"))).doesNotThrowAnyException();
     }
 
+    private static ShipmentOrder ahamove(String partnerStatus) {
+        ShipmentOrder o = order(OrderStatus.OUT_FOR_DELIVERY, 1, 2, null);
+        o.setPartnerCode("AHAMOVE");
+        o.setPartnerOrderId("AHA1");
+        o.setPartnerStatus(partnerStatus);
+        return o;
+    }
+
+    @Test
+    void ahamoveDeliveringBlocksManualPodForStaff() {
+        assertThatThrownBy(() -> DeliveryFacadeService.assertPartnerPodAllowed(ahamove("IN PROCESS"), false))
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("ahamoveDeliveringPod");
+    }
+
+    @Test
+    void ahamoveDeliveringAllowsAdminOverride() {
+        assertThatCode(() -> DeliveryFacadeService.assertPartnerPodAllowed(ahamove("ACCEPTED"), true)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void ahamoveCompletedOrInternalShipperAllowsManualPod() {
+        assertThatCode(() -> DeliveryFacadeService.assertPartnerPodAllowed(ahamove("COMPLETED"), false)).doesNotThrowAnyException();
+        assertThatCode(() -> DeliveryFacadeService.assertPartnerPodAllowed(ahamove("CANCELLED"), false)).doesNotThrowAnyException();
+        assertThatCode(() -> DeliveryFacadeService.assertPartnerPodAllowed(order(OrderStatus.OUT_FOR_DELIVERY, 1, 2, null), false)
+        ).doesNotThrowAnyException();
+    }
+
     @Test
     void atDestOrOutForDeliveryIsAllowed() {
         assertThatCode(() -> DeliveryFacadeService.assertArrivedForPod(order(OrderStatus.AT_DEST, 1, 2, 2L))).doesNotThrowAnyException();

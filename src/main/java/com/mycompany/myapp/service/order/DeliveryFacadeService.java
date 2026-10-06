@@ -16,6 +16,8 @@ import com.mycompany.myapp.repository.OrderPaymentRepository;
 import com.mycompany.myapp.repository.OrderPodPhotoRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.repository.ShipperRepository;
+import com.mycompany.myapp.security.AuthoritiesConstants;
+import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.AddPaymentRequest;
@@ -77,6 +79,7 @@ public class DeliveryFacadeService {
         if (order.getStatus() == OrderStatus.DELIVERED) {
             throw new BadRequestAlertException("Already delivered (E-POD-057)", ENTITY, "alreadyDelivered");
         }
+        assertPartnerPodAllowed(order, SecurityUtils.hasCurrentUserThisAuthority(AuthoritiesConstants.ADMIN));
         assertArrivedForPod(order);
         if (req.getPhotos() == null || req.getPhotos().isEmpty()) {
             throw new BadRequestAlertException("At least 1 POD photo required", ENTITY, "podPhotoRequired");
@@ -291,6 +294,20 @@ public class DeliveryFacadeService {
                 "Đơn người gửi trả — cước còn nợ do VP gửi lập phiếu thu, không thu người nhận khi giao. Để số thu = 0.",
                 ENTITY,
                 "senderPaysNoCollect"
+            );
+        }
+    }
+
+    /**
+     * Ahamove đang giao → POD do webhook (COMPLETED + ảnh). Ahamove đã COMPLETED (không ảnh) thì POD tay được;
+     * webhook không về thì chỉ Admin POD tay.
+     */
+    static void assertPartnerPodAllowed(ShipmentOrder order, boolean admin) {
+        if (AhamoveDispatchService.partnerActive(order) && !admin) {
+            throw new BadRequestAlertException(
+                "Đơn đang giao qua Ahamove — chờ Ahamove báo giao xong (ảnh POD tự lưu)",
+                ENTITY,
+                "ahamoveDeliveringPod"
             );
         }
     }
