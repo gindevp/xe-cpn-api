@@ -171,6 +171,12 @@ class FinanceFacadeServiceReceiptCodTest {
             assertThat(p.getAmount()).isEqualByComparingTo("50000");
             assertThat(p.getNote()).isEqualTo("RECEIPT_COD");
         });
+
+        ArgumentCaptor<com.mycompany.myapp.domain.OrderEvent> evCap = ArgumentCaptor.forClass(com.mycompany.myapp.domain.OrderEvent.class);
+        verify(orderEventRepository).save(evCap.capture());
+        assertThat(evCap.getValue().getAction()).isEqualTo("RECEIPT_CREATE");
+        assertThat(evCap.getValue().getDetail()).isEqualTo(dto.receiptCode() + " · 80.000 đ");
+        assertThat(evCap.getValue().getOrder()).isSameAs(order);
     }
 
     @Test

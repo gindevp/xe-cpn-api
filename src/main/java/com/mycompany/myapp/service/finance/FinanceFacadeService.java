@@ -582,6 +582,13 @@ public class FinanceFacadeService {
         for (ReceiptOrderLine rol : lines) {
             rol.setReceipt(receipt);
             receiptOrderLineRepository.save(rol);
+            appendReceiptEvent(
+                rol.getOrder(),
+                "RECEIPT_CREATE",
+                receipt.getReceiptCode() + " · " + money(rol.getAmountCollected()),
+                actor,
+                now
+            );
         }
         auditRecorder.record(
             "RECEIPT_CREATE",
@@ -976,9 +983,28 @@ public class FinanceFacadeService {
             orderCodes(lines) +
             " · lý do: " +
             reason;
+        Instant now = Instant.now();
+        String actor = actor();
+        for (ReceiptOrderLine line : lines) {
+            appendReceiptEvent(line.getOrder(), "RECEIPT_CANCEL", receipt.getReceiptCode() + " · lý do: " + reason, actor, now);
+        }
         receiptOrderLineRepository.deleteAll(lines);
         receiptRepository.delete(receipt);
         auditRecorder.record("RECEIPT_CANCEL", AUDIT_RECEIPT, receiptCode.trim(), detail);
+    }
+
+    /** Lịch sử đơn: detail bắt đầu bằng mã phiếu ({@code mã · ...}) — FE tách mã để mở danh sách phiếu thu. */
+    private void appendReceiptEvent(ShipmentOrder order, String action, String detail, String actor, Instant at) {
+        if (order == null || order.getId() == null) {
+            return;
+        }
+        OrderEvent event = new OrderEvent();
+        event.setEventAt(at);
+        event.setAction(action);
+        event.setDetail(detail.length() > OrderEvent.DETAIL_MAX ? detail.substring(0, OrderEvent.DETAIL_MAX) : detail);
+        event.setActorUsername(actor == null ? "system" : actor);
+        event.setOrder(order);
+        orderEventRepository.save(event);
     }
 
     private static boolean isPaymentOfReceipt(OrderPayment p, Instant receiptCreatedAt, String creator) {
