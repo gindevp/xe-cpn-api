@@ -6,11 +6,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.mycompany.myapp.domain.Office;
+import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.OfficeRepository;
@@ -23,6 +25,7 @@ import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.OrderDetailDTO;
 import com.mycompany.myapp.service.dto.order.PatchOrderRequest;
+import com.mycompany.myapp.service.partner.DoorKmEstimator;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.util.List;
@@ -73,6 +76,9 @@ class OrderFacadeServicePatchFareTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private DoorKmEstimator doorKmEstimator;
 
     private OrderFacadeService service;
     private ShipmentOrder order;
@@ -273,6 +279,94 @@ class OrderFacadeServicePatchFareTest {
         assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("65000");
         assertThat(order.getFareAmount()).isEqualByComparingTo("40000");
         verify(fareCalculator, never()).estimate(any(), anyBoolean(), anyBoolean(), any(), any());
+    }
+
+    @Test
+    void patch_tickHomeDelivery_usesAhamoveKmForDoorFee() {
+        stubLoadAndDetail();
+        service.setDoorKmEstimator(doorKmEstimator);
+        Office dest = new Office();
+        dest.setCode("VP_BC");
+        order.setToOffice(dest);
+        order.setGoodsFareAmount(new BigDecimal("45000"));
+        order.setFareAmount(new BigDecimal("45000"));
+        order.setPaidAmount(BigDecimal.ZERO);
+        order.setHomeDelivery(false);
+        order.setDeliveryAddress("2b ngách 1 ngõ 318");
+        BigDecimal km = new BigDecimal("5.2");
+        when(doorKmEstimator.km(eq(dest), isNull(), isNull(), eq("2b ngách 1 ngõ 318"), eq("giao"))).thenReturn(km);
+        when(fareCalculator.estimate(any(), eq(false), eq(true), any(), any(), isNull(), eq(km))).thenReturn(
+            new SimpleFareCalculator.FareBreakdown(
+                new BigDecimal("45000"),
+                BigDecimal.ZERO,
+                new BigDecimal("80000"),
+                new BigDecimal("125000")
+            )
+        );
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setHomeDelivery(true);
+
+        service.patch("XE-H1-001", req);
+
+        assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("80000");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("125000");
+        ArgumentCaptor<OrderEvent> ev = ArgumentCaptor.forClass(OrderEvent.class);
+        verify(orderEventRepository).save(ev.capture());
+        assertThat(ev.getValue().getDetail()).contains("km giao 5.2");
+    }
+
+    @Test
+    void patch_changeDeliveryAddressWhileHome_reestimatesKm() {
+        stubLoadAndDetail();
+        service.setDoorKmEstimator(doorKmEstimator);
+        Office dest = new Office();
+        dest.setCode("VP_BC");
+        order.setFinalToOffice(dest);
+        order.setHomeDelivery(true);
+        order.setDeliveryAddress("địa chỉ cũ");
+        order.setGoodsFareAmount(new BigDecimal("45000"));
+        order.setDeliveryFeeAmount(new BigDecimal("60000"));
+        order.setFareAmount(new BigDecimal("105000"));
+        order.setPaidAmount(BigDecimal.ZERO);
+        BigDecimal km = new BigDecimal("6");
+        when(doorKmEstimator.km(eq(dest), isNull(), isNull(), eq("địa chỉ mới"), eq("giao"))).thenReturn(km);
+        when(fareCalculator.estimate(any(), eq(false), eq(true), any(), any(), isNull(), eq(km))).thenReturn(
+            new SimpleFareCalculator.FareBreakdown(
+                new BigDecimal("45000"),
+                BigDecimal.ZERO,
+                new BigDecimal("80000"),
+                new BigDecimal("125000")
+            )
+        );
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setDeliveryAddress("địa chỉ mới");
+
+        service.patch("XE-H1-001", req);
+
+        assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("80000");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("125000");
+    }
+
+    @Test
+    void patch_tickHomeDelivery_withoutAddress_rejected() {
+        when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("XE-H1-001")).thenReturn(Optional.of(order));
+        Office dest = new Office();
+        dest.setLatitude(new BigDecimal("21.0"));
+        dest.setLongitude(new BigDecimal("105.0"));
+        order.setToOffice(dest);
+        order.setHomeDelivery(false);
+        order.setDeliveryAddress(null);
+        service.setDoorKmEstimator(
+            new DoorKmEstimator(org.mockito.Mockito.mock(com.mycompany.myapp.service.partner.AhamoveOrderClient.class))
+        );
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setHomeDelivery(true);
+
+        assertThatThrownBy(() -> service.patch("XE-H1-001", req))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("doorKmAddressRequired");
+        verify(shipmentOrderRepository, never()).save(any());
     }
 
     private void stubLoadAndDetail() {

@@ -68,6 +68,7 @@ public class OrderFacadeService {
     private final OfficeRepository officeRepository;
     private final OrderCodeGenerator orderCodeGenerator;
     private final SimpleFareCalculator fareCalculator;
+    private com.mycompany.myapp.service.partner.DoorKmEstimator doorKmEstimator;
     private final StaffAccessService staffAccessService;
     private final OrderLegRepository orderLegRepository;
     private final DayClosureGuard dayClosureGuard;
@@ -105,6 +106,11 @@ public class OrderFacadeService {
         this.orderIssueRepository = orderIssueRepository;
         this.draftExpiryService = draftExpiryService;
         this.eventPublisher = eventPublisher;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setDoorKmEstimator(com.mycompany.myapp.service.partner.DoorKmEstimator doorKmEstimator) {
+        this.doorKmEstimator = doorKmEstimator;
     }
 
     @Transactional(readOnly = true)
@@ -936,6 +942,10 @@ public class OrderFacadeService {
         if (req.getNote() != null) {
             order.setNote(req.getNote());
         }
+        boolean hpBefore = Boolean.TRUE.equals(order.getHomePickup());
+        boolean hdBefore = Boolean.TRUE.equals(order.getHomeDelivery());
+        String pickupAddrBefore = order.getPickupAddress();
+        String deliveryAddrBefore = order.getDeliveryAddress();
         if (req.getPickupAddress() != null) {
             order.setPickupAddress(req.getPickupAddress());
         }
@@ -952,24 +962,48 @@ public class OrderFacadeService {
             assertFareNotBelowPaid(req.getFareAmount(), order.getPaidAmount());
             order.setFareAmount(req.getFareAmount());
         }
-        boolean doorChanged = false;
         SimpleFareCalculator.FareBreakdown doorFees = null;
-        // Chỉ tính lại phí tận nơi khi cờ thật sự đổi — gửi lại cùng giá trị không được làm mất phí đã tính theo KM lúc tạo.
-        if (req.getHomePickup() != null && req.getHomePickup() != Boolean.TRUE.equals(order.getHomePickup())) {
+        BigDecimal estimatedPickupKm = null;
+        BigDecimal estimatedDeliveryKm = null;
+        // Cờ đổi, hoặc đổi địa chỉ khi đang bật tận nơi: tính lại phí. Gửi lại cùng cờ thì giữ phí đã tính theo km.
+        if (req.getHomePickup() != null) {
             order.setHomePickup(req.getHomePickup());
-            doorChanged = true;
         }
-        if (req.getHomeDelivery() != null && req.getHomeDelivery() != Boolean.TRUE.equals(order.getHomeDelivery())) {
+        if (req.getHomeDelivery() != null) {
             order.setHomeDelivery(req.getHomeDelivery());
-            doorChanged = true;
         }
-        if (doorChanged) {
-            boolean hp = Boolean.TRUE.equals(order.getHomePickup());
-            boolean hd = Boolean.TRUE.equals(order.getHomeDelivery());
+        boolean hp = Boolean.TRUE.equals(order.getHomePickup());
+        boolean hd = Boolean.TRUE.equals(order.getHomeDelivery());
+        boolean pickupFlagChanged = hp != hpBefore;
+        boolean deliveryFlagChanged = hd != hdBefore;
+        boolean pickupAddrChanged = !sameText(pickupAddrBefore, order.getPickupAddress());
+        boolean deliveryAddrChanged = !sameText(deliveryAddrBefore, order.getDeliveryAddress());
+        boolean recomputeDoor = pickupFlagChanged || deliveryFlagChanged || (hp && pickupAddrChanged) || (hd && deliveryAddrChanged);
+        if (recomputeDoor) {
             order.setServiceType(resolveServiceType(hp, hd));
-            doorFees = fareCalculator.estimate(order.getWeightKg(), hp, hd, order.getFromOffice(), order.getToOffice());
-            order.setPickupFeeAmount(doorFees.pickupFee());
-            order.setDeliveryFeeAmount(doorFees.deliveryFee());
+            BigDecimal prevPickupFee = order.getPickupFeeAmount();
+            BigDecimal prevDeliveryFee = order.getDeliveryFeeAmount();
+            if (hp && (pickupFlagChanged || pickupAddrChanged)) {
+                estimatedPickupKm = requireDoorKm(order.getFromOffice(), order.getPickupAddress(), "lấy");
+            }
+            if (hd && (deliveryFlagChanged || deliveryAddrChanged)) {
+                Office dest = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
+                estimatedDeliveryKm = requireDoorKm(dest, order.getDeliveryAddress(), "giao");
+            }
+            doorFees = estimatedPickupKm != null || estimatedDeliveryKm != null
+                ? fareCalculator.estimate(
+                    order.getWeightKg(),
+                    hp,
+                    hd,
+                    order.getFromOffice(),
+                    order.getToOffice(),
+                    estimatedPickupKm,
+                    estimatedDeliveryKm
+                )
+                : fareCalculator.estimate(order.getWeightKg(), hp, hd, order.getFromOffice(), order.getToOffice());
+            // Phía không đổi km thì giữ phí cũ — null km sẽ bị tính nhầm mức 0–4 km.
+            order.setPickupFeeAmount(hp ? (estimatedPickupKm != null ? doorFees.pickupFee() : prevPickupFee) : BigDecimal.ZERO);
+            order.setDeliveryFeeAmount(hd ? (estimatedDeliveryKm != null ? doorFees.deliveryFee() : prevDeliveryFee) : BigDecimal.ZERO);
             // Legs: do not rebuild/wipe existing OrderLeg rows on door-flag PATCH (LEG regression safe)
         }
         if (req.getPickingAt() != null) {
@@ -1074,6 +1108,10 @@ public class OrderFacadeService {
                 String changes = OrderEditDiff.describe(fieldsBefore, OrderEditDiff.snapshot(order));
                 if (!changes.isEmpty()) {
                     eventDetail = changes;
+                }
+                String kmNote = doorKmNote(estimatedPickupKm, estimatedDeliveryKm);
+                if (!kmNote.isEmpty()) {
+                    eventDetail = eventDetail + " · " + kmNote;
                 }
             }
             appendEvent(order, eventAction, eventDetail, currentActor());
@@ -2216,6 +2254,34 @@ public class OrderFacadeService {
     }
 
     /**
+    /** KM Ahamove từ VP tới địa chỉ; thiếu địa chỉ, thiếu GPS VP hoặc Ahamove lỗi thì chặn lưu. */
+    private BigDecimal requireDoorKm(Office office, String address, String label) {
+        if (doorKmEstimator == null) {
+            throw new BadRequestAlertException("Không tính được km " + label + " tận nơi", ENTITY, "doorKmEstimate");
+        }
+        return doorKmEstimator.km(office, null, null, address, label);
+    }
+
+    private static boolean sameText(String a, String b) {
+        String x = a == null ? "" : a.trim();
+        String y = b == null ? "" : b.trim();
+        return x.equals(y);
+    }
+
+    private static String doorKmNote(BigDecimal pickupKm, BigDecimal deliveryKm) {
+        StringBuilder sb = new StringBuilder();
+        if (pickupKm != null) {
+            sb.append("km lấy ").append(pickupKm.stripTrailingZeros().toPlainString());
+        }
+        if (deliveryKm != null) {
+            if (sb.length() > 0) {
+                sb.append(" · ");
+            }
+            sb.append("km giao ").append(deliveryKm.stripTrailingZeros().toPlainString());
+        }
+        return sb.toString();
+    }
+
     /** Cước hàng (hoặc giá bảng nếu đơn chưa lưu cước hàng) + phí tận nơi + phí COD + phí khai giá − giảm giá. */
     static BigDecimal recalcFareAfterDoorChange(ShipmentOrder order, SimpleFareCalculator.FareBreakdown doorFees) {
         BigDecimal goods = order.getGoodsFareAmount() != null
