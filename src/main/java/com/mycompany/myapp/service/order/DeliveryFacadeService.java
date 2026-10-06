@@ -26,6 +26,7 @@ import com.mycompany.myapp.service.dto.order.OrderDetailDTO;
 import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
 import com.mycompany.myapp.service.dto.order.PodRequest;
 import com.mycompany.myapp.service.dto.order.PodResponse;
+import com.mycompany.myapp.service.partner.AhamoveDispatchService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -138,6 +139,7 @@ public class DeliveryFacadeService {
         if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY) {
             throw new BadRequestAlertException("Fail only from OUT_FOR_DELIVERY", ENTITY, "failInvalidStatus");
         }
+        AhamoveDispatchService.assertNoActivePartner(order);
 
         int nextFail = (order.getFailCount() == null ? 0 : order.getFailCount()) + 1;
         order.setFailCount(nextFail);

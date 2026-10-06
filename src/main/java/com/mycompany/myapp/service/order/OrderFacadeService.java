@@ -38,6 +38,7 @@ import com.mycompany.myapp.service.dto.order.TrackOrderRequest;
 import com.mycompany.myapp.service.dto.order.TrackOrderResponse;
 import com.mycompany.myapp.service.invoice.OrderDeliveredEvent;
 import com.mycompany.myapp.service.invoice.VietnamTaxCode;
+import com.mycompany.myapp.service.partner.AhamoveDispatchService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -681,6 +682,9 @@ public class OrderFacadeService {
         OrderStatus to = req.getToStatus();
         if (!OrderStatusTransitions.canTransition(from, to)) {
             throw new BadRequestAlertException("Invalid transition " + from + " -> " + to, ENTITY, "invalidtransition");
+        }
+        if (to == OrderStatus.FAILED_DELIVERY) {
+            AhamoveDispatchService.assertNoActivePartner(order);
         }
         if (to == OrderStatus.CANCELLED && !isBlank(req.getDetail())) {
             order.setCancelReason(req.getDetail());

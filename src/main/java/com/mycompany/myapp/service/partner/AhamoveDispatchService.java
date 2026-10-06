@@ -53,6 +53,26 @@ public class AhamoveDispatchService {
     private static final Logger LOG = LoggerFactory.getLogger(AhamoveDispatchService.class);
     private static final String ENTITY = "ahamove";
     public static final String PARTNER_CODE = "AHAMOVE";
+    private static final java.util.Set<String> PARTNER_DONE = java.util.Set.of("CANCELLED", "COMPLETED", "FAILED");
+
+    /** Đơn Ahamove còn chạy bên đối tác (chưa huỷ / giao xong / thất bại) — không được chuyển giao thất bại thủ công. */
+    public static boolean partnerActive(ShipmentOrder order) {
+        if (order == null || !PARTNER_CODE.equals(order.getPartnerCode()) || !notBlank(order.getPartnerOrderId())) {
+            return false;
+        }
+        String st = order.getPartnerStatus();
+        return notBlank(st) && !PARTNER_DONE.contains(st.trim().toUpperCase());
+    }
+
+    public static void assertNoActivePartner(ShipmentOrder order) {
+        if (partnerActive(order)) {
+            throw new BadRequestAlertException(
+                "Đơn đang giao Ahamove (" + order.getPartnerOrderId() + ") — bấm Hủy Ahamove trước khi báo giao không thành công",
+                ENTITY,
+                "ahamoveActive"
+            );
+        }
+    }
 
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final IntegrationConfigRepository integrationConfigRepository;
@@ -193,7 +213,8 @@ public class AhamoveDispatchService {
         if (!PARTNER_CODE.equals(order.getPartnerCode()) || !notBlank(order.getPartnerOrderId())) {
             throw new BadRequestAlertException("Đơn không giao qua Ahamove", ENTITY, "ahamoveNotDispatched");
         }
-        if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY) {
+        boolean lateCancel = order.getStatus() == OrderStatus.FAILED_DELIVERY && partnerActive(order);
+        if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY && !lateCancel) {
             throw new BadRequestAlertException("Chỉ hủy khi đơn đang giao", ENTITY, "ahamoveCancelStatus");
         }
         String comment = notBlank(reason) ? reason.trim() : "CPN hủy giao";
