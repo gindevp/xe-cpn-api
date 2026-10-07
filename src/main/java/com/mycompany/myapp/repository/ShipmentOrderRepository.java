@@ -1,6 +1,7 @@
 package com.mycompany.myapp.repository;
 
 import com.mycompany.myapp.domain.ShipmentOrder;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -161,4 +162,27 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
         """
     )
     List<String> findLatestSenderNames(@Param("phone") String phone, Pageable pageable);
+
+    /**
+     * Đơn nhập kho giao (AT_DEST) quá mốc, chưa có sự cố đang mở.
+     * {@code forwardStage} null = đơn cũ chưa ghi stage, màn hình vẫn xếp vào nhập kho giao.
+     */
+    @Query(
+        """
+        select o.id from ShipmentOrder o
+        left join o.issue i
+        where o.status = :status
+          and (o.forwardStage is null or o.forwardStage = :stage)
+          and coalesce(o.updatedAt, o.createdAt) < :cutoff
+          and (i is null or i.issueStatus <> :open or i.resolvedAt is not null)
+        order by o.id
+        """
+    )
+    List<Long> findStaleDestWarehouseIds(
+        @Param("status") com.mycompany.myapp.domain.enumeration.OrderStatus status,
+        @Param("stage") com.mycompany.myapp.domain.enumeration.ForwardStage stage,
+        @Param("cutoff") Instant cutoff,
+        @Param("open") com.mycompany.myapp.domain.enumeration.IssueStatus open,
+        Pageable pageable
+    );
 }

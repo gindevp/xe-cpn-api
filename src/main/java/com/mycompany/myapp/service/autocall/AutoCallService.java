@@ -913,12 +913,17 @@ public class AutoCallService {
         return ref != null && ref.isBefore(now.minus(AUTO_EXCEPTION_AFTER));
     }
 
-    /** Ghi nhận sự cố: bỏ lịch gọi đang chờ để phút sau không gọi tiếp. */
+    /** Bỏ lịch gọi đang chờ để phút sau không gọi tiếp. */
     public void stopPendingCalls(Long orderId) {
+        stopPendingCalls(orderId, "Đơn ngoại lệ / thất lạc / hư hỏng / chờ huỷ");
+    }
+
+    public void stopPendingCalls(Long orderId, String message) {
         if (orderId == null) {
             return;
         }
-        autoCallRepository.skipScheduledForOrder(orderId, "ISSUE_OPEN", "Đơn ngoại lệ / thất lạc / hư hỏng / chờ huỷ");
+        String note = message == null || message.isBlank() ? "Không gọi nữa" : message;
+        autoCallRepository.skipScheduledForOrder(orderId, "ISSUE_OPEN", note);
         autoCallRepository.clearRetriesForOrder(orderId);
     }
 
