@@ -84,6 +84,52 @@ public final class InvoicePolicy {
         return payer != null ? payer : "KHÁCH LẺ";
     }
 
+    /** CCCD/CMND: chỉ giữ số. Rỗng → null. Có nhập thì 9 hoặc 12 số. */
+    public static String normalizeBuyerIdNumber(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String digits = raw.replaceAll("\\D", "");
+        if (digits.isEmpty()) {
+            return null;
+        }
+        if (digits.length() != 9 && digits.length() != 12) {
+            throw new IllegalArgumentException("CCCD/CMND phải gồm 9 hoặc 12 chữ số");
+        }
+        return digits;
+    }
+
+    /** SĐT người trên hóa đơn: chỉ giữ số, chuẩn 0… Rỗng → null. */
+    public static String normalizeBuyerPhone(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String digits = raw.replaceAll("\\D", "");
+        if (digits.isEmpty()) {
+            return null;
+        }
+        if (digits.startsWith("84") && digits.length() >= 11) {
+            digits = "0" + digits.substring(2);
+        }
+        if (digits.length() < 9 || digits.length() > 11) {
+            throw new IllegalArgumentException("Số điện thoại trên hóa đơn không hợp lệ");
+        }
+        return digits;
+    }
+
+    /** SĐT đưa vào MISA: ưu tiên số đã lưu trên HĐ, không có thì SĐT người trả (HĐ cá nhân). */
+    public static String buyerPhoneForInvoice(ShipmentOrder order, boolean company) {
+        String saved = order.getInvoiceBuyerPhone();
+        if (saved != null && !saved.isBlank()) {
+            return saved.trim();
+        }
+        if (company) {
+            return "";
+        }
+        String payer = payerPhone(order);
+        return payer != null ? payer.trim() : "";
+    }
+
     /** Mốc thanh toán; null = chưa tới (chưa nhập kho gửi / chưa giao). */
     public static Instant paidAt(ShipmentOrder order, Instant deliveredAt) {
         return paidAtWarehouseIn(order) ? order.getPickedUpAt() : deliveredAt;

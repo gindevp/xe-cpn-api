@@ -95,6 +95,10 @@ public class CreateOrderRequest {
     private String invoiceEmail;
     private String invoiceCompanyAddress;
     private String invoiceBuyerName;
+
+    private String invoiceBuyerIdNumber;
+
+    private String invoiceBuyerPhone;
     private String routeLabel;
     private String itineraryLabel;
 
@@ -427,6 +431,22 @@ public class CreateOrderRequest {
 
     public void setInvoiceBuyerName(String invoiceBuyerName) {
         this.invoiceBuyerName = invoiceBuyerName;
+    }
+
+    public String getInvoiceBuyerIdNumber() {
+        return invoiceBuyerIdNumber;
+    }
+
+    public void setInvoiceBuyerIdNumber(String invoiceBuyerIdNumber) {
+        this.invoiceBuyerIdNumber = invoiceBuyerIdNumber;
+    }
+
+    public String getInvoiceBuyerPhone() {
+        return invoiceBuyerPhone;
+    }
+
+    public void setInvoiceBuyerPhone(String invoiceBuyerPhone) {
+        this.invoiceBuyerPhone = invoiceBuyerPhone;
     }
 
     public String getRouteLabel() {

@@ -224,6 +224,16 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "invoice_buyer_name", length = 100)
     private String invoiceBuyerName;
 
+    /** CCCD/CMND người trên hóa đơn (không bắt buộc). */
+    @Size(max = 20)
+    @Column(name = "invoice_buyer_id_number", length = 20)
+    private String invoiceBuyerIdNumber;
+
+    /** SĐT người trên hóa đơn (không bắt buộc). Có thì ưu tiên khi xuất MISA. */
+    @Size(max = 20)
+    @Column(name = "invoice_buyer_phone", length = 20)
+    private String invoiceBuyerPhone;
+
     /** RefID gửi MISA — idempotent key, vd. XE-{orderCode}. */
     @Size(max = 80)
     @Column(name = "invoice_ref_id", length = 80)
@@ -979,6 +989,22 @@ public class ShipmentOrder implements Serializable {
 
     public void setInvoiceBuyerName(String invoiceBuyerName) {
         this.invoiceBuyerName = invoiceBuyerName;
+    }
+
+    public String getInvoiceBuyerIdNumber() {
+        return this.invoiceBuyerIdNumber;
+    }
+
+    public void setInvoiceBuyerIdNumber(String invoiceBuyerIdNumber) {
+        this.invoiceBuyerIdNumber = invoiceBuyerIdNumber;
+    }
+
+    public String getInvoiceBuyerPhone() {
+        return this.invoiceBuyerPhone;
+    }
+
+    public void setInvoiceBuyerPhone(String invoiceBuyerPhone) {
+        this.invoiceBuyerPhone = invoiceBuyerPhone;
     }
 
     public String getInvoiceRefId() {

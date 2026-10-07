@@ -131,6 +131,8 @@
     <include file="config/liquibase/changelog/20261007210000_invoice_buyer_name.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261008090000_staff_office_access.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261008100000_scan_voice.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261008110000_invoice_buyer_id_phone.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
+
 
 

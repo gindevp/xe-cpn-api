@@ -167,6 +167,7 @@ public class MeInvoiceIssueService {
         if (req.getBuyerName() != null) {
             order.setInvoiceBuyerName(InvoicePolicy.upperBuyerName(req.getBuyerName()));
         }
+        applyOptionalBuyerIds(order, req.getBuyerIdNumber(), req.getBuyerPhone());
         shipmentOrderRepository.save(order);
 
         publish(order, InvoicePolicy.TYPE_COMPANY);
@@ -292,6 +293,8 @@ public class MeInvoiceIssueService {
             order.setInvoiceCompanyAddress(null);
             order.setInvoiceEmail(null);
             order.setInvoiceBuyerName(null);
+            order.setInvoiceBuyerIdNumber(null);
+            order.setInvoiceBuyerPhone(null);
             detail = "Bỏ yêu cầu xuất hoá đơn";
         } else {
             applyBuyer(
@@ -304,6 +307,7 @@ public class MeInvoiceIssueService {
             if (req.buyerName() != null) {
                 order.setInvoiceBuyerName(InvoicePolicy.upperBuyerName(req.buyerName()));
             }
+            applyOptionalBuyerIds(order, req.buyerIdNumber(), req.buyerPhone());
             detail = "Cập nhật thông tin hoá đơn · MST " + order.getInvoiceTaxCode() + " · " + order.getInvoiceCompanyName();
         }
         shipmentOrderRepository.save(order);
@@ -544,10 +548,29 @@ public class MeInvoiceIssueService {
         String companyName,
         String address,
         String email,
-        String buyerName
+        String buyerName,
+        String buyerIdNumber,
+        String buyerPhone
     ) {
         public InvoiceInfoRequest(Boolean requested, String taxCode, String companyName, String address, String email) {
-            this(requested, taxCode, companyName, address, email, null);
+            this(requested, taxCode, companyName, address, email, null, null, null);
+        }
+
+        public InvoiceInfoRequest(Boolean requested, String taxCode, String companyName, String address, String email, String buyerName) {
+            this(requested, taxCode, companyName, address, email, buyerName, null, null);
+        }
+    }
+
+    private static void applyOptionalBuyerIds(ShipmentOrder order, String buyerIdNumber, String buyerPhone) {
+        try {
+            if (buyerIdNumber != null) {
+                order.setInvoiceBuyerIdNumber(InvoicePolicy.normalizeBuyerIdNumber(buyerIdNumber));
+            }
+            if (buyerPhone != null) {
+                order.setInvoiceBuyerPhone(InvoicePolicy.normalizeBuyerPhone(buyerPhone));
+            }
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestAlertException(e.getMessage(), ENTITY, "invoiceBuyerIdsInvalid");
         }
     }
 
@@ -579,18 +602,19 @@ public class MeInvoiceIssueService {
         if (company) {
             legalName = blankToEmpty(order.getInvoiceCompanyName());
             fullName = person;
-            phone = "";
+            phone = InvoicePolicy.buyerPhoneForInvoice(order, true);
             address = blankToEmpty(order.getInvoiceCompanyAddress());
             buyerTax = blankToEmpty(order.getInvoiceTaxCode());
             email = blankToEmpty(order.getInvoiceEmail());
         } else {
             legalName = "";
             fullName = person;
-            phone = blankToEmpty(InvoicePolicy.payerPhone(order));
+            phone = InvoicePolicy.buyerPhoneForInvoice(order, false);
             address = "";
             buyerTax = "";
             email = "";
         }
+        String buyerId = blankToEmpty(order.getInvoiceBuyerIdNumber());
         boolean sendEmail = !email.isBlank();
 
         ObjectNode invoice = objectMapper.createObjectNode();
@@ -610,6 +634,10 @@ public class MeInvoiceIssueService {
         invoice.put("ReceiverEmail", email);
         invoice.put("BuyerPhoneNumber", phone);
         invoice.put("BuyerFullName", fullName);
+        // MISA: CCCD/CMND người mua (không bắt buộc). Có thì gửi kèm.
+        if (!buyerId.isBlank()) {
+            invoice.put("BuyerIDNumber", buyerId);
+        }
 
         invoice.put("TotalSaleAmountOC", amounts.net());
         invoice.put("TotalSaleAmount", amounts.net());

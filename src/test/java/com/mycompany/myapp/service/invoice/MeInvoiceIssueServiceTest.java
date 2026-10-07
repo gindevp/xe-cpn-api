@@ -137,6 +137,20 @@ class MeInvoiceIssueServiceTest {
     }
 
     @Test
+    void issueManual_optionalCccdAndPhone_areSentToMisa() {
+        publishOk();
+        IssueInvoiceRequest req = validReq();
+        req.setBuyerIdNumber("001234567890");
+        req.setBuyerPhone("0903123456");
+        service.issueManual("VT0001ABCD", req, "u");
+        ObjectNode inv = publishedInvoice();
+        assertThat(order.getInvoiceBuyerIdNumber()).isEqualTo("001234567890");
+        assertThat(order.getInvoiceBuyerPhone()).isEqualTo("0903123456");
+        assertThat(inv.get("BuyerIDNumber").asText()).isEqualTo("001234567890");
+        assertThat(inv.get("BuyerPhoneNumber").asText()).isEqualTo("0903123456");
+    }
+
+    @Test
     void issueManual_misaError_marksFailed_noThrow() {
         when(client.publish(any(ObjectNode.class))).thenThrow(new IllegalStateException("MISA 500"));
 

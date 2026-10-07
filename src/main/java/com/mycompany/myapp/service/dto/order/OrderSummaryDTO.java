@@ -94,6 +94,10 @@ public class OrderSummaryDTO {
     private String invoiceEmail;
     private String invoiceCompanyAddress;
     private String invoiceBuyerName;
+
+    private String invoiceBuyerIdNumber;
+
+    private String invoiceBuyerPhone;
     private String invoiceRefId;
     private String invoiceStatus;
     private String invoiceType;
@@ -722,6 +726,22 @@ public class OrderSummaryDTO {
 
     public void setInvoiceBuyerName(String invoiceBuyerName) {
         this.invoiceBuyerName = invoiceBuyerName;
+    }
+
+    public String getInvoiceBuyerIdNumber() {
+        return invoiceBuyerIdNumber;
+    }
+
+    public void setInvoiceBuyerIdNumber(String invoiceBuyerIdNumber) {
+        this.invoiceBuyerIdNumber = invoiceBuyerIdNumber;
+    }
+
+    public String getInvoiceBuyerPhone() {
+        return invoiceBuyerPhone;
+    }
+
+    public void setInvoiceBuyerPhone(String invoiceBuyerPhone) {
+        this.invoiceBuyerPhone = invoiceBuyerPhone;
     }
 
     public String getInvoiceRefId() {

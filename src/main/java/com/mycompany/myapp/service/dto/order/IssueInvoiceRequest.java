@@ -14,6 +14,12 @@ public class IssueInvoiceRequest {
     /** Tên người ghi trên hóa đơn. Trống thì lấy tên người trả cước. */
     private String buyerName;
 
+    /** CCCD/CMND (không bắt buộc). */
+    private String buyerIdNumber;
+
+    /** SĐT người trên hóa đơn (không bắt buộc). */
+    private String buyerPhone;
+
     public String getTaxCode() {
         return taxCode;
     }
@@ -52,5 +58,21 @@ public class IssueInvoiceRequest {
 
     public void setBuyerName(String buyerName) {
         this.buyerName = buyerName;
+    }
+
+    public String getBuyerIdNumber() {
+        return buyerIdNumber;
+    }
+
+    public void setBuyerIdNumber(String buyerIdNumber) {
+        this.buyerIdNumber = buyerIdNumber;
+    }
+
+    public String getBuyerPhone() {
+        return buyerPhone;
+    }
+
+    public void setBuyerPhone(String buyerPhone) {
+        this.buyerPhone = buyerPhone;
     }
 }

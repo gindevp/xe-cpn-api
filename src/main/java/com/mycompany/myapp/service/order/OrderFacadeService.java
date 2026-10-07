@@ -1094,6 +1094,8 @@ public class OrderFacadeService {
             req.getInvoiceEmail(),
             req.getInvoiceCompanyAddress(),
             req.getInvoiceBuyerName(),
+            req.getInvoiceBuyerIdNumber(),
+            req.getInvoiceBuyerPhone(),
             true
         );
         if (req.getRouteLabel() != null) {
@@ -1297,6 +1299,8 @@ public class OrderFacadeService {
             req.getInvoiceEmail(),
             req.getInvoiceCompanyAddress(),
             req.getInvoiceBuyerName(),
+            req.getInvoiceBuyerIdNumber(),
+            req.getInvoiceBuyerPhone(),
             false
         );
         if (req.getRouteLabel() != null) {
@@ -1843,6 +1847,8 @@ public class OrderFacadeService {
         String email,
         String address,
         String buyerName,
+        String buyerIdNumber,
+        String buyerPhone,
         boolean patch
     ) {
         if ("ISSUED".equals(order.getInvoiceStatus()) || "DUPLICATE".equals(order.getInvoiceStatus())) {
@@ -1857,12 +1863,15 @@ public class OrderFacadeService {
                 order.setInvoiceEmail(blankToNull(email));
                 order.setInvoiceCompanyAddress(blankToNull(address));
                 order.setInvoiceBuyerName(InvoicePolicy.upperBuyerName(buyerName));
+                applyOptionalInvoiceBuyerIds(order, buyerIdNumber, buyerPhone, true);
             } else {
                 order.setInvoiceTaxCode(null);
                 order.setInvoiceCompanyName(null);
                 order.setInvoiceEmail(null);
                 order.setInvoiceCompanyAddress(null);
                 order.setInvoiceBuyerName(null);
+                order.setInvoiceBuyerIdNumber(null);
+                order.setInvoiceBuyerPhone(null);
             }
             return;
         }
@@ -1874,6 +1883,8 @@ public class OrderFacadeService {
                 order.setInvoiceEmail(null);
                 order.setInvoiceCompanyAddress(null);
                 order.setInvoiceBuyerName(null);
+                order.setInvoiceBuyerIdNumber(null);
+                order.setInvoiceBuyerPhone(null);
                 return;
             }
         }
@@ -1896,6 +1907,20 @@ public class OrderFacadeService {
         }
         if (buyerName != null) {
             order.setInvoiceBuyerName(InvoicePolicy.upperBuyerName(buyerName));
+        }
+        applyOptionalInvoiceBuyerIds(order, buyerIdNumber, buyerPhone, false);
+    }
+
+    private static void applyOptionalInvoiceBuyerIds(ShipmentOrder order, String buyerIdNumber, String buyerPhone, boolean force) {
+        try {
+            if (force || buyerIdNumber != null) {
+                order.setInvoiceBuyerIdNumber(buyerIdNumber == null ? null : InvoicePolicy.normalizeBuyerIdNumber(buyerIdNumber));
+            }
+            if (force || buyerPhone != null) {
+                order.setInvoiceBuyerPhone(buyerPhone == null ? null : InvoicePolicy.normalizeBuyerPhone(buyerPhone));
+            }
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestAlertException(e.getMessage(), ENTITY, "invoiceBuyerIdsInvalid");
         }
     }
 
@@ -2059,6 +2084,8 @@ public class OrderFacadeService {
         dto.setInvoiceEmail(o.getInvoiceEmail());
         dto.setInvoiceCompanyAddress(o.getInvoiceCompanyAddress());
         dto.setInvoiceBuyerName(o.getInvoiceBuyerName());
+        dto.setInvoiceBuyerIdNumber(o.getInvoiceBuyerIdNumber());
+        dto.setInvoiceBuyerPhone(o.getInvoiceBuyerPhone());
         dto.setInvoiceRefId(o.getInvoiceRefId());
         dto.setInvoiceStatus(o.getInvoiceStatus());
         dto.setInvoiceType(com.mycompany.myapp.service.invoice.InvoicePolicy.typeOf(o));
