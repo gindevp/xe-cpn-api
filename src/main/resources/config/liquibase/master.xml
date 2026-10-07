@@ -126,5 +126,6 @@
     <include file="config/liquibase/changelog/20261005230000_shipper.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261006150000_partner_fee_expense.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261006230000_minio_config.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261007180000_pod_photo_caption.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 

@@ -253,7 +253,15 @@ public class AhamoveDispatchService {
         tx.executeWithoutResult(status -> savePartnerInfo(code, u));
 
         ShipmentOrder order = requireOrder(code);
+        savePickupPhotos(order, u);
         if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY) {
+            if (order.getStatus() == OrderStatus.DELIVERED && !u.podUrls().isEmpty()) {
+                try {
+                    deliveryFacadeService.appendPodPhotos(order, u.podUrls(), "Giao");
+                } catch (RuntimeException e) {
+                    LOG.warn("Ahamove webhook {}: không lưu ảnh giao đơn {} — {}", u.orderId(), code, e.getMessage());
+                }
+            }
             return Optional.of(code);
         }
         try {
@@ -264,6 +272,7 @@ public class AhamoveDispatchService {
                     String name = notBlank(order.getReceiverName()) ? order.getReceiverName().trim() : "Người nhận";
                     pod.setActualRecipientName(name.length() > 100 ? name.substring(0, 100) : name);
                     pod.setPhotos(u.podUrls());
+                    pod.setCaption("Giao");
                     pod.setCollectedAmount(BigDecimal.ZERO);
                     deliveryFacadeService.pod(code, pod);
                 }
@@ -292,7 +301,8 @@ public class AhamoveDispatchService {
         String sharedLink,
         BigDecimal totalPay,
         List<String> podUrls,
-        String failReason
+        String failReason,
+        List<String> pickupPodUrls
     ) {}
 
     static WebhookUpdate parseWebhook(JsonNode body) {
@@ -306,7 +316,12 @@ public class AhamoveDispatchService {
         id = stripStopSuffix(id);
         JsonNode drop = null;
         JsonNode path = body.get("path");
+        List<String> pickupPods = new ArrayList<>();
         if (path != null && path.isArray() && path.size() > 1) {
+            JsonNode pickup = path.get(0);
+            if (pickup != null) {
+                collectUrls(pickup.get("pod_info"), pickupPods);
+            }
             drop = path.get(path.size() - 1);
         }
         List<String> pods = new ArrayList<>();
@@ -331,8 +346,24 @@ public class AhamoveDispatchService {
             text(body, "shared_link"),
             pay == null ? null : BigDecimal.valueOf(pay).setScale(0, java.math.RoundingMode.HALF_UP),
             pods,
-            fail
+            fail,
+            pickupPods
         );
+    }
+
+    /** Ảnh tài xế đến lấy hàng — lưu vào POD, không đổi trạng thái đơn. */
+    private void savePickupPhotos(ShipmentOrder order, WebhookUpdate u) {
+        if (u.pickupPodUrls().isEmpty()) {
+            return;
+        }
+        try {
+            int added = deliveryFacadeService.appendPodPhotos(order, u.pickupPodUrls(), "Nhận");
+            if (added > 0) {
+                orderFacadeService.recordEvent(order, "AHAMOVE_PICKUP_POD", "Ảnh tài xế nhận hàng (" + added + ")", "ahamove");
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("Ahamove webhook {}: không lưu ảnh nhận hàng đơn {} — {}", u.orderId(), order.getOrderCode(), e.getMessage());
+        }
     }
 
     /** Ahamove gửi sự kiện theo điểm dừng dạng {@code ORDERID-1}; mã đơn gốc không có hậu tố. */

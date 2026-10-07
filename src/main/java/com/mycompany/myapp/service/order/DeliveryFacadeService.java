@@ -33,8 +33,10 @@ import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -102,13 +104,15 @@ public class DeliveryFacadeService {
 
         List<String> savedUrls = new ArrayList<>();
         int seq = (int) podPhotoRepository.countByOrder_Id(order.getId()) + 1;
+        String caption = captionOf(req.getCaption());
         for (String photo : req.getPhotos()) {
             String url = storeMedia(truncateUrl(photo), "pod");
             OrderPodPhoto row = new OrderPodPhoto();
             row.setPhotoUrl(url);
             row.setCapturedAt(now);
             row.setCapturedByUsername(actor);
-            row.setSequenceNo(Math.min(seq, 3));
+            row.setSequenceNo(Math.min(seq, 6));
+            row.setCaption(caption);
             row.setOrder(order);
             podPhotoRepository.save(row);
             savedUrls.add(showMedia(url));
@@ -135,6 +139,63 @@ public class DeliveryFacadeService {
         res.setDueAmount(OrderMoney.collectDue(order));
         res.setPhotoUrls(savedUrls);
         return res;
+    }
+
+    /**
+     * Thêm ảnh POD mà không đổi trạng thái đơn (ảnh tài xế đến nhận hàng). Bỏ qua URL đã lưu.
+     *
+     * @return số ảnh mới
+     */
+    public int appendPodPhotos(ShipmentOrder order, List<String> photos, String caption) {
+        if (order == null || order.getId() == null || photos == null || photos.isEmpty()) {
+            return 0;
+        }
+        List<OrderPodPhoto> existing = podPhotoRepository.findByOrder_IdOrderBySequenceNoAsc(order.getId());
+        Set<String> urls = new HashSet<>();
+        for (OrderPodPhoto row : existing) {
+            if (row.getPhotoUrl() != null) {
+                urls.add(row.getPhotoUrl());
+            }
+        }
+        int seq = existing.size() + 1;
+        int added = 0;
+        String label = captionOf(caption);
+        String actor = currentActor();
+        Instant now = Instant.now();
+        for (String photo : photos) {
+            if (photo == null || photo.isBlank()) {
+                continue;
+            }
+            String raw = photo.trim();
+            if (urls.contains(raw) || added >= 3 || seq > 6) {
+                continue;
+            }
+            String url = storeMedia(truncateUrl(raw), "pod");
+            if (urls.contains(url)) {
+                continue;
+            }
+            OrderPodPhoto row = new OrderPodPhoto();
+            row.setPhotoUrl(url);
+            row.setCapturedAt(now);
+            row.setCapturedByUsername(actor);
+            row.setSequenceNo(seq);
+            row.setCaption(label);
+            row.setOrder(order);
+            podPhotoRepository.save(row);
+            urls.add(url);
+            urls.add(raw);
+            seq++;
+            added++;
+        }
+        return added;
+    }
+
+    private static String captionOf(String caption) {
+        if (caption == null || caption.isBlank()) {
+            return null;
+        }
+        String trimmed = caption.trim();
+        return trimmed.length() <= 20 ? trimmed : trimmed.substring(0, 20);
     }
 
     public FailDeliveryResponse failDelivery(String orderCode, FailDeliveryRequest req) {

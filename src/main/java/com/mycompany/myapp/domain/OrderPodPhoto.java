@@ -36,9 +36,14 @@ public class OrderPodPhoto implements Serializable {
     private String capturedByUsername;
 
     @Min(value = 1)
-    @Max(value = 3)
+    @Max(value = 6)
     @Column(name = "sequence_no")
     private Integer sequenceNo;
+
+    /** Nhận / Giao — ảnh Ahamove. Ảnh POD nhân viên để trống. */
+    @Size(max = 20)
+    @Column(name = "caption", length = 20)
+    private String caption;
 
     @ManyToOne(optional = false)
     @NotNull
@@ -123,6 +128,14 @@ public class OrderPodPhoto implements Serializable {
 
     public void setSequenceNo(Integer sequenceNo) {
         this.sequenceNo = sequenceNo;
+    }
+
+    public String getCaption() {
+        return this.caption;
+    }
+
+    public void setCaption(String caption) {
+        this.caption = caption;
     }
 
     public ShipmentOrder getOrder() {

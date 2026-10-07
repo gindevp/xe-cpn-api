@@ -67,8 +67,11 @@ public class OrderSummaryDTO {
     private String shipperPhone;
     private Integer currentLegIndex;
     private List<OrderLegViewDTO> legs = new ArrayList<>();
-    /** Ảnh POD (data-URL / URL) — thường chỉ gắn khi DELIVERED. */
+    /** Ảnh POD (data-URL / URL). */
     private List<String> podPhotos = new ArrayList<>();
+
+    /** Cùng thứ tự podPhotos. Nhận / Giao, hoặc rỗng nếu không gắn nhãn. */
+    private List<String> podPhotoCaptions = new ArrayList<>();
     /** Khách gửi ảnh đơn hàng khi tạo đơn — ảnh lấy qua GET /api/orders/{code}/goods-photo. */
     private boolean hasGoodsPhoto;
     /** Người thực nhận — gắn khi DELIVERED. */
@@ -574,6 +577,14 @@ public class OrderSummaryDTO {
 
     public void setPodPhotos(List<String> podPhotos) {
         this.podPhotos = podPhotos;
+    }
+
+    public List<String> getPodPhotoCaptions() {
+        return podPhotoCaptions;
+    }
+
+    public void setPodPhotoCaptions(List<String> podPhotoCaptions) {
+        this.podPhotoCaptions = podPhotoCaptions;
     }
 
     public String getReceiverActualName() {

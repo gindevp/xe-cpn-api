@@ -5,6 +5,7 @@ import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.OrderGoodsPhoto;
 import com.mycompany.myapp.domain.OrderLeg;
+import com.mycompany.myapp.domain.OrderPodPhoto;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.ForwardStage;
 import com.mycompany.myapp.domain.enumeration.IssueStatus;
@@ -1950,9 +1951,9 @@ public class OrderFacadeService {
         dto.setReceiverActualPhone(o.getReceiverActualPhone());
         dto.setFailCount(o.getFailCount());
         dto.setEvents(withActorInfo(mapEvents(o.getId())));
-        dto.setPodPhotos(
-            orderPodPhotoRepository.findByOrder_IdOrderBySequenceNoAsc(o.getId()).stream().map(p -> showMedia(p.getPhotoUrl())).toList()
-        );
+        List<OrderPodPhoto> podRows = orderPodPhotoRepository.findByOrder_IdOrderBySequenceNoAsc(o.getId());
+        dto.setPodPhotos(podRows.stream().map(p -> showMedia(p.getPhotoUrl())).toList());
+        dto.setPodPhotoCaptions(podRows.stream().map(p -> p.getCaption() == null ? "" : p.getCaption()).toList());
         dto.setIssues(
             orderIssueRepository
                 .findByOrder_IdOrderByOpenedAtAscIdAsc(o.getId())

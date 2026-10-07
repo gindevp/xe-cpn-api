@@ -29,6 +29,10 @@ public class PodRequest {
 
     private BigDecimal collectedAmount;
 
+    /** Nhãn ảnh, ví dụ Nhận / Giao. Để trống với POD nhân viên. */
+    @Size(max = 20)
+    private String caption;
+
     private PaymentMethod paymentMethod = PaymentMethod.TM;
 
     public String getChannel() {
@@ -77,5 +81,13 @@ public class PodRequest {
 
     public void setPaymentMethod(PaymentMethod paymentMethod) {
         this.paymentMethod = paymentMethod;
+    }
+
+    public String getCaption() {
+        return caption;
+    }
+
+    public void setCaption(String caption) {
+        this.caption = caption;
     }
 }

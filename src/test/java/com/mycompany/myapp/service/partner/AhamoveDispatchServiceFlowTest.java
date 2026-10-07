@@ -393,8 +393,23 @@ class AhamoveDispatchServiceFlowTest {
         verify(delivery).pod(eq("GP-0001"), pod.capture());
         assertThat(pod.getValue().getChannel()).isEqualTo("HOME");
         assertThat(pod.getValue().getPhotos()).containsExactly("https://img/p.jpg");
+        assertThat(pod.getValue().getCaption()).isEqualTo("Giao");
         assertThat(pod.getValue().getCollectedAmount()).isEqualByComparingTo("0");
         assertThat(order.getPartnerPodUrl()).isEqualTo("https://img/p.jpg");
+    }
+
+    @Test
+    void webhook_pickupPhoto_savedWithoutDelivering() throws Exception {
+        outForDelivery();
+        when(delivery.appendPodPhotos(eq(order), any(), eq("Nhận"))).thenReturn(1);
+        service.applyWebhook(
+            om.readTree(
+                "{\"_id\":\"AHA1\",\"status\":\"IN PROCESS\",\"path\":[{\"status\":\"COMPLETED\",\"pod_info\":[{\"image_url\":\"https://img/nhan.jpg\"}]},{\"status\":\"ACCEPTED\"}]}"
+            )
+        );
+        verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/nhan.jpg")), eq("Nhận"));
+        verify(orders).recordEvent(eq(order), eq("AHAMOVE_PICKUP_POD"), anyString(), eq("ahamove"));
+        verify(delivery, never()).pod(anyString(), any());
     }
 
     @Test

@@ -38,6 +38,20 @@ class AhamoveDispatchServiceTest {
         assertThat(u.driverPhone()).isEqualTo("84901234567");
         assertThat(u.totalPay()).isEqualByComparingTo(new BigDecimal("32000"));
         assertThat(u.podUrls()).containsExactly("https://img.ahamove.com/pod1.jpg", "https://img.ahamove.com/pod2.jpg");
+        assertThat(u.pickupPodUrls()).isEmpty();
+    }
+
+    @Test
+    void parseWebhook_pickupAndDropPhotos() throws Exception {
+        String json =
+            """
+            {"_id":"24AB7XQ9","status":"IN PROCESS",
+             "path":[{"status":"COMPLETED","pod_info":[{"image_url":"https://img.ahamove.com/nhan.jpg"}]},
+                     {"status":"COMPLETED","pod_info":"https://img.ahamove.com/giao.jpg"}]}
+            """;
+        AhamoveDispatchService.WebhookUpdate u = AhamoveDispatchService.parseWebhook(om.readTree(json));
+        assertThat(u.pickupPodUrls()).containsExactly("https://img.ahamove.com/nhan.jpg");
+        assertThat(u.podUrls()).containsExactly("https://img.ahamove.com/giao.jpg");
     }
 
     @Test
