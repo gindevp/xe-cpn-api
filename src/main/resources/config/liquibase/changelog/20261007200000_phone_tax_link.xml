@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261007200000-phone-tax-link" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="phone_tax_link"/>
+            </not>
+        </preConditions>
+        <comment>MST gắn với SĐT (tối đa 5). Nguồn cho CRM và tự điền hóa đơn.</comment>
+        <createTable tableName="phone_tax_link">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="phone" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="tax_code" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="company_name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="address" type="varchar(500)"/>
+            <column name="email" type="varchar(100)"/>
+            <column name="contact_name" type="varchar(100)"/>
+            <column name="from_order_code" type="varchar(40)"/>
+            <column name="updated_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="phone_tax_link" columnNames="phone, tax_code" constraintName="uk_phone_tax_link_phone_tax"/>
+        <createIndex tableName="phone_tax_link" indexName="idx_phone_tax_link_updated">
+            <column name="updated_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

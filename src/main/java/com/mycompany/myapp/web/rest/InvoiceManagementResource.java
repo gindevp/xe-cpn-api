@@ -5,6 +5,7 @@ import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.invoice.InvoiceAutoIssueService;
 import com.mycompany.myapp.service.invoice.MeInvoiceIssueService;
+import com.mycompany.myapp.service.invoice.PhoneTaxLinkService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -13,8 +14,11 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -27,15 +31,18 @@ public class InvoiceManagementResource {
 
     private final InvoiceAutoIssueService invoiceAutoIssueService;
     private final MeInvoiceIssueService meInvoiceIssueService;
+    private final PhoneTaxLinkService phoneTaxLinkService;
     private final StaffAccessService staffAccessService;
 
     public InvoiceManagementResource(
         InvoiceAutoIssueService invoiceAutoIssueService,
         MeInvoiceIssueService meInvoiceIssueService,
+        PhoneTaxLinkService phoneTaxLinkService,
         StaffAccessService staffAccessService
     ) {
         this.invoiceAutoIssueService = invoiceAutoIssueService;
         this.meInvoiceIssueService = meInvoiceIssueService;
+        this.phoneTaxLinkService = phoneTaxLinkService;
         this.staffAccessService = staffAccessService;
     }
 
@@ -87,23 +94,64 @@ public class InvoiceManagementResource {
         return invoiceAutoIssueService.backfillStatus();
     }
 
-    /** SĐT và các MST trên hóa đơn doanh nghiệp đã xuất. Có {@code q} thì lọc một số. */
+    /** SĐT và các MST đang gắn. Có {@code q} thì lọc một số. */
     @GetMapping("/buyer-directory")
-    public List<InvoiceAutoIssueService.BuyerDirectoryEntry> buyerDirectory(@RequestParam(value = "q", required = false) String query) {
+    public List<PhoneTaxLinkService.BuyerDirectoryEntry> buyerDirectory(@RequestParam(value = "q", required = false) String query) {
         staffAccessService.requireScreenRead(ScreenKey.CRM_SDT);
-        return invoiceAutoIssueService.buyerDirectory(query);
+        return phoneTaxLinkService.directory(query);
     }
 
-    /** MST trên hóa đơn doanh nghiệp đã xuất của SĐT; không có → 204. */
+    /** MST gần nhất của SĐT; không có → 204. */
     @GetMapping("/buyer-profile")
     public ResponseEntity<Map<String, String>> buyerProfile(@RequestParam("phone") String phone) {
-        return invoiceAutoIssueService.buyerProfile(phone).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
+        return phoneTaxLinkService.profile(phone).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @GetMapping("/buyer-profiles")
     public List<Map<String, String>> buyerProfiles(@RequestParam("phone") String phone) {
-        return invoiceAutoIssueService.buyerProfiles(phone);
+        return phoneTaxLinkService.profiles(phone);
     }
+
+    @PostMapping("/phone-tax")
+    public Map<String, String> createPhoneTax(@RequestBody PhoneTaxRequest request) {
+        staffAccessService.requireScreenWrite(ScreenKey.CRM_SDT);
+        if (request == null) {
+            throw new BadRequestAlertException("Thiếu dữ liệu", "phoneTax", "empty");
+        }
+        return phoneTaxLinkService.create(
+            request.phone(),
+            request.taxCode(),
+            request.companyName(),
+            request.address(),
+            request.email(),
+            request.contactName()
+        );
+    }
+
+    @PutMapping("/phone-tax/{id}")
+    public Map<String, String> updatePhoneTax(@PathVariable("id") Long id, @RequestBody PhoneTaxRequest request) {
+        staffAccessService.requireScreenWrite(ScreenKey.CRM_SDT);
+        if (request == null) {
+            throw new BadRequestAlertException("Thiếu dữ liệu", "phoneTax", "empty");
+        }
+        return phoneTaxLinkService.update(
+            id,
+            request.taxCode(),
+            request.companyName(),
+            request.address(),
+            request.email(),
+            request.contactName()
+        );
+    }
+
+    @DeleteMapping("/phone-tax/{id}")
+    public ResponseEntity<Void> deletePhoneTax(@PathVariable("id") Long id) {
+        staffAccessService.requireScreenWrite(ScreenKey.CRM_SDT);
+        phoneTaxLinkService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    public record PhoneTaxRequest(String phone, String taxCode, String companyName, String address, String email, String contactName) {}
 
     public record MarkRequest(List<String> orderCodes, Boolean marked) {}
 

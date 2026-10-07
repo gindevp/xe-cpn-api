@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
@@ -65,6 +66,23 @@ public class MeInvoiceIssueService {
     private final MisaMeInvoiceClient client;
     private final ObjectMapper objectMapper;
     private final boolean issueOnlyWhenRequested;
+    private PhoneTaxLinkService phoneTaxLinks;
+
+    private void rememberBuyerTax(ShipmentOrder order) {
+        if (phoneTaxLinks == null || order == null) {
+            return;
+        }
+        try {
+            phoneTaxLinks.rememberIssued(order);
+        } catch (RuntimeException e) {
+            LOG.warn("Không lưu được MST theo SĐT của đơn {}: {}", order.getOrderCode(), e.toString());
+        }
+    }
+
+    @Autowired
+    void setPhoneTaxLinks(PhoneTaxLinkService phoneTaxLinks) {
+        this.phoneTaxLinks = phoneTaxLinks;
+    }
 
     public MeInvoiceIssueService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -355,6 +373,7 @@ public class MeInvoiceIssueService {
                 order.setInvoiceError(truncate("InvoiceDuplicated"));
                 order.setInvoiceIssuedAt(Instant.now());
                 shipmentOrderRepository.save(order);
+                rememberBuyerTax(order);
                 LOG.info("MISA InvoiceDuplicated RefID={} order={}", refId, order.getOrderCode());
                 return;
             }
@@ -366,6 +385,7 @@ public class MeInvoiceIssueService {
             order.setInvoiceIssuedAt(Instant.now());
             order.setInvoiceError(null);
             shipmentOrderRepository.save(order);
+            rememberBuyerTax(order);
             LOG.info(
                 "MISA issued order={} type={} InvNo={} Tx={} Code={}",
                 order.getOrderCode(),

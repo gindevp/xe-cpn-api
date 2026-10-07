@@ -159,45 +159,6 @@ class InvoiceAutoIssueServiceTest {
         assertThat(row.late()).isFalse();
     }
 
-    private static ShipmentOrder invoicedBy(String code, String senderPhone, String receiverPhone, String tax, String company) {
-        ShipmentOrder o = new ShipmentOrder();
-        o.setOrderCode(code);
-        o.setPaymentTerm(PaymentTerm.GUI_TRA);
-        o.setSenderPhone(senderPhone);
-        o.setReceiverPhone(receiverPhone);
-        o.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
-        o.setInvoiceTaxCode(tax);
-        o.setInvoiceCompanyName(company);
-        return o;
-    }
-
-    private static ShipmentOrder draftInvoice(String code, String senderPhone, String status, String tax, String company) {
-        ShipmentOrder o = invoicedBy(code, senderPhone, "0900000000", tax, company);
-        o.setInvoiceStatus(status);
-        return o;
-    }
-
-    @Test
-    void buyerProfiles_distinctTaxCodes_newestFirst_senderOrReceiver_ignoresFormatting() {
-        String phone = "0901234567";
-        when(orderRepo.findInvoiceProfilesByPhone(any(), any())).thenReturn(
-            List.of(
-                invoicedBy("O5", "0901 234 567", "0911", "0101243150", "CTY A moi"),
-                invoicedBy("O4", "0922", "+84 901 234 567", "0312345678", "Nguoi nhan"),
-                invoicedBy("O3", phone, "0933", "0109876543", "CTY B"),
-                invoicedBy("O2", phone, "0944", "0101243150", "CTY A cu"),
-                invoicedBy("O1", "0999", "0888", "0100000000", "Khong lien quan"),
-                draftInvoice("O0", phone, "SAVED", "9999999999", "Chua xuat")
-            )
-        );
-
-        List<java.util.Map<String, String>> profiles = service.buyerProfiles("0901.234.567");
-
-        assertThat(profiles).extracting(m -> m.get("taxCode")).containsExactly("0101243150", "0312345678", "0109876543");
-        assertThat(profiles.get(0).get("companyName")).isEqualTo("CTY A moi");
-        assertThat(service.buyerProfile(phone)).get().extracting(m -> m.get("fromOrderCode")).isEqualTo("O5");
-    }
-
     private static ShipmentOrder senderPaysOrder(String code, OrderStatus status, String paid, String invoiceStatus) {
         ShipmentOrder o = new ShipmentOrder();
         o.setId((long) code.hashCode());
@@ -245,45 +206,5 @@ class InvoiceAutoIssueServiceTest {
         ArgumentCaptor<java.util.Collection<OrderStatus>> excluded = ArgumentCaptor.forClass(java.util.Collection.class);
         verify(orderRepo).findInvoiceWarehouseInBetween(any(), any(), excluded.capture());
         assertThat(excluded.getValue()).containsExactly(OrderStatus.DRAFT);
-    }
-
-    @Test
-    void buyerProfile_matchesSenderEvenWhenReceiverPays() {
-        ShipmentOrder receiverPays = new ShipmentOrder();
-        receiverPays.setPaymentTerm(PaymentTerm.NHAN_TRA);
-        receiverPays.setSenderPhone("0911111111");
-        receiverPays.setReceiverPhone("0922222222");
-        receiverPays.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
-        receiverPays.setInvoiceTaxCode("0100233488");
-        receiverPays.setInvoiceCompanyName("Cty Nhận");
-        ShipmentOrder senderPays = new ShipmentOrder();
-        senderPays.setPaymentTerm(PaymentTerm.GUI_TRA);
-        senderPays.setSenderPhone("0911111111");
-        senderPays.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
-        senderPays.setInvoiceTaxCode("0103179782");
-        senderPays.setInvoiceCompanyName("Cty Gửi");
-        when(orderRepo.findInvoiceProfilesByPhone(any(), any())).thenReturn(List.of(receiverPays, senderPays));
-
-        assertThat(service.buyerProfile("0911111111")).hasValueSatisfying(m -> assertThat(m.get("companyName")).isEqualTo("Cty Nhận"));
-        assertThat(service.buyerProfile("09")).isEmpty();
-    }
-
-    @Test
-    void buyerDirectory_groupsPhonesFromIssuedInvoices_newestTaxFirst() {
-        ShipmentOrder newest = invoicedBy("N2", "0901234567", "0988000111", "0101243150", "Moi");
-        newest.setSenderName("AN");
-        newest.setReceiverName("BINH");
-        ShipmentOrder older = invoicedBy("N1", "0901234567", "0977000222", "0312345678", "Cu");
-        ShipmentOrder skipped = draftInvoice("N0", "0901234567", "SAVED", "0100000001", "Chua");
-        when(orderRepo.findIssuedCompanyInvoices(any())).thenReturn(List.of(newest, older, skipped));
-
-        List<InvoiceAutoIssueService.BuyerDirectoryEntry> rows = service.buyerDirectory("");
-
-        assertThat(rows)
-            .extracting(InvoiceAutoIssueService.BuyerDirectoryEntry::phone)
-            .containsExactly("0901234567", "0988000111", "0977000222");
-        assertThat(rows.get(0).name()).isEqualTo("AN");
-        assertThat(rows.get(0).profiles()).extracting(m -> m.get("taxCode")).containsExactly("0101243150", "0312345678");
-        assertThat(rows.get(1).profiles()).extracting(m -> m.get("taxCode")).containsExactly("0101243150");
     }
 }
