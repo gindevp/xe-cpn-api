@@ -11,6 +11,9 @@ public class IssueInvoiceRequest {
 
     private String email;
 
+    /** Tên người ghi trên hóa đơn. Trống thì lấy tên người trả cước. */
+    private String buyerName;
+
     public String getTaxCode() {
         return taxCode;
     }
@@ -41,5 +44,13 @@ public class IssueInvoiceRequest {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public String getBuyerName() {
+        return buyerName;
+    }
+
+    public void setBuyerName(String buyerName) {
+        this.buyerName = buyerName;
     }
 }

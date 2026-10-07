@@ -219,6 +219,11 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "invoice_company_address", length = 255)
     private String invoiceCompanyAddress;
 
+    /** Tên người trên hóa đơn (đã viết hoa). Trống thì lúc xuất lấy tên người trả cước. */
+    @Size(max = 100)
+    @Column(name = "invoice_buyer_name", length = 100)
+    private String invoiceBuyerName;
+
     /** RefID gửi MISA — idempotent key, vd. XE-{orderCode}. */
     @Size(max = 80)
     @Column(name = "invoice_ref_id", length = 80)
@@ -966,6 +971,14 @@ public class ShipmentOrder implements Serializable {
 
     public void setInvoiceCompanyAddress(String invoiceCompanyAddress) {
         this.invoiceCompanyAddress = invoiceCompanyAddress;
+    }
+
+    public String getInvoiceBuyerName() {
+        return this.invoiceBuyerName;
+    }
+
+    public void setInvoiceBuyerName(String invoiceBuyerName) {
+        this.invoiceBuyerName = invoiceBuyerName;
     }
 
     public String getInvoiceRefId() {

@@ -6,6 +6,7 @@ import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Quy tắc xuất HĐĐT theo người trả cước.
@@ -56,6 +57,31 @@ public final class InvoicePolicy {
 
     public static String payerPhone(ShipmentOrder order) {
         return senderPays(order) ? order.getSenderPhone() : order.getReceiverPhone();
+    }
+
+    /** Tên người trên hóa đơn: chữ hoa, gộp khoảng trắng. Rỗng → null. */
+    public static String upperBuyerName(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String t = raw.trim().replaceAll("\\s+", " ");
+        if (t.isEmpty()) {
+            return null;
+        }
+        if (t.length() > 100) {
+            t = t.substring(0, 100).trim();
+        }
+        return t.toUpperCase(Locale.forLanguageTag("vi"));
+    }
+
+    /** Tên đưa vào hóa đơn: tên đã lưu, không có thì tên người trả cước. */
+    public static String buyerPersonName(ShipmentOrder order) {
+        String saved = upperBuyerName(order.getInvoiceBuyerName());
+        if (saved != null) {
+            return saved;
+        }
+        String payer = upperBuyerName(payerName(order));
+        return payer != null ? payer : "KHÁCH LẺ";
     }
 
     /** Mốc thanh toán; null = chưa tới (chưa nhập kho gửi / chưa giao). */

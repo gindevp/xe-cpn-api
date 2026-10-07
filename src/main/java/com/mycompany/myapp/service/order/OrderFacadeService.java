@@ -37,6 +37,7 @@ import com.mycompany.myapp.service.dto.order.OrderTransitionResponse;
 import com.mycompany.myapp.service.dto.order.PatchOrderRequest;
 import com.mycompany.myapp.service.dto.order.TrackOrderRequest;
 import com.mycompany.myapp.service.dto.order.TrackOrderResponse;
+import com.mycompany.myapp.service.invoice.InvoicePolicy;
 import com.mycompany.myapp.service.invoice.OrderDeliveredEvent;
 import com.mycompany.myapp.service.invoice.VietnamTaxCode;
 import com.mycompany.myapp.service.partner.AhamoveDispatchService;
@@ -1092,6 +1093,7 @@ public class OrderFacadeService {
             req.getInvoiceCompanyName(),
             req.getInvoiceEmail(),
             req.getInvoiceCompanyAddress(),
+            req.getInvoiceBuyerName(),
             true
         );
         if (req.getRouteLabel() != null) {
@@ -1294,6 +1296,7 @@ public class OrderFacadeService {
             req.getInvoiceCompanyName(),
             req.getInvoiceEmail(),
             req.getInvoiceCompanyAddress(),
+            req.getInvoiceBuyerName(),
             false
         );
         if (req.getRouteLabel() != null) {
@@ -1839,6 +1842,7 @@ public class OrderFacadeService {
         String companyName,
         String email,
         String address,
+        String buyerName,
         boolean patch
     ) {
         if ("ISSUED".equals(order.getInvoiceStatus()) || "DUPLICATE".equals(order.getInvoiceStatus())) {
@@ -1852,11 +1856,13 @@ public class OrderFacadeService {
                 order.setInvoiceCompanyName(blankToNull(companyName));
                 order.setInvoiceEmail(blankToNull(email));
                 order.setInvoiceCompanyAddress(blankToNull(address));
+                order.setInvoiceBuyerName(InvoicePolicy.upperBuyerName(buyerName));
             } else {
                 order.setInvoiceTaxCode(null);
                 order.setInvoiceCompanyName(null);
                 order.setInvoiceEmail(null);
                 order.setInvoiceCompanyAddress(null);
+                order.setInvoiceBuyerName(null);
             }
             return;
         }
@@ -1867,6 +1873,7 @@ public class OrderFacadeService {
                 order.setInvoiceCompanyName(null);
                 order.setInvoiceEmail(null);
                 order.setInvoiceCompanyAddress(null);
+                order.setInvoiceBuyerName(null);
                 return;
             }
         }
@@ -1886,6 +1893,9 @@ public class OrderFacadeService {
         }
         if (address != null) {
             order.setInvoiceCompanyAddress(blankToNull(address));
+        }
+        if (buyerName != null) {
+            order.setInvoiceBuyerName(InvoicePolicy.upperBuyerName(buyerName));
         }
     }
 
@@ -2048,6 +2058,7 @@ public class OrderFacadeService {
         dto.setInvoiceCompanyName(o.getInvoiceCompanyName());
         dto.setInvoiceEmail(o.getInvoiceEmail());
         dto.setInvoiceCompanyAddress(o.getInvoiceCompanyAddress());
+        dto.setInvoiceBuyerName(o.getInvoiceBuyerName());
         dto.setInvoiceRefId(o.getInvoiceRefId());
         dto.setInvoiceStatus(o.getInvoiceStatus());
         dto.setInvoiceType(com.mycompany.myapp.service.invoice.InvoicePolicy.typeOf(o));

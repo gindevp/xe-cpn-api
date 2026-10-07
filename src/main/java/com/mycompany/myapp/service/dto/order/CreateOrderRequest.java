@@ -94,6 +94,7 @@ public class CreateOrderRequest {
     private String invoiceCompanyName;
     private String invoiceEmail;
     private String invoiceCompanyAddress;
+    private String invoiceBuyerName;
     private String routeLabel;
     private String itineraryLabel;
 
@@ -418,6 +419,14 @@ public class CreateOrderRequest {
 
     public void setInvoiceCompanyAddress(String invoiceCompanyAddress) {
         this.invoiceCompanyAddress = invoiceCompanyAddress;
+    }
+
+    public String getInvoiceBuyerName() {
+        return invoiceBuyerName;
+    }
+
+    public void setInvoiceBuyerName(String invoiceBuyerName) {
+        this.invoiceBuyerName = invoiceBuyerName;
     }
 
     public String getRouteLabel() {

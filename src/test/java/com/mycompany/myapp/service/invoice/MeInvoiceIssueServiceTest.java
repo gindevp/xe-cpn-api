@@ -113,7 +113,7 @@ class MeInvoiceIssueServiceTest {
         assertThat(inv.get("IsSendEmail").asBoolean()).isTrue();
         assertThat(inv.get("OriginalInvoiceDetail").get(0).get("UnitName").asText()).isEqualTo("Vận đơn");
         assertThat(inv.get("BuyerLegalName").asText()).isEqualTo("Cty ABC");
-        assertThat(inv.get("BuyerFullName").asText()).isEmpty();
+        assertThat(inv.get("BuyerFullName").asText()).isEqualTo("TRẦN NHẬN");
         assertThat(inv.get("BuyerPhoneNumber").asText()).isEmpty();
         assertThat(inv.get("ReceiverName").asText()).isEqualTo("Cty ABC");
         assertThat(inv.get("PaymentMethodName").asText()).isEqualTo("TM/CK");
@@ -124,6 +124,16 @@ class MeInvoiceIssueServiceTest {
         assertThat(ev.getValue().getAction()).isEqualTo("INVOICE_ISSUE");
         assertThat(ev.getValue().getActorUsername()).isEqualTo("dieuphoi1");
         assertThat(ev.getValue().getDetail()).contains("0000123");
+    }
+
+    @Test
+    void issueManual_customBuyerName_isUppercasedOnInvoice() {
+        publishOk();
+        IssueInvoiceRequest req = validReq();
+        req.setBuyerName("  lê văn   c  ");
+        service.issueManual("VT0001ABCD", req, "u");
+        assertThat(order.getInvoiceBuyerName()).isEqualTo("LÊ VĂN C");
+        assertThat(publishedInvoice().get("BuyerFullName").asText()).isEqualTo("LÊ VĂN C");
     }
 
     @Test
@@ -299,8 +309,8 @@ class MeInvoiceIssueServiceTest {
         assertThat(order.getInvoiceType()).isEqualTo(InvoicePolicy.TYPE_PERSONAL);
         ObjectNode inv = publishedInvoice();
         assertThat(inv.get("BuyerLegalName").asText()).isEmpty();
-        assertThat(inv.get("BuyerFullName").asText()).isEqualTo("Trần Nhận");
-        assertThat(inv.get("ReceiverName").asText()).isEqualTo("Trần Nhận");
+        assertThat(inv.get("BuyerFullName").asText()).isEqualTo("TRẦN NHẬN");
+        assertThat(inv.get("ReceiverName").asText()).isEqualTo("TRẦN NHẬN");
         assertThat(inv.get("BuyerPhoneNumber").asText()).isEqualTo("0922222222");
         assertThat(inv.get("BuyerTaxCode").asText()).isEmpty();
         assertThat(inv.get("IsSendEmail").asBoolean()).isFalse();
@@ -316,7 +326,7 @@ class MeInvoiceIssueServiceTest {
         service.backfillOne("VT0001ABCD", "ketoan");
         ObjectNode inv = publishedInvoice();
         assertThat(inv.get("BuyerLegalName").asText()).isEmpty();
-        assertThat(inv.get("BuyerFullName").asText()).isEqualTo("Nguyễn Gửi");
+        assertThat(inv.get("BuyerFullName").asText()).isEqualTo("NGUYỄN GỬI");
         assertThat(inv.get("BuyerPhoneNumber").asText()).isEqualTo("0911111111");
     }
 

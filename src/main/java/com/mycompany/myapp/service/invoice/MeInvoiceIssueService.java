@@ -164,6 +164,9 @@ public class MeInvoiceIssueService {
             firstNonBlank(req.getAddress(), order.getInvoiceCompanyAddress()),
             firstNonBlank(req.getEmail(), order.getInvoiceEmail())
         );
+        if (req.getBuyerName() != null) {
+            order.setInvoiceBuyerName(InvoicePolicy.upperBuyerName(req.getBuyerName()));
+        }
         shipmentOrderRepository.save(order);
 
         publish(order, InvoicePolicy.TYPE_COMPANY);
@@ -288,6 +291,7 @@ public class MeInvoiceIssueService {
             order.setInvoiceCompanyName(null);
             order.setInvoiceCompanyAddress(null);
             order.setInvoiceEmail(null);
+            order.setInvoiceBuyerName(null);
             detail = "Bỏ yêu cầu xuất hoá đơn";
         } else {
             applyBuyer(
@@ -297,6 +301,9 @@ public class MeInvoiceIssueService {
                 firstNonBlank(req.address()),
                 firstNonBlank(req.email())
             );
+            if (req.buyerName() != null) {
+                order.setInvoiceBuyerName(InvoicePolicy.upperBuyerName(req.buyerName()));
+            }
             detail = "Cập nhật thông tin hoá đơn · MST " + order.getInvoiceTaxCode() + " · " + order.getInvoiceCompanyName();
         }
         shipmentOrderRepository.save(order);
@@ -499,7 +506,7 @@ public class MeInvoiceIssueService {
         if (InvoicePolicy.TYPE_COMPANY.equals(order.getInvoiceType())) {
             return "Xuất HĐĐT MISA DN" + no + " · MST " + order.getInvoiceTaxCode() + " · gửi " + blankToEmpty(order.getInvoiceEmail());
         }
-        return "Xuất HĐĐT MISA cá nhân" + no + " · " + blankToEmpty(InvoicePolicy.payerName(order));
+        return "Xuất HĐĐT MISA cá nhân" + no + " · " + InvoicePolicy.buyerPersonName(order);
     }
 
     /** Kiểm tra + ghi thông tin người mua (MST, tên, địa chỉ, email đều bắt buộc). */
@@ -531,7 +538,18 @@ public class MeInvoiceIssueService {
     }
 
     /** Thông tin hoá đơn gửi từ popup đơn; requested=false = bỏ yêu cầu xuất. */
-    public record InvoiceInfoRequest(Boolean requested, String taxCode, String companyName, String address, String email) {}
+    public record InvoiceInfoRequest(
+        Boolean requested,
+        String taxCode,
+        String companyName,
+        String address,
+        String email,
+        String buyerName
+    ) {
+        public InvoiceInfoRequest(Boolean requested, String taxCode, String companyName, String address, String email) {
+            this(requested, taxCode, companyName, address, email, null);
+        }
+    }
 
     private void appendEvent(ShipmentOrder order, String action, String detail, String actor) {
         OrderEvent event = new OrderEvent();
@@ -544,8 +562,8 @@ public class MeInvoiceIssueService {
     }
 
     /**
-     * Cá nhân: họ tên + SĐT người trả cước, không tên đơn vị (BuyerLegalName), không MST, hình thức "TM".
-     * Doanh nghiệp: chỉ thông tin công ty (MST, tên, địa chỉ, email) — không truyền tên/SĐT người.
+     * Cá nhân: họ tên người trên hóa đơn (mặc định người trả cước) + SĐT người trả, không MST.
+     * Doanh nghiệp: thông tin công ty, kèm họ tên người (mặc định người trả cước, viết hoa).
      */
     ObjectNode buildPublishBody(ShipmentOrder order, MeInvoiceAmounts.Breakdown amounts, String refId, String type) {
         String invDate = LocalDate.now(VN).toString();
@@ -557,16 +575,17 @@ public class MeInvoiceIssueService {
         String address;
         String buyerTax;
         String email;
+        String person = InvoicePolicy.buyerPersonName(order);
         if (company) {
             legalName = blankToEmpty(order.getInvoiceCompanyName());
-            fullName = "";
+            fullName = person;
             phone = "";
             address = blankToEmpty(order.getInvoiceCompanyAddress());
             buyerTax = blankToEmpty(order.getInvoiceTaxCode());
             email = blankToEmpty(order.getInvoiceEmail());
         } else {
             legalName = "";
-            fullName = firstNonBlank(InvoicePolicy.payerName(order), "Khách lẻ");
+            fullName = person;
             phone = blankToEmpty(InvoicePolicy.payerPhone(order));
             address = "";
             buyerTax = "";

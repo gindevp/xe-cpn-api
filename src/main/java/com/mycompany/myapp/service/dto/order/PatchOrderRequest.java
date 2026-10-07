@@ -39,6 +39,7 @@ public class PatchOrderRequest {
     private String invoiceCompanyName;
     private String invoiceEmail;
     private String invoiceCompanyAddress;
+    private String invoiceBuyerName;
     private String routeLabel;
     private String itineraryLabel;
     /** Optional override for order_event.action (default PATCH). */
@@ -318,6 +319,14 @@ public class PatchOrderRequest {
 
     public void setInvoiceCompanyAddress(String invoiceCompanyAddress) {
         this.invoiceCompanyAddress = invoiceCompanyAddress;
+    }
+
+    public String getInvoiceBuyerName() {
+        return invoiceBuyerName;
+    }
+
+    public void setInvoiceBuyerName(String invoiceBuyerName) {
+        this.invoiceBuyerName = invoiceBuyerName;
     }
 
     public String getRouteLabel() {

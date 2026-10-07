@@ -93,6 +93,7 @@ public class OrderSummaryDTO {
     private String invoiceCompanyName;
     private String invoiceEmail;
     private String invoiceCompanyAddress;
+    private String invoiceBuyerName;
     private String invoiceRefId;
     private String invoiceStatus;
     private String invoiceType;
@@ -713,6 +714,14 @@ public class OrderSummaryDTO {
 
     public void setInvoiceCompanyAddress(String invoiceCompanyAddress) {
         this.invoiceCompanyAddress = invoiceCompanyAddress;
+    }
+
+    public String getInvoiceBuyerName() {
+        return invoiceBuyerName;
+    }
+
+    public void setInvoiceBuyerName(String invoiceBuyerName) {
+        this.invoiceBuyerName = invoiceBuyerName;
     }
 
     public String getInvoiceRefId() {
