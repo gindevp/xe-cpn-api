@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,6 +84,61 @@ public class GoongPlacesService {
             LOG.warn("Goong autocomplete failed: {}", e.getMessage());
             throw new BadRequestAlertException("Goong autocomplete thất bại: " + e.getMessage(), ENTITY, "goongAutocomplete");
         }
+    }
+
+    /**
+     * Geocode địa chỉ đầy đủ (số nhà, phường, huyện, tỉnh) → lat/lng.
+     * Dùng khi tạo đơn đã chọn địa chỉ tận nơi.
+     */
+    public Map<String, Object> geocode(String address) {
+        String addr = address == null ? "" : address.trim();
+        if (addr.length() < 3) {
+            throw new BadRequestAlertException("Địa chỉ quá ngắn để định vị", ENTITY, "geocodeShort");
+        }
+        String apiKey = requireApiKey();
+        String q = addr;
+        String lower = q.toLowerCase(Locale.ROOT);
+        if (!lower.contains("việt nam") && !lower.contains("vietnam")) {
+            q = q + ", Việt Nam";
+        }
+        try {
+            String url =
+                baseUrl +
+                "/Geocode?address=" +
+                URLEncoder.encode(q, StandardCharsets.UTF_8) +
+                "&api_key=" +
+                URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
+            JsonNode root = getJson(url);
+            JsonNode results = root.get("results");
+            if (results == null || !results.isArray() || results.isEmpty()) {
+                throw new BadRequestAlertException("Goong không tìm thấy tọa độ cho địa chỉ", ENTITY, "geocodeEmpty");
+            }
+            JsonNode first = results.get(0);
+            JsonNode loc = first.path("geometry").path("location");
+            BigDecimal lat = decimal(loc, "lat");
+            BigDecimal lng = decimal(loc, "lng");
+            if (lat == null || lng == null) {
+                throw new BadRequestAlertException("Goong geocode thiếu tọa độ", ENTITY, "geocodeNoCoords");
+            }
+            String formatted = text(first, "formatted_address");
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("address", formatted != null ? formatted : addr);
+            out.put("lat", lat);
+            out.put("lng", lng);
+            out.put("placeId", text(first, "place_id"));
+            return out;
+        } catch (BadRequestAlertException e) {
+            throw e;
+        } catch (Exception e) {
+            LOG.warn("Goong geocode failed: {}", e.getMessage());
+            throw new BadRequestAlertException("Goong geocode thất bại: " + e.getMessage(), ENTITY, "goongGeocode");
+        }
+    }
+
+    public boolean hasApiKey() {
+        IntegrationConfig cfg = integrationConfigRepository.findAll().stream().findFirst().orElse(null);
+        String key = cfg != null ? cfg.getDistanceApiToken() : null;
+        return key != null && !key.isBlank();
     }
 
     public Map<String, Object> placeDetail(String placeId) {
