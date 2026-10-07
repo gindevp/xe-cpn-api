@@ -90,7 +90,7 @@ public class InvoiceManagementResource {
     /** SĐT và các MST trên hóa đơn doanh nghiệp đã xuất. Có {@code q} thì lọc một số. */
     @GetMapping("/buyer-directory")
     public List<InvoiceAutoIssueService.BuyerDirectoryEntry> buyerDirectory(@RequestParam(value = "q", required = false) String query) {
-        staffAccessService.requireScreenRead(ScreenKey.QUAN_LY_HOA_DON);
+        staffAccessService.requireScreenRead(ScreenKey.CRM_SDT);
         return invoiceAutoIssueService.buyerDirectory(query);
     }
 

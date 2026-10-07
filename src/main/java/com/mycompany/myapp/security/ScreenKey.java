@@ -34,6 +34,7 @@ public enum ScreenKey {
     DANH_SACH_PHIEU_THU("danh-sach-phieu-thu", "Danh sách phiếu thu", "Tài chính"),
     QUAN_LY_DON_COD("quan-ly-don-cod", "Quản lý đơn COD", "Tài chính"),
     QUAN_LY_HOA_DON("quan-ly-hoa-don", "Quản lý hoá đơn", "Tài chính"),
+    CRM_SDT("crm-sdt", "CRM SĐT — MST", "Tài chính"),
     BAO_CAO_DOANH_THU("bao-cao-doanh-thu", "Báo cáo doanh thu", "Tài chính"),
 
     BANG_GIA("bang-gia", "Bảng giá", "Quản trị"),
