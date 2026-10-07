@@ -115,7 +115,8 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             path.startsWith("/api/admin/maintenance") ||
             path.startsWith("/api/admin/session-policy") ||
             path.startsWith("/api/admin/invoice-auto-issue") ||
-            path.startsWith("/api/admin/deposit-account")
+            path.startsWith("/api/admin/deposit-account") ||
+            path.startsWith("/api/scan-voices")
         ) {
             staffAccessService.requireScreenWrite(ScreenKey.BAO_TRI);
             return;
