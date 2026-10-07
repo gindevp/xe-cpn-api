@@ -572,6 +572,10 @@ public class ExceptionFacadeService {
         order.setIssue(issue);
         shipmentOrderRepository.save(order);
         stopAutoCalls(order);
+        String action = "ISSUE_EXCEPTION";
+        if (issueType == IssueType.LOST) action = "ISSUE_LOST";
+        else if (issueType == IssueType.DAMAGED) action = "ISSUE_DAMAGED";
+        appendEvent(order, action, clippedReason);
         return orderFacadeService.getByCode(order.getOrderCode());
     }
 
@@ -703,6 +707,7 @@ public class ExceptionFacadeService {
         issue.setResolvedByUsername(actor());
         issue.setResolutionNote(note);
         orderIssueRepository.save(issue);
+        appendEvent(order, "ISSUE_RESTORE_WH", note);
         return orderFacadeService.getByCode(order.getOrderCode());
     }
 
