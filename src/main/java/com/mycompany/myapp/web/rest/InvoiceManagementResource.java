@@ -94,6 +94,35 @@ public class InvoiceManagementResource {
         return invoiceAutoIssueService.backfillStatus();
     }
 
+    /**
+     * Đồng bộ lại đơn status=DUPLICATE thiếu InvNo/TransactionID (gửi lại cùng RefID, lấy số HĐ từ MISA nếu có).
+     * Không tạo hoá đơn mới.
+     */
+    @PostMapping("/resync-duplicate")
+    public Map<String, String> resyncDuplicate(@RequestBody BackfillRequest request) {
+        if (request == null || request.orderCodes() == null || request.orderCodes().isEmpty()) {
+            throw new BadRequestAlertException("Chưa chọn đơn nào", "meInvoice", "resyncEmpty");
+        }
+        if (request.orderCodes().size() > 200) {
+            throw new BadRequestAlertException("Tối đa 200 đơn mỗi lần đồng bộ trùng", "meInvoice", "resyncTooMany");
+        }
+        String actor = SecurityUtils.getCurrentUserLogin().orElse("system");
+        Map<String, String> out = new LinkedHashMap<>();
+        for (String code : new ArrayList<>(request.orderCodes())) {
+            if (code == null || code.isBlank()) {
+                continue;
+            }
+            try {
+                out.put(code.trim(), meInvoiceIssueService.resyncDuplicateInvoice(code.trim(), actor));
+            } catch (BadRequestAlertException e) {
+                out.put(code.trim(), e.getBody().getTitle());
+            } catch (RuntimeException e) {
+                out.put(code.trim(), e.getMessage() != null ? e.getMessage() : "ERROR");
+            }
+        }
+        return out;
+    }
+
     /** SĐT và các MST đang gắn. Có {@code q} thì lọc một số. */
     @GetMapping("/buyer-directory")
     public List<PhoneTaxLinkService.BuyerDirectoryEntry> buyerDirectory(@RequestParam(value = "q", required = false) String query) {

@@ -66,6 +66,7 @@ class MeInvoiceIssueServiceTest {
         order.setReceiverPhone("0922222222");
         order.setGoodsFareAmount(new BigDecimal("110000"));
         when(orderRepo.findOneByOrderCodeOrDraftCode("VT0001ABCD")).thenReturn(Optional.of(order));
+        when(orderRepo.findOneByOrderCodeOrDraftCodeForUpdate("VT0001ABCD")).thenReturn(Optional.of(order));
         when(client.isEnabled()).thenReturn(true);
         when(client.getInvSeries()).thenReturn("1C26TXE");
         when(client.getSignType()).thenReturn(2);
@@ -441,7 +442,7 @@ class MeInvoiceIssueServiceTest {
         order.setId(7L);
         paidSenderOrder(OrderStatus.CONFIRMED);
         order.setIssue(issue(IssueType.DAMAGED, IssueStatus.OPEN));
-        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
         assertThat(service.autoIssueOne(7L)).isEqualTo("EXCEPTION");
         order.setIssue(null);
         order.setStatus(OrderStatus.CANCELLED);
@@ -453,7 +454,7 @@ class MeInvoiceIssueServiceTest {
     void autoIssue_returningPaid_issues() {
         order.setId(7L);
         paidSenderOrder(OrderStatus.RETURNED);
-        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
         publishOk();
         assertThat(service.autoIssueOne(7L)).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
     }
@@ -461,7 +462,7 @@ class MeInvoiceIssueServiceTest {
     @Test
     void autoIssue_senderPaidNotYetDone_waits() {
         order.setId(7L);
-        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
         for (OrderStatus s : List.of(OrderStatus.IN_TRANSIT, OrderStatus.AT_DEST, OrderStatus.RETURNING)) {
             paidSenderOrder(s);
             assertThat(service.autoIssueOne(7L)).isEqualTo("NOT_DONE");
@@ -475,7 +476,7 @@ class MeInvoiceIssueServiceTest {
     void autoIssue_onCredit_skipped() {
         order.setId(7L);
         order.setOnCredit(true);
-        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
         assertThat(service.autoIssueOne(7L)).isEqualTo("ON_CREDIT");
         verify(client, never()).publish(any());
     }
@@ -484,7 +485,7 @@ class MeInvoiceIssueServiceTest {
     void autoIssue_legacySkipped_issuesPersonal() {
         order.setId(7L);
         order.setInvoiceStatus(MeInvoiceIssueService.STATUS_SKIPPED);
-        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
         publishOk();
         assertThat(service.autoIssueOne(7L)).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
         assertThat(order.getInvoiceType()).isEqualTo(InvoicePolicy.TYPE_PERSONAL);
@@ -494,7 +495,7 @@ class MeInvoiceIssueServiceTest {
     void autoIssue_failedNotRetried() {
         order.setId(7L);
         order.setInvoiceStatus(MeInvoiceIssueService.STATUS_FAILED);
-        when(orderRepo.findById(7L)).thenReturn(Optional.of(order));
+        when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
         assertThat(service.autoIssueOne(7L)).isEqualTo("ALREADY");
         verify(client, never()).publish(any());
     }
@@ -546,9 +547,82 @@ class MeInvoiceIssueServiceTest {
 
     @Test
     void issueManual_unknownOrder_404() {
-        when(orderRepo.findOneByOrderCodeOrDraftCode("NOPE")).thenReturn(Optional.empty());
+        when(orderRepo.findOneByOrderCodeOrDraftCodeForUpdate("NOPE")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.issueManual("NOPE", validReq(), "u")).isInstanceOfSatisfying(ResponseStatusException.class, e ->
             assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND)
         );
+    }
+
+    @Test
+    void issueManual_duplicateWithInvNo_marksIssued() {
+        when(client.publish(any(ObjectNode.class))).thenReturn(
+            new MisaMeInvoiceClient.PublishResult(
+                true,
+                true,
+                "TX-DUP",
+                "0000999",
+                "1C26TXE",
+                "CODE-D",
+                "{\"ErrorCode\":\"InvoiceDuplicated\"}"
+            )
+        );
+
+        ShipmentOrder out = service.issueManual("VT0001ABCD", validReq(), "ketoan");
+
+        assertThat(out.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
+        assertThat(out.getInvoiceNo()).isEqualTo("0000999");
+        assertThat(out.getInvoiceTransactionId()).isEqualTo("TX-DUP");
+        assertThat(out.getInvoiceError()).isNull();
+    }
+
+    @Test
+    void issueManual_duplicateWithoutIds_staysDuplicate() {
+        when(client.publish(any(ObjectNode.class))).thenReturn(
+            MisaMeInvoiceClient.PublishResult.duplicated("{\"ErrorCode\":\"InvoiceDuplicated\"}")
+        );
+
+        ShipmentOrder out = service.issueManual("VT0001ABCD", validReq(), "ketoan");
+
+        assertThat(out.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_DUPLICATE);
+        assertThat(out.getInvoiceNo()).isNull();
+        assertThat(out.getInvoiceTransactionId()).isNull();
+        assertThat(out.getInvoiceError()).contains("InvoiceDuplicated");
+    }
+
+    @Test
+    void resyncDuplicate_recoversIds() {
+        order.setInvoiceStatus(MeInvoiceIssueService.STATUS_DUPLICATE);
+        order.setInvoiceType(InvoicePolicy.TYPE_COMPANY);
+        order.setInvoiceRequested(true);
+        order.setInvoiceTaxCode("0100233488");
+        order.setInvoiceCompanyName("Cty ABC");
+        order.setInvoiceCompanyAddress("1 Ly Thuong Kiet");
+        order.setInvoiceEmail("ketoan@abc.vn");
+        when(client.publish(any(ObjectNode.class))).thenReturn(
+            new MisaMeInvoiceClient.PublishResult(true, true, "TX-R", "0000888", "1C26TXE", "C1", "{}")
+        );
+
+        assertThat(service.resyncDuplicateInvoice("VT0001ABCD", "ketoan")).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
+        assertThat(order.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
+        assertThat(order.getInvoiceNo()).isEqualTo("0000888");
+        ArgumentCaptor<OrderEvent> ev = ArgumentCaptor.forClass(OrderEvent.class);
+        verify(eventRepo).save(ev.capture());
+        assertThat(ev.getValue().getAction()).isEqualTo("INVOICE_RESYNC");
+    }
+
+    @Test
+    void resyncDuplicate_notDuplicate_skipped() {
+        order.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
+        order.setInvoiceNo("0000001");
+        assertThat(service.resyncDuplicateInvoice("VT0001ABCD", "ketoan")).isEqualTo("NOT_DUPLICATE");
+        verify(client, never()).publish(any());
+    }
+
+    @Test
+    void resyncDuplicate_alreadyHasIds_skipped() {
+        order.setInvoiceStatus(MeInvoiceIssueService.STATUS_DUPLICATE);
+        order.setInvoiceTransactionId("TX-OLD");
+        assertThat(service.resyncDuplicateInvoice("VT0001ABCD", "ketoan")).isEqualTo("ALREADY_HAS_IDS");
+        verify(client, never()).publish(any());
     }
 }

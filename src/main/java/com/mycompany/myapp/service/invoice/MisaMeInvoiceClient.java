@@ -163,7 +163,7 @@ public class MisaMeInvoiceClient {
             String raw = response.body() == null ? "" : response.body();
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 if (isDuplicated(raw)) {
-                    return PublishResult.duplicated(raw);
+                    return parseDuplicated(raw);
                 }
                 throw new MeInvoiceException("MISA publish HTTP " + response.statusCode() + ": " + truncate(raw));
             }
@@ -249,41 +249,22 @@ public class MisaMeInvoiceClient {
         }
     }
 
-    private PublishResult parsePublishResponse(String raw) {
+    /** package-visible cho unit test. */
+    PublishResult parsePublishResponse(String raw) {
         try {
             if (isDuplicated(raw)) {
-                return PublishResult.duplicated(raw);
+                return parseDuplicated(raw);
             }
             JsonNode root = objectMapper.readTree(raw);
             String errorCode = firstText(root, "ErrorCode", "errorCode", "error_code");
             if (errorCode != null && !errorCode.isBlank() && !"Success".equalsIgnoreCase(errorCode)) {
                 if (errorCode.toLowerCase().contains("duplicat")) {
-                    return PublishResult.duplicated(raw);
+                    return parseDuplicated(raw);
                 }
                 throw new MeInvoiceException("MISA ErrorCode=" + errorCode + ": " + truncate(raw));
             }
 
-            JsonNode publishNode = root.get("publishInvoiceResult");
-            if (publishNode == null) {
-                publishNode = root.get("PublishInvoiceResult");
-            }
-            if (publishNode != null && publishNode.isTextual()) {
-                publishNode = objectMapper.readTree(publishNode.asText());
-            }
-            if (publishNode == null) {
-                publishNode = root.get("data");
-            }
-            if (publishNode != null && publishNode.isArray() && publishNode.size() > 0) {
-                publishNode = publishNode.get(0);
-            }
-            if (publishNode == null || !publishNode.isObject()) {
-                // Thử mảng kết quả phổ biến
-                JsonNode arr = root.get("Result");
-                if (arr != null && arr.isArray() && arr.size() > 0) {
-                    publishNode = arr.get(0);
-                }
-            }
-
+            JsonNode publishNode = extractPublishNode(root);
             String transactionId = firstText(publishNode, "TransactionID", "transactionID", "TransactionId");
             String invNo = firstText(publishNode, "InvNo", "invNo", "InvoiceNumber");
             String invSeries = firstText(publishNode, "InvSeries", "invSeries");
@@ -291,7 +272,7 @@ public class MisaMeInvoiceClient {
             String rowError = firstText(publishNode, "ErrorCode", "errorCode");
             if (rowError != null && !rowError.isBlank() && !"Success".equalsIgnoreCase(rowError)) {
                 if (rowError.toLowerCase().contains("duplicat") || "InvoiceDuplicated".equalsIgnoreCase(rowError)) {
-                    return PublishResult.duplicated(raw);
+                    return parseDuplicated(raw);
                 }
                 throw new MeInvoiceException("MISA row ErrorCode=" + rowError + ": " + truncate(raw));
             }
@@ -304,6 +285,99 @@ public class MisaMeInvoiceClient {
         } catch (Exception e) {
             throw new MeInvoiceException("MISA parse publish response: " + e.getMessage() + " · " + truncate(raw), e);
         }
+    }
+
+    /**
+     * InvoiceDuplicated: vẫn cố lấy InvNo/TransactionID nếu MISA trả kèm (để đơn không mất số HĐ khi gửi trùng RefID).
+     */
+    PublishResult parseDuplicated(String raw) {
+        try {
+            JsonNode root = objectMapper.readTree(raw == null ? "{}" : raw);
+            JsonNode publishNode = extractPublishNode(root);
+            String transactionId = firstNonBlank(
+                firstText(publishNode, "TransactionID", "transactionID", "TransactionId"),
+                findTextDeep(root, "TransactionID", "transactionID", "TransactionId")
+            );
+            String invNo = firstNonBlank(
+                firstText(publishNode, "InvNo", "invNo", "InvoiceNumber"),
+                findTextDeep(root, "InvNo", "invNo", "InvoiceNumber")
+            );
+            String invSeries = firstNonBlank(
+                firstText(publishNode, "InvSeries", "invSeries"),
+                findTextDeep(root, "InvSeries", "invSeries")
+            );
+            String invCode = firstNonBlank(firstText(publishNode, "InvCode", "invCode"), findTextDeep(root, "InvCode", "invCode"));
+            return PublishResult.duplicated(transactionId, invNo, invSeries, invCode, raw);
+        } catch (Exception e) {
+            LOG.debug("MISA duplicate response parse fallback: {}", e.toString());
+            return PublishResult.duplicated(null, null, null, null, raw);
+        }
+    }
+
+    private JsonNode extractPublishNode(JsonNode root) throws Exception {
+        if (root == null || root.isMissingNode() || root.isNull()) {
+            return null;
+        }
+        JsonNode publishNode = root.get("publishInvoiceResult");
+        if (publishNode == null) {
+            publishNode = root.get("PublishInvoiceResult");
+        }
+        if (publishNode != null && publishNode.isTextual()) {
+            publishNode = objectMapper.readTree(publishNode.asText());
+        }
+        if (publishNode == null) {
+            publishNode = root.get("data");
+        }
+        if (publishNode != null && publishNode.isArray() && publishNode.size() > 0) {
+            publishNode = publishNode.get(0);
+        }
+        if (publishNode == null || !publishNode.isObject()) {
+            JsonNode arr = root.get("Result");
+            if (arr != null && arr.isArray() && arr.size() > 0) {
+                publishNode = arr.get(0);
+            }
+        }
+        return publishNode;
+    }
+
+    private static String findTextDeep(JsonNode node, String... keys) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        String direct = firstText(node, keys);
+        if (direct != null) {
+            return direct;
+        }
+        if (node.isObject()) {
+            var it = node.fields();
+            while (it.hasNext()) {
+                var e = it.next();
+                String hit = findTextDeep(e.getValue(), keys);
+                if (hit != null) {
+                    return hit;
+                }
+            }
+        } else if (node.isArray()) {
+            for (JsonNode child : node) {
+                String hit = findTextDeep(child, keys);
+                if (hit != null) {
+                    return hit;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String v : values) {
+            if (v != null && !v.isBlank()) {
+                return v.trim();
+            }
+        }
+        return null;
     }
 
     private static boolean isDuplicated(String raw) {
@@ -366,8 +440,13 @@ public class MisaMeInvoiceClient {
             return new PublishResult(true, false, tx, no, series, code, raw);
         }
 
+        static PublishResult duplicated(String tx, String no, String series, String code, String raw) {
+            return new PublishResult(true, true, tx, no, series, code, raw);
+        }
+
+        /** Không có số HĐ trong body trùng. */
         static PublishResult duplicated(String raw) {
-            return new PublishResult(true, true, null, null, null, null, raw);
+            return duplicated(null, null, null, null, raw);
         }
     }
 }

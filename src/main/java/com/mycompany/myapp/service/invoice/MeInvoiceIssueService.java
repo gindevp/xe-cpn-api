@@ -150,7 +150,7 @@ public class MeInvoiceIssueService {
     @Transactional
     public ShipmentOrder issueManual(String orderCode, IssueInvoiceRequest request, String actor) {
         requireClient();
-        ShipmentOrder order = requireOrder(orderCode);
+        ShipmentOrder order = requireOrderForUpdate(orderCode);
         assertPaymentReached(order);
         assertNotIssued(order, "không xuất lại");
         dayClosureGuard.assertOrderMutable(order);
@@ -186,7 +186,7 @@ public class MeInvoiceIssueService {
      */
     @Transactional
     public String backfillOne(String orderCode, String actor) {
-        ShipmentOrder order = shipmentOrderRepository.findOneByOrderCodeOrDraftCode(orderCode.trim()).orElse(null);
+        ShipmentOrder order = shipmentOrderRepository.findOneByOrderCodeOrDraftCodeForUpdate(orderCode.trim()).orElse(null);
         if (order == null) {
             return "NOT_FOUND";
         }
@@ -210,12 +210,44 @@ public class MeInvoiceIssueService {
     }
 
     /**
+     * Đồng bộ lại đơn DUPLICATE thiếu InvNo/TransactionID: gửi lại cùng RefID, lấy số HĐ từ response trùng nếu có.
+     * Không tạo RefID mới — tránh xuất HĐ thật thứ hai.
+     */
+    @Transactional
+    public String resyncDuplicateInvoice(String orderCode, String actor) {
+        requireClient();
+        if (orderCode == null || orderCode.isBlank()) {
+            return "NOT_FOUND";
+        }
+        ShipmentOrder order = shipmentOrderRepository.findOneByOrderCodeOrDraftCodeForUpdate(orderCode.trim()).orElse(null);
+        if (order == null) {
+            return "NOT_FOUND";
+        }
+        if (!STATUS_DUPLICATE.equals(order.getInvoiceStatus())) {
+            return "NOT_DUPLICATE";
+        }
+        if (hasInvoiceIds(order)) {
+            return "ALREADY_HAS_IDS";
+        }
+        String type = blankToEmpty(order.getInvoiceType()).isBlank() ? InvoicePolicy.typeToIssue(order) : order.getInvoiceType().trim();
+        publish(order, type);
+        appendEvent(order, "INVOICE_RESYNC", "Đồng bộ lại HĐ trùng RefID · " + issueDetail(order), actor);
+        if (STATUS_ISSUED.equals(order.getInvoiceStatus()) && hasInvoiceIds(order)) {
+            return STATUS_ISSUED;
+        }
+        if (STATUS_DUPLICATE.equals(order.getInvoiceStatus())) {
+            return hasInvoiceIds(order) ? STATUS_ISSUED : STATUS_DUPLICATE;
+        }
+        return order.getInvoiceStatus() != null ? order.getInvoiceStatus() : "FAILED";
+    }
+
+    /**
      * Tự xuất khi đã quá mốc thanh toán + 3 tiếng và đơn đã hoàn tất — giao thành công / hoàn xong (gọi từ job).
      * Bỏ qua đơn công nợ, đơn còn nợ cước, đơn đã có trạng thái HĐ (trừ SKIPPED của luồng cũ).
      */
     @Transactional
     public String autoIssueOne(Long orderId) {
-        ShipmentOrder order = shipmentOrderRepository.findById(orderId).orElse(null);
+        ShipmentOrder order = shipmentOrderRepository.findByIdForUpdate(orderId).orElse(null);
         if (order == null) {
             return "NOT_FOUND";
         }
@@ -380,31 +412,10 @@ public class MeInvoiceIssueService {
             ObjectNode body = buildPublishBody(order, amounts, refId, type);
             MisaMeInvoiceClient.PublishResult result = client.publish(body);
             if (result.duplicated()) {
-                order.setInvoiceStatus(STATUS_DUPLICATE);
-                order.setInvoiceError(truncate("InvoiceDuplicated"));
-                order.setInvoiceIssuedAt(Instant.now());
-                shipmentOrderRepository.save(order);
-                rememberBuyerTax(order);
-                LOG.info("MISA InvoiceDuplicated RefID={} order={}", refId, order.getOrderCode());
+                applyPublishSuccess(order, result, type, true);
                 return;
             }
-            order.setInvoiceStatus(STATUS_ISSUED);
-            order.setInvoiceTransactionId(result.transactionId());
-            order.setInvoiceNo(result.invNo());
-            order.setInvoiceSeries(result.invSeries() != null ? result.invSeries() : client.getInvSeries());
-            order.setInvoiceCode(result.invCode());
-            order.setInvoiceIssuedAt(Instant.now());
-            order.setInvoiceError(null);
-            shipmentOrderRepository.save(order);
-            rememberBuyerTax(order);
-            LOG.info(
-                "MISA issued order={} type={} InvNo={} Tx={} Code={}",
-                order.getOrderCode(),
-                type,
-                result.invNo(),
-                result.transactionId(),
-                result.invCode()
-            );
+            applyPublishSuccess(order, result, type, false);
         } catch (Exception e) {
             markFailed(order, amounts, e.getMessage());
             LOG.warn("MISA issue failed order={}: {}", order.getOrderCode(), e.getMessage());
@@ -492,6 +503,62 @@ public class MeInvoiceIssueService {
         return shipmentOrderRepository
             .findOneByOrderCodeOrDraftCode(orderCode.trim())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderCode));
+    }
+
+    private ShipmentOrder requireOrderForUpdate(String orderCode) {
+        return shipmentOrderRepository
+            .findOneByOrderCodeOrDraftCodeForUpdate(orderCode.trim())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderCode));
+    }
+
+    /** Có InvNo hoặc TransactionID để xem/tải HĐ. */
+    static boolean hasInvoiceIds(ShipmentOrder order) {
+        return !blankToEmpty(order.getInvoiceNo()).isBlank() || !blankToEmpty(order.getInvoiceTransactionId()).isBlank();
+    }
+
+    /**
+     * Ghi kết quả publish lên đơn. {@code fromDuplicate}: MISA báo trùng RefID — nếu có InvNo/Tx thì coi như ISSUED
+     * (lấy lại số HĐ đã có); không có thì giữ DUPLICATE.
+     */
+    private void applyPublishSuccess(ShipmentOrder order, MisaMeInvoiceClient.PublishResult result, String type, boolean fromDuplicate) {
+        boolean hasIds = !blankToEmpty(result.transactionId()).isBlank() || !blankToEmpty(result.invNo()).isBlank();
+        if (fromDuplicate && !hasIds) {
+            order.setInvoiceStatus(STATUS_DUPLICATE);
+            order.setInvoiceError(truncate("InvoiceDuplicated"));
+            order.setInvoiceIssuedAt(Instant.now());
+            shipmentOrderRepository.save(order);
+            rememberBuyerTax(order);
+            LOG.info("MISA InvoiceDuplicated RefID={} order={} (no InvNo/Tx in response)", order.getInvoiceRefId(), order.getOrderCode());
+            return;
+        }
+        order.setInvoiceStatus(STATUS_ISSUED);
+        if (!blankToEmpty(result.transactionId()).isBlank()) {
+            order.setInvoiceTransactionId(result.transactionId());
+        }
+        if (!blankToEmpty(result.invNo()).isBlank()) {
+            order.setInvoiceNo(result.invNo());
+        }
+        if (!blankToEmpty(result.invSeries()).isBlank()) {
+            order.setInvoiceSeries(result.invSeries());
+        } else if (blankToEmpty(order.getInvoiceSeries()).isBlank()) {
+            order.setInvoiceSeries(client.getInvSeries());
+        }
+        if (!blankToEmpty(result.invCode()).isBlank()) {
+            order.setInvoiceCode(result.invCode());
+        }
+        order.setInvoiceIssuedAt(Instant.now());
+        order.setInvoiceError(null);
+        shipmentOrderRepository.save(order);
+        rememberBuyerTax(order);
+        LOG.info(
+            "MISA {} order={} type={} InvNo={} Tx={} Code={}",
+            fromDuplicate ? "recovered-duplicate" : "issued",
+            order.getOrderCode(),
+            type,
+            result.invNo(),
+            result.transactionId(),
+            result.invCode()
+        );
     }
 
     private ShipmentOrder requireIssued(String orderCode) {

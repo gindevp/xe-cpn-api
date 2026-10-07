@@ -1,6 +1,7 @@
 package com.mycompany.myapp.repository;
 
 import com.mycompany.myapp.domain.ShipmentOrder;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -67,6 +68,15 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
         """
     )
     Optional<ShipmentOrder> findOneByOrderCodeOrDraftCode(@Param("code") String code);
+
+    /** Khoá ghi khi xuất / đồng bộ HĐ — tránh double-submit cùng RefID. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from ShipmentOrder o where o.orderCode = :code or o.draftCode = :code")
+    Optional<ShipmentOrder> findOneByOrderCodeOrDraftCodeForUpdate(@Param("code") String code);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from ShipmentOrder o where o.id = :id")
+    Optional<ShipmentOrder> findByIdForUpdate(@Param("id") Long id);
 
     @Query(
         "select o from ShipmentOrder o left join fetch o.fromOffice left join fetch o.toOffice left join fetch o.finalToOffice" +
