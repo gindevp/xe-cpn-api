@@ -22,6 +22,7 @@ import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.security.PermissionService;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
+import com.mycompany.myapp.service.autocall.AutoCallService;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.OrderDetailDTO;
 import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
@@ -32,6 +33,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -77,6 +79,12 @@ public class ExceptionFacadeService {
     private final DayClosureGuard dayClosureGuard;
     private final StaffAccessService staffAccessService;
     private final PermissionService permissionService;
+    private AutoCallService autoCallService;
+
+    @Autowired(required = false)
+    void setAutoCallService(AutoCallService autoCallService) {
+        this.autoCallService = autoCallService;
+    }
 
     public ExceptionFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -563,6 +571,7 @@ public class ExceptionFacadeService {
         }
         order.setIssue(issue);
         shipmentOrderRepository.save(order);
+        stopAutoCalls(order);
         return orderFacadeService.getByCode(order.getOrderCode());
     }
 
@@ -605,7 +614,14 @@ public class ExceptionFacadeService {
         order.setIssue(issue);
         shipmentOrderRepository.save(order);
         appendEvent(order, "CANCEL_REQUEST", clipped);
+        stopAutoCalls(order);
         return orderFacadeService.getByCode(order.getOrderCode());
+    }
+
+    private void stopAutoCalls(ShipmentOrder order) {
+        if (autoCallService != null && order.getId() != null) {
+            autoCallService.stopPendingCalls(order.getId());
+        }
     }
 
     private OrderIssue requireOpenCancelRequest(ShipmentOrder order) {

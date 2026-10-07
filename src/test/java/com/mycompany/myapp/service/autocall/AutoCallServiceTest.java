@@ -900,6 +900,47 @@ class AutoCallServiceTest {
     }
 
     @Test
+    void fireRetry_openExceptionOrStaleAtDest_doesNotCall() {
+        java.time.Instant now = vn("2026-10-07T02:00:00");
+        AutoCall exception = failedCallAt("2026-10-07T01:00:00", 0);
+        exception.setNextRetryAt(now.minusSeconds(5));
+        exception.getOrder().setStatus(com.mycompany.myapp.domain.enumeration.OrderStatus.AT_DEST);
+        exception.getOrder().setUpdatedAt(now.minusSeconds(3600));
+        com.mycompany.myapp.domain.OrderIssue issue = new com.mycompany.myapp.domain.OrderIssue();
+        issue.setIssueType(com.mycompany.myapp.domain.enumeration.IssueType.EXCEPTION);
+        issue.setIssueStatus(com.mycompany.myapp.domain.enumeration.IssueStatus.OPEN);
+        exception.getOrder().setIssue(issue);
+        when(autoCallRepository.findById(99L)).thenReturn(Optional.of(exception));
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(retryConfig()));
+
+        assertThat(service.fireRetry(99L, now)).isNull();
+
+        AutoCall stale = failedCallAt("2026-10-04T01:00:00", 0);
+        stale.setNextRetryAt(now.minusSeconds(5));
+        stale.getOrder().setStatus(com.mycompany.myapp.domain.enumeration.OrderStatus.AT_DEST);
+        stale.getOrder().setUpdatedAt(now.minus(java.time.Duration.ofDays(3)));
+        when(autoCallRepository.findById(99L)).thenReturn(Optional.of(stale));
+        assertThat(service.fireRetry(99L, now)).isNull();
+        assertThat(AutoCallService.autoCallStopReason(stale.getOrder(), now)).isEqualTo("Đơn quá 2 ngày ở nhập kho giao");
+    }
+
+    @Test
+    void catchUp_openException_isSkipped() {
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(config(true, KEY)));
+        ShipmentOrder order = atDest(1L, "A1", "0912345671", "VP_A");
+        com.mycompany.myapp.domain.OrderIssue issue = new com.mycompany.myapp.domain.OrderIssue();
+        issue.setIssueType(com.mycompany.myapp.domain.enumeration.IssueType.LOST);
+        issue.setIssueStatus(com.mycompany.myapp.domain.enumeration.IssueStatus.OPEN);
+        order.setIssue(issue);
+        when(shipmentOrderRepository.findWithOfficesByOrderCodeIn(any())).thenReturn(List.of(order));
+
+        AutoCallService.CatchUpResult r = service.catchUp(List.of("A1"), null, true, "dh1");
+
+        assertThat(r.eligible()).isEmpty();
+        assertThat(r.skipped()).extracting(AutoCallService.CatchUpSkip::reason).containsExactly("Đơn thất lạc");
+    }
+
+    @Test
     void fireRetry_deliveredOrder_doesNotCall() {
         java.time.Instant now = vn("2026-10-02T10:00:00");
         AutoCall prev = failedCallAt("2026-10-02T09:00:00", 0);

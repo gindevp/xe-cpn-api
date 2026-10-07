@@ -7,7 +7,10 @@ import com.mycompany.myapp.domain.AutoCall;
 import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderEvent;
+import com.mycompany.myapp.domain.OrderIssue;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.IssueStatus;
+import com.mycompany.myapp.domain.enumeration.IssueType;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.AutoCallRepository;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
@@ -79,6 +82,8 @@ public class AutoCallService {
         OrderStatus.RETURNING,
         OrderStatus.RETURNED
     );
+    /** Cùng mốc tab Hàng ngoại lệ: quá ngần này ở nhập kho giao thì không gọi tự động nữa. */
+    static final Duration AUTO_EXCEPTION_AFTER = Duration.ofDays(2);
     static final String TRIGGER_RETRY = "RETRY";
     static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final DateTimeFormatter RETRY_AT_FMT = DateTimeFormatter.ofPattern("HH:mm dd/MM").withZone(VN);
@@ -148,6 +153,9 @@ public class AutoCallService {
         }
         IntegrationConfig cfg = currentConfig();
         if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled()) || !cfg.isAutocallActiveKeyConfigured()) {
+            return;
+        }
+        if (openIssueReason(order) != null) {
             return;
         }
         createGiaoCall(order, cfg, action, "");
@@ -276,6 +284,10 @@ public class AutoCallService {
         }
         if (order.getStatus() != OrderStatus.AT_DEST) {
             return "Đơn không ở nhập kho giao";
+        }
+        String issue = openIssueReason(order);
+        if (issue != null) {
+            return issue;
         }
         if (scopedOffice != null) {
             Office to = order.getToOffice();
@@ -746,7 +758,13 @@ public class AutoCallService {
         if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled())) return;
         if (!retryAllowed(cfg, retryReason(call))) return;
         ShipmentOrder order = call.getOrder();
-        if (order == null || RETRY_STOP_STATUSES.contains(order.getStatus())) return;
+        String stop = autoCallStopReason(order, Instant.now());
+        if (stop != null) {
+            if (order != null && order.getStatus() == OrderStatus.AT_DEST) {
+                appendEvent(order, "AUTO_CALL_RETRY", sandboxPrefix(call) + "Không gọi lại: " + stop);
+            }
+            return;
+        }
         RetrySlot slot = nextRetry(cfg, call, Instant.now());
         if (slot == null) {
             appendEvent(order, "AUTO_CALL_RETRY", sandboxPrefix(call) + "Hết lượt gọi lại theo cấu hình");
@@ -814,7 +832,7 @@ public class AutoCallService {
             return null;
         }
         ShipmentOrder order = prev.getOrder();
-        if (order == null || RETRY_STOP_STATUSES.contains(order.getStatus())) {
+        if (autoCallStopReason(order, now) != null) {
             return null;
         }
         if (prev.getCreatedAt() != null && autoCallRepository.existsByOrder_IdAndCreatedAtAfter(order.getId(), prev.getCreatedAt())) {
@@ -848,7 +866,63 @@ public class AutoCallService {
         return call.getId();
     }
 
-    /** PENDING chưa có callId và đang có giờ hẹn = cuộc gọi chờ tới khung giờ gọi, chưa gửi HHVN. */
+    /**
+     * Không gọi tự động khi: đã giao / huỷ / hoàn, không còn ở nhập kho giao, đang có ngoại lệ / thất lạc / hư hỏng /
+     * chờ duyệt huỷ, hoặc nằm nhập kho giao quá 2 ngày (tab Hàng ngoại lệ). Null = vẫn gọi.
+     */
+    static String autoCallStopReason(ShipmentOrder order, Instant now) {
+        if (order == null) {
+            return "Không có đơn";
+        }
+        if (RETRY_STOP_STATUSES.contains(order.getStatus())) {
+            return "Đơn đã giao / huỷ / hoàn";
+        }
+        if (order.getStatus() != OrderStatus.AT_DEST) {
+            return "Đơn không còn ở nhập kho giao";
+        }
+        String issue = openIssueReason(order);
+        if (issue != null) {
+            return issue;
+        }
+        if (isStaleAtDest(order, now)) {
+            return "Đơn quá 2 ngày ở nhập kho giao";
+        }
+        return null;
+    }
+
+    /** Ngoại lệ / thất lạc / hư hỏng / chờ duyệt huỷ đang mở. Null = không chặn. */
+    static String openIssueReason(ShipmentOrder order) {
+        OrderIssue issue = order.getIssue();
+        if (issue == null || issue.getResolvedAt() != null || issue.getIssueStatus() != IssueStatus.OPEN) {
+            return null;
+        }
+        IssueType type = issue.getIssueType();
+        if (type == IssueType.EXCEPTION) return "Đơn ngoại lệ";
+        if (type == IssueType.LOST) return "Đơn thất lạc";
+        if (type == IssueType.DAMAGED) return "Đơn hư hỏng";
+        if (type == IssueType.CANCEL_REQUEST) return "Đơn chờ duyệt huỷ";
+        return null;
+    }
+
+    /** Cùng rule tab Hàng ngoại lệ: AT_DEST / giao thất bại, mốc cập nhật trạng thái quá 2 ngày. */
+    static boolean isStaleAtDest(ShipmentOrder order, Instant now) {
+        if (order.getStatus() != OrderStatus.AT_DEST && order.getStatus() != OrderStatus.FAILED_DELIVERY) {
+            return false;
+        }
+        Instant ref = order.getUpdatedAt() != null ? order.getUpdatedAt() : order.getCreatedAt();
+        return ref != null && ref.isBefore(now.minus(AUTO_EXCEPTION_AFTER));
+    }
+
+    /** Ghi nhận sự cố: bỏ lịch gọi đang chờ để phút sau không gọi tiếp. */
+    public void stopPendingCalls(Long orderId) {
+        if (orderId == null) {
+            return;
+        }
+        autoCallRepository.skipScheduledForOrder(orderId, "ISSUE_OPEN", "Đơn ngoại lệ / thất lạc / hư hỏng / chờ huỷ");
+        autoCallRepository.clearRetriesForOrder(orderId);
+    }
+
+    /** PENDING chưa có callId và đang có giờ hẹn = cuộc gọi chờ tới khung giờ gọi, chưa gửi tổng đài. */
     static boolean isScheduledUnsent(AutoCall call) {
         return "PENDING".equals(call.getStatus()) && call.getCallId() == null;
     }
@@ -860,8 +934,11 @@ public class AutoCallService {
         String skip = null;
         if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled())) {
             skip = "Auto Call đang tắt";
-        } else if (order == null || RETRY_STOP_STATUSES.contains(order.getStatus())) {
-            skip = "Đơn đã giao / huỷ / hoàn trước giờ gọi";
+        } else {
+            String stop = autoCallStopReason(order, now);
+            if (stop != null) {
+                skip = stop;
+            }
         }
         if (skip != null) {
             call.setStatus("SKIPPED");
