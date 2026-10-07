@@ -143,16 +143,22 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
     )
     List<ShipmentOrder> findAllWithOfficesByIdIn(@Param("ids") java.util.Collection<Long> ids);
 
-    /** Đơn gần nhất có thông tin HĐ công ty mà SĐT là người gửi hoặc người nhận (lọc người trả cước ở service). */
+    /**
+     * Đơn có thông tin HĐ công ty mà SĐT (chỉ chữ số, gồm dạng 0… và 84…) là người gửi hoặc người nhận.
+     * So khớp sau khi bỏ dấu cách / chấm / gạch, nên {@code 0901 234 567} vẫn khớp {@code 0901234567}.
+     */
     @Query(
         """
         select o from ShipmentOrder o
         where o.invoiceTaxCode is not null and o.invoiceCompanyName is not null
-        and (o.senderPhone = :phone or o.receiverPhone = :phone)
+        and (
+            function('regexp_replace', o.senderPhone, '[^0-9]', '') in :phones
+            or function('regexp_replace', o.receiverPhone, '[^0-9]', '') in :phones
+        )
         order by o.id desc
         """
     )
-    List<ShipmentOrder> findInvoiceProfilesByPhone(@Param("phone") String phone, Pageable pageable);
+    List<ShipmentOrder> findInvoiceProfilesByPhone(@Param("phones") java.util.Collection<String> phones, Pageable pageable);
 
     @Query(
         """

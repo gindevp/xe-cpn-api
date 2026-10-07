@@ -87,7 +87,7 @@ public class InvoiceManagementResource {
         return invoiceAutoIssueService.backfillStatus();
     }
 
-    /** Thông tin HĐ công ty lần gần nhất của SĐT người trả cước; không có → 204. */
+    /** Thông tin HĐ công ty lần gần nhất của SĐT người gửi hoặc người nhận; không có → 204. */
     @GetMapping("/buyer-profile")
     public ResponseEntity<Map<String, String>> buyerProfile(@RequestParam("phone") String phone) {
         return invoiceAutoIssueService.buyerProfile(phone).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());

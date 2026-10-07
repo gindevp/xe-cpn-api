@@ -171,20 +171,21 @@ class InvoiceAutoIssueServiceTest {
     }
 
     @Test
-    void buyerProfiles_distinctTaxCodes_newestFirst_onlyWhenPhoneIsPayer() {
+    void buyerProfiles_distinctTaxCodes_newestFirst_senderOrReceiver_ignoresFormatting() {
         String phone = "0901234567";
-        when(orderRepo.findInvoiceProfilesByPhone(eq(phone), any())).thenReturn(
+        when(orderRepo.findInvoiceProfilesByPhone(any(), any())).thenReturn(
             List.of(
-                invoicedBy("O5", phone, "0911", "0101243150", "CTY A moi"),
-                invoicedBy("O4", "0922", phone, "0312345678", "Nguoi nhan khong tra"),
+                invoicedBy("O5", "0901 234 567", "0911", "0101243150", "CTY A moi"),
+                invoicedBy("O4", "0922", "+84 901 234 567", "0312345678", "Nguoi nhan"),
                 invoicedBy("O3", phone, "0933", "0109876543", "CTY B"),
-                invoicedBy("O2", phone, "0944", "0101243150", "CTY A cu")
+                invoicedBy("O2", phone, "0944", "0101243150", "CTY A cu"),
+                invoicedBy("O1", "0999", "0888", "0100000000", "Khong lien quan")
             )
         );
 
-        List<java.util.Map<String, String>> profiles = service.buyerProfiles(phone);
+        List<java.util.Map<String, String>> profiles = service.buyerProfiles("0901.234.567");
 
-        assertThat(profiles).extracting(m -> m.get("taxCode")).containsExactly("0101243150", "0109876543");
+        assertThat(profiles).extracting(m -> m.get("taxCode")).containsExactly("0101243150", "0312345678", "0109876543");
         assertThat(profiles.get(0).get("companyName")).isEqualTo("CTY A moi");
         assertThat(service.buyerProfile(phone)).get().extracting(m -> m.get("fromOrderCode")).isEqualTo("O5");
     }
@@ -239,7 +240,7 @@ class InvoiceAutoIssueServiceTest {
     }
 
     @Test
-    void buyerProfile_onlyWhenPhoneIsPayer() {
+    void buyerProfile_matchesSenderEvenWhenReceiverPays() {
         ShipmentOrder receiverPays = new ShipmentOrder();
         receiverPays.setPaymentTerm(PaymentTerm.NHAN_TRA);
         receiverPays.setSenderPhone("0911111111");
@@ -251,9 +252,9 @@ class InvoiceAutoIssueServiceTest {
         senderPays.setSenderPhone("0911111111");
         senderPays.setInvoiceTaxCode("0103179782");
         senderPays.setInvoiceCompanyName("Cty Gửi");
-        when(orderRepo.findInvoiceProfilesByPhone(eq("0911111111"), any())).thenReturn(List.of(receiverPays, senderPays));
+        when(orderRepo.findInvoiceProfilesByPhone(any(), any())).thenReturn(List.of(receiverPays, senderPays));
 
-        assertThat(service.buyerProfile("0911111111")).hasValueSatisfying(m -> assertThat(m.get("companyName")).isEqualTo("Cty Gửi"));
+        assertThat(service.buyerProfile("0911111111")).hasValueSatisfying(m -> assertThat(m.get("companyName")).isEqualTo("Cty Nhận"));
         assertThat(service.buyerProfile("09")).isEmpty();
     }
 }

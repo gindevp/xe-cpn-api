@@ -305,7 +305,7 @@ public class InvoiceAutoIssueService {
 
     // ---------------------------------------------------------------- thông tin công ty theo SĐT
 
-    /** Thông tin HĐ công ty lần gần nhất mà SĐT này là người trả cước; không có → rỗng. */
+    /** Thông tin HĐ công ty lần gần nhất mà SĐT này là người gửi hoặc người nhận; không có → rỗng. */
     @Transactional(readOnly = true)
     public Optional<Map<String, String>> buyerProfile(String phone) {
         return buyerProfiles(phone).stream().findFirst();
@@ -314,25 +314,28 @@ public class InvoiceAutoIssueService {
     static final int BUYER_PROFILE_SCAN = 100;
     static final int BUYER_PROFILE_MAX = 5;
 
-    /** Các MST khác nhau SĐT này từng dùng khi là người trả cước, mới nhất trước; mỗi MST lấy thông tin lần gần nhất. */
+    /**
+     * Các MST khác nhau SĐT này từng dùng khi là người gửi hoặc người nhận, mới nhất trước.
+     * Mỗi MST lấy thông tin lần gần nhất. Khớp cả số có khoảng trắng, dấu chấm và đầu 84.
+     */
     @Transactional(readOnly = true)
     public List<Map<String, String>> buyerProfiles(String phone) {
-        String p = phone == null ? "" : phone.trim();
-        if (p.length() < 8) {
+        List<String> keys = phoneLookupKeys(phone);
+        if (keys.isEmpty()) {
             return List.of();
         }
+        String canonical = keys.get(0);
         Map<String, Map<String, String>> byTax = new LinkedHashMap<>();
-        for (ShipmentOrder o : shipmentOrderRepository.findInvoiceProfilesByPhone(p, PageRequest.of(0, BUYER_PROFILE_SCAN))) {
-            String payer = InvoicePolicy.payerPhone(o);
-            if (payer == null || !p.equals(payer.trim())) {
+        for (ShipmentOrder o : shipmentOrderRepository.findInvoiceProfilesByPhone(keys, PageRequest.of(0, BUYER_PROFILE_SCAN))) {
+            if (!phoneMatches(o.getSenderPhone(), keys) && !phoneMatches(o.getReceiverPhone(), keys)) {
                 continue;
             }
-            String tax = o.getInvoiceTaxCode().trim();
+            String tax = o.getInvoiceTaxCode() == null ? "" : o.getInvoiceTaxCode().trim();
             if (tax.isEmpty() || byTax.containsKey(tax)) {
                 continue;
             }
             Map<String, String> m = new LinkedHashMap<>();
-            m.put("phone", p);
+            m.put("phone", canonical);
             m.put("taxCode", tax);
             m.put("companyName", o.getInvoiceCompanyName());
             m.put("address", o.getInvoiceCompanyAddress());
@@ -344,6 +347,26 @@ public class InvoiceAutoIssueService {
             }
         }
         return new ArrayList<>(byTax.values());
+    }
+
+    /** {@code 0xxxxxxxxx} đứng trước, kèm dạng {@code 84…}. Rỗng nếu không đủ số. */
+    static List<String> phoneLookupKeys(String raw) {
+        String d = raw == null ? "" : raw.replaceAll("\\D", "");
+        if (d.startsWith("84") && d.length() == 11) {
+            d = "0" + d.substring(2);
+        }
+        if (d.length() < 9) {
+            return List.of();
+        }
+        if (d.startsWith("0") && d.length() >= 10) {
+            return List.of(d, "84" + d.substring(1));
+        }
+        return List.of(d);
+    }
+
+    static boolean phoneMatches(String stored, List<String> keys) {
+        String d = stored == null ? "" : stored.replaceAll("\\D", "");
+        return !d.isEmpty() && keys.contains(d);
     }
 
     // ---------------------------------------------------------------- trạng thái xuất bù
