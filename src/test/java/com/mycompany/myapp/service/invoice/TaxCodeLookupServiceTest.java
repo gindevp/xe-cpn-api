@@ -71,7 +71,7 @@ class TaxCodeLookupServiceTest {
             .containsEntry("ok", true)
             .containsEntry("taxCode", "0103179782")
             .containsEntry("companyName", "CÔNG TY TNHH X.E VIỆT NAM")
-            .containsEntry("address", "Số 4 đường Văn Chỉ, TP Hà Nội");
+            .containsEntry("address", "Số 4 đường Văn Chỉ, Thành Phố Hà Nội, Việt Nam.");
     }
 
     @Test
@@ -106,7 +106,7 @@ class TaxCodeLookupServiceTest {
         assertThat(out)
             .containsEntry("ok", true)
             .containsEntry("companyName", "CHI NHÁNH CÔNG TY CỔ PHẦN NGỌC HÀ TẠI NAM ĐỊNH")
-            .containsEntry("address", "Số 135, đường Nguyễn Công Trứ, Phường Đông A, Ninh Bình");
+            .containsEntry("address", "Số 135, đường Nguyễn Công Trứ, Phường Đông A, Ninh Bình, Việt Nam.");
     }
 
     @Test
@@ -173,7 +173,7 @@ class TaxCodeLookupServiceTest {
         assertThat(out)
             .containsEntry("ok", true)
             .containsEntry("companyName", "VĂN PHÒNG ĐẠI DIỆN CÔNG TY TNHH CASSO")
-            .containsEntry("address", "Số 8 Lô LK1, Phường Đông Hòa, TP Hồ Chí Minh")
+            .containsEntry("address", "Số 8 Lô LK1, Phường Đông Hòa, Thành Phố Hồ Chí Minh, Việt Nam.")
             .containsEntry("active", true);
     }
 
@@ -200,6 +200,20 @@ class TaxCodeLookupServiceTest {
         assertThat(
             TaxCodeLookupService.parseXinvoice("0103179782", JSON.readTree("{\"success\":false,\"message\":\"Tax not found\"}"))
         ).containsEntry("code", "NOT_FOUND");
+    }
+
+    @Test
+    void normalizeAddress_expandsTpAndAppendsVietnam() {
+        assertThat(TaxCodeLookupService.normalizeAddress("Số 4 đường Văn Chỉ, TP Hà Nội")).isEqualTo(
+            "Số 4 đường Văn Chỉ, Thành Phố Hà Nội, Việt Nam."
+        );
+        assertThat(TaxCodeLookupService.normalizeAddress("Phường Đông Hòa, TP. Hồ Chí Minh.")).isEqualTo(
+            "Phường Đông Hòa, Thành Phố Hồ Chí Minh, Việt Nam."
+        );
+        assertThat(TaxCodeLookupService.normalizeAddress("Khu công nghiệp, Tp.HCM")).isEqualTo("Khu công nghiệp, Thành Phố HCM, Việt Nam.");
+        assertThat(TaxCodeLookupService.normalizeAddress("TPHCM, Việt Nam")).isEqualTo("TPHCM, Việt Nam");
+        assertThat(TaxCodeLookupService.normalizeAddress("12 Lê Lợi, Viet Nam.")).isEqualTo("12 Lê Lợi, Viet Nam.");
+        assertThat(TaxCodeLookupService.normalizeAddress(null)).isNull();
     }
 
     @Test

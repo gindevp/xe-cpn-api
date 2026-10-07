@@ -15,6 +15,8 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -30,6 +32,11 @@ import org.springframework.stereotype.Service;
 public class TaxCodeLookupService {
 
     private static final Logger LOG = LoggerFactory.getLogger(TaxCodeLookupService.class);
+    /** {@code TP} / {@code TP.} đứng riêng (không nuốt {@code TPHCM}). */
+    private static final Pattern TP_ABBR = Pattern.compile(
+        "(?iu)(?<![\\p{L}\\p{N}])TP\\.(?=\\s|$|\\p{L})|(?<![\\p{L}\\p{N}])TP(?=\\s|$|[,;])"
+    );
+    private static final Pattern VIETNAM = Pattern.compile("vi[eệ]t\\s*nam", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     private static final Duration TIMEOUT = Duration.ofSeconds(8);
     private static final Duration CACHE_TTL = Duration.ofHours(24);
     private static final int CACHE_MAX = 5000;
@@ -205,7 +212,7 @@ public class TaxCodeLookupService {
         out.put("ok", true);
         out.put("taxCode", taxCode);
         out.put("companyName", name);
-        out.put("address", clean(body.path("address").asText(null)));
+        out.put("address", normalizeAddress(body.path("address").asText(null)));
         String orgType = clean(body.path("orgType").asText(null));
         if (orgType != null) {
             out.put("orgType", orgType);
@@ -239,7 +246,7 @@ public class TaxCodeLookupService {
         out.put("ok", true);
         out.put("taxCode", taxCode);
         out.put("companyName", name);
-        out.put("address", clean(data.path("address").asText(null)));
+        out.put("address", normalizeAddress(data.path("address").asText(null)));
         return out;
     }
 
@@ -258,7 +265,7 @@ public class TaxCodeLookupService {
         out.put("ok", true);
         out.put("taxCode", taxCode);
         out.put("companyName", name);
-        out.put("address", clean(data.path("dc").asText(null)));
+        out.put("address", normalizeAddress(data.path("dc").asText(null)));
         return out;
     }
 
@@ -268,6 +275,36 @@ public class TaxCodeLookupService {
         }
         String t = s.replaceAll("\\s+", " ").trim();
         return t.isEmpty() || "null".equalsIgnoreCase(t) ? null : t;
+    }
+
+    /**
+     * Địa chỉ tra theo MST: {@code TP} → {@code Thành Phố}.
+     * Thiếu "Việt Nam" thì thêm đuôi {@code , Việt Nam.}; bỏ dấu chấm / phẩy sát cuối trước khi thêm
+     * để không thành {@code ., Việt Nam.}.
+     */
+    static String normalizeAddress(String raw) {
+        String t = clean(raw);
+        if (t == null) {
+            return null;
+        }
+        t = expandTp(t);
+        if (VIETNAM.matcher(t).find()) {
+            return t;
+        }
+        t = t.replaceFirst("[\\s.,]+$", "");
+        return t.isEmpty() ? "Việt Nam." : t + ", Việt Nam.";
+    }
+
+    static String expandTp(String s) {
+        Matcher m = TP_ABBR.matcher(s);
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            int next = m.end();
+            boolean glued = next < s.length() && Character.isLetter(s.charAt(next));
+            m.appendReplacement(sb, Matcher.quoteReplacement(glued ? "Thành Phố " : "Thành Phố"));
+        }
+        m.appendTail(sb);
+        return sb.toString().replaceAll("\\s{2,}", " ").trim();
     }
 
     private static Map<String, Object> error(String code, String message) {
