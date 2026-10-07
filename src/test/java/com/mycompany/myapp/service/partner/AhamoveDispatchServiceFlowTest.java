@@ -118,12 +118,12 @@ class AhamoveDispatchServiceFlowTest {
     void dispatch_senderPaysUnpaid_driverAdvancesWholeDue() {
         order.setPaidAmount(new BigDecimal("20000"));
         order.setPaymentTerm(PaymentTerm.GUI_TRA);
-        when(client.createOrder(any(), any(), any())).thenReturn(
+        when(client.createOrder(any(), any(), any(), any())).thenReturn(
             new AhamoveOrderClient.CreatedOrder("AHA6", "ASSIGNING", null, new BigDecimal("25000"), null)
         );
         service.dispatch("GP-0001", pin());
         ArgumentCaptor<AhamoveOrderClient.Stop> drop = ArgumentCaptor.forClass(AhamoveOrderClient.Stop.class);
-        verify(client).createOrder(any(), drop.capture(), any());
+        verify(client).createOrder(any(), drop.capture(), any(), any());
         assertThat(drop.getValue().cod()).isEqualTo(30000L);
         assertThat(order.getPartnerCodAmount()).isEqualByComparingTo("30000");
     }
@@ -136,21 +136,21 @@ class AhamoveDispatchServiceFlowTest {
         assertThatThrownBy(() -> service.dispatch("GP-0001", pin()))
             .extracting(e -> ((BadRequestAlertException) e).getErrorKey())
             .isEqualTo("ahamoveOnCredit");
-        verify(client, never()).createOrder(any(), any(), any());
+        verify(client, never()).createOrder(any(), any(), any(), any());
     }
 
     @Test
     void dispatch_receiverPaysUnpaid_sendsCodAndStoresAdvance() {
         order.setPaidAmount(new BigDecimal("20000"));
         order.setPaymentTerm(PaymentTerm.NHAN_TRA);
-        when(client.createOrder(any(), any(), any())).thenReturn(
+        when(client.createOrder(any(), any(), any(), any())).thenReturn(
             new AhamoveOrderClient.CreatedOrder("AHA3", "ASSIGNING", null, new BigDecimal("25000"), null)
         );
         service.dispatch("GP-0001", pin());
 
         ArgumentCaptor<AhamoveOrderClient.Stop> pickup = ArgumentCaptor.forClass(AhamoveOrderClient.Stop.class);
         ArgumentCaptor<AhamoveOrderClient.Stop> drop = ArgumentCaptor.forClass(AhamoveOrderClient.Stop.class);
-        verify(client).createOrder(pickup.capture(), drop.capture(), any());
+        verify(client).createOrder(pickup.capture(), drop.capture(), any(), any());
         assertThat(pickup.getValue().cod()).isZero();
         assertThat(drop.getValue().cod()).isEqualTo(30000L);
         assertThat(order.getPartnerCodAmount()).isEqualByComparingTo("30000");
@@ -161,26 +161,49 @@ class AhamoveDispatchServiceFlowTest {
 
     @Test
     void dispatch_paidOrder_sendsZeroCod() {
-        when(client.createOrder(any(), any(), any())).thenReturn(
+        when(client.createOrder(any(), any(), any(), any())).thenReturn(
             new AhamoveOrderClient.CreatedOrder("AHA4", "ASSIGNING", null, null, null)
         );
         service.dispatch("GP-0001", pin());
         ArgumentCaptor<AhamoveOrderClient.Stop> drop = ArgumentCaptor.forClass(AhamoveOrderClient.Stop.class);
-        verify(client).createOrder(any(), drop.capture(), any());
+        verify(client).createOrder(any(), drop.capture(), any(), any());
         assertThat(drop.getValue().cod()).isZero();
         assertThat(order.getPartnerCodAmount()).isNull();
     }
 
     @Test
+    void dispatch_bulkyPackage_sendsTier() {
+        order.setNote("[PKGKG]35[/PKGKG]\n[PKGDIM]55x45x50[/PKGDIM]");
+        when(client.createOrder(any(), any(), any(), any())).thenReturn(
+            new AhamoveOrderClient.CreatedOrder("AHA6", "ASSIGNING", null, null, null)
+        );
+        service.dispatch("GP-0001", pin());
+        ArgumentCaptor<AhamoveCargo> cargo = ArgumentCaptor.forClass(AhamoveCargo.class);
+        verify(client).createOrder(any(), any(), any(), cargo.capture());
+        assertThat(cargo.getValue().tier()).isEqualTo("TIER_2");
+        assertThat(cargo.getValue().packages()).hasSize(1);
+        assertThat(cargo.getValue().packages().get(0).lengthCm()).isEqualTo(55);
+    }
+
+    @Test
+    void dispatch_oversizePackage_rejected() {
+        order.setWeightKg(new BigDecimal("90"));
+        assertThatThrownBy(() -> service.dispatch("GP-0001", pin()))
+            .extracting(e -> ((BadRequestAlertException) e).getErrorKey())
+            .isEqualTo("ahamoveBulkyOver");
+        verify(client, never()).createOrder(any(), any(), any(), any());
+    }
+
+    @Test
     void dispatch_addressOnly_sendsNoCoordinates() {
-        when(client.createOrder(any(), any(), any())).thenReturn(
+        when(client.createOrder(any(), any(), any(), any())).thenReturn(
             new AhamoveOrderClient.CreatedOrder("AHA5", "ASSIGNING", null, null, null)
         );
         AhamoveDispatchService.DispatchRequest r = new AhamoveDispatchService.DispatchRequest();
         r.setAddress("12 Ngõ 34 Láng Hạ, Đống Đa, Hà Nội");
         service.dispatch("GP-0001", r);
         ArgumentCaptor<AhamoveOrderClient.Stop> drop = ArgumentCaptor.forClass(AhamoveOrderClient.Stop.class);
-        verify(client).createOrder(any(), drop.capture(), any());
+        verify(client).createOrder(any(), drop.capture(), any(), any());
         assertThat(drop.getValue().lat()).isNull();
         assertThat(drop.getValue().lng()).isNull();
         assertThat(drop.getValue().address()).isEqualTo("12 Ngõ 34 Láng Hạ, Đống Đa, Hà Nội");
@@ -194,7 +217,7 @@ class AhamoveDispatchServiceFlowTest {
         assertThatThrownBy(() -> service.dispatch("GP-0001", r))
             .extracting(e -> ((BadRequestAlertException) e).getErrorKey())
             .isEqualTo("ahamovePinInvalid");
-        verify(client, never()).createOrder(any(), any(), any());
+        verify(client, never()).createOrder(any(), any(), any(), any());
     }
 
     @Test
@@ -205,7 +228,7 @@ class AhamoveDispatchServiceFlowTest {
         assertThatThrownBy(() -> service.dispatch("GP-0001", pin()))
             .extracting(e -> ((BadRequestAlertException) e).getErrorKey())
             .isEqualTo("partnerAdvanceRefundDue");
-        verify(client, never()).createOrder(any(), any(), any());
+        verify(client, never()).createOrder(any(), any(), any(), any());
     }
 
     private void advancePending() {
@@ -305,7 +328,7 @@ class AhamoveDispatchServiceFlowTest {
         assertThatThrownBy(() -> service.dispatch("GP-0001", pin()))
             .extracting(e -> ((BadRequestAlertException) e).getErrorKey())
             .isEqualTo("ahamoveCod");
-        verify(client, never()).createOrder(any(), any(), any());
+        verify(client, never()).createOrder(any(), any(), any(), any());
     }
 
     @Test
@@ -319,12 +342,12 @@ class AhamoveDispatchServiceFlowTest {
         assertThatThrownBy(() -> service.dispatch("GP-0001", pin()))
             .extracting(e -> ((BadRequestAlertException) e).getErrorKey())
             .isEqualTo("ahamoveStatus");
-        verify(client, never()).createOrder(any(), any(), any());
+        verify(client, never()).createOrder(any(), any(), any(), any());
     }
 
     @Test
     void dispatch_ok_savesPartnerFeeAndPushesShip_withoutTouchingFare() {
-        when(client.createOrder(any(), any(), eq("BALANCE"))).thenReturn(
+        when(client.createOrder(any(), any(), eq("BALANCE"), any())).thenReturn(
             new AhamoveOrderClient.CreatedOrder("AHA1", "ASSIGNING", "https://aha/s/AHA1", new BigDecimal("28000"), "HAN-BIKE")
         );
         service.dispatch("GP-0001", pin());
@@ -342,7 +365,7 @@ class AhamoveDispatchServiceFlowTest {
 
     @Test
     void dispatch_dbFailure_cancelsAhamoveOrder() {
-        when(client.createOrder(any(), any(), any())).thenReturn(
+        when(client.createOrder(any(), any(), any(), any())).thenReturn(
             new AhamoveOrderClient.CreatedOrder("AHA2", "ASSIGNING", null, null, null)
         );
         when(orders.transition(anyString(), any())).thenThrow(new BadRequestAlertException("Day closed", "order", "dayClosed"));

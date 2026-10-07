@@ -105,6 +105,22 @@ public class AhamoveOrderClient {
         Double toLng,
         String toAddress
     ) {
+        return estimateKm(serviceId, fromLat, fromLng, fromAddress, toLat, toLng, toAddress, null);
+    }
+
+    public Map<String, Object> estimateKm(
+        String serviceId,
+        double fromLat,
+        double fromLng,
+        String fromAddress,
+        Double toLat,
+        Double toLng,
+        String toAddress,
+        AhamoveCargo cargo
+    ) {
+        if (cargo != null) {
+            cargo.assertFitsBike();
+        }
         if (serviceId == null || serviceId.isBlank()) {
             throw new BadRequestAlertException("serviceId required", ENTITY, "ahamoveServiceRequired");
         }
@@ -119,7 +135,8 @@ public class AhamoveOrderClient {
             ArrayNode services = body.putArray("services");
             ObjectNode svc = services.addObject();
             svc.put("_id", serviceId.trim());
-            svc.putArray("requests");
+            writeRequests(svc.putArray("requests"), serviceId.trim() + "-BULKY", cargo);
+            writePackages(body, cargo);
 
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl() + "/orders/estimates"))
@@ -174,12 +191,37 @@ public class AhamoveOrderClient {
         Double pinLng,
         String pinAddress
     ) {
+        return estimatePickupDistance(officeLat, officeLng, officeAddress, pinLat, pinLng, pinAddress, null);
+    }
+
+    public Map<String, Object> estimatePickupDistance(
+        double officeLat,
+        double officeLng,
+        String officeAddress,
+        Double pinLat,
+        Double pinLng,
+        String pinAddress,
+        AhamoveCargo cargo
+    ) {
+        if (cargo != null) {
+            cargo.assertFitsBike();
+        }
         // 1) group_services BIKE — đúng docs, tránh nhầm SGN-BIKE ở Hà Nội.
         try {
-            Map<String, Object> byGroup = estimateKmByGroupService("BIKE", officeLat, officeLng, officeAddress, pinLat, pinLng, pinAddress);
+            Map<String, Object> byGroup = estimateKmByGroupService(
+                "BIKE",
+                officeLat,
+                officeLng,
+                officeAddress,
+                pinLat,
+                pinLng,
+                pinAddress,
+                cargo
+            );
             if (byGroup.get("distanceKm") != null) {
                 List<Map<String, Object>> services = listServices(officeLat, officeLng, "INSTANT");
                 byGroup.put("services", services);
+                tagTier(byGroup, cargo);
                 return byGroup;
             }
         } catch (BadRequestAlertException e) {
@@ -193,7 +235,7 @@ public class AhamoveOrderClient {
             throw new BadRequestAlertException("Không có service Ahamove tại vị trí VP", ENTITY, "ahamoveNoService");
         }
         String serviceId = pickPreferredServiceId(services);
-        Map<String, Object> est = estimateKm(serviceId, officeLat, officeLng, officeAddress, pinLat, pinLng, pinAddress);
+        Map<String, Object> est = estimateKm(serviceId, officeLat, officeLng, officeAddress, pinLat, pinLng, pinAddress, cargo);
         if (est.get("distanceKm") == null) {
             throw new BadRequestAlertException(
                 "Ahamove không trả distance (service=" + serviceId + ") — kiểm tra khu vực lấy hàng / service",
@@ -202,6 +244,7 @@ public class AhamoveOrderClient {
             );
         }
         est.put("services", services);
+        tagTier(est, cargo);
         return est;
     }
 
@@ -231,6 +274,19 @@ public class AhamoveOrderClient {
         Double toLng,
         String toAddress
     ) throws Exception {
+        return estimateKmByGroupService(groupId, fromLat, fromLng, fromAddress, toLat, toLng, toAddress, null);
+    }
+
+    private Map<String, Object> estimateKmByGroupService(
+        String groupId,
+        double fromLat,
+        double fromLng,
+        String fromAddress,
+        Double toLat,
+        Double toLng,
+        String toAddress,
+        AhamoveCargo cargo
+    ) throws Exception {
         String token = requireToken();
         ObjectNode body = objectMapper.createObjectNode();
         body.put("order_time", 0);
@@ -241,7 +297,8 @@ public class AhamoveOrderClient {
         ArrayNode groups = body.putArray("group_services");
         ObjectNode g = groups.addObject();
         g.put("_id", groupId);
-        g.putArray("group_requests");
+        writeRequests(g.putArray("group_requests"), "BULKY", cargo);
+        writePackages(body, cargo);
 
         HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create(baseUrl() + "/orders/estimates"))
@@ -293,10 +350,18 @@ public class AhamoveOrderClient {
 
     public record CreatedOrder(String orderId, String status, String sharedLink, BigDecimal totalPay, String serviceId) {}
 
+    public CreatedOrder createOrder(Stop pickup, Stop drop, String paymentMethod) {
+        return createOrder(pickup, drop, paymentMethod, null);
+    }
+
     /**
      * Tạo đơn giao Ahamove (2 điểm; {@code drop.cod > 0} = tài xế ứng cước). {@code POST /orders} — group_service BIKE để Ahamove tự chọn theo GPS.
+     * {@code cargo} khai kích thước/cân nặng và bậc hàng cồng kềnh, cùng dữ liệu đã dùng lúc ước tính.
      */
-    public CreatedOrder createOrder(Stop pickup, Stop drop, String paymentMethod) {
+    public CreatedOrder createOrder(Stop pickup, Stop drop, String paymentMethod, AhamoveCargo cargo) {
+        if (cargo != null) {
+            cargo.assertFitsBike();
+        }
         String token = requireToken();
         try {
             ObjectNode body = objectMapper.createObjectNode();
@@ -306,7 +371,8 @@ public class AhamoveOrderClient {
             path.add(stop(pickup));
             path.add(stop(drop));
             body.put("group_service_id", "BIKE");
-            body.putArray("group_requests");
+            writeRequests(body.putArray("group_requests"), "BULKY", cargo);
+            writePackages(body, cargo);
             String remarks = drop.remarks();
             if (remarks != null && !remarks.isBlank()) {
                 body.put("remarks", remarks.trim());
@@ -448,6 +514,43 @@ public class AhamoveOrderClient {
         }
         p.put("cod", Math.max(0L, s.cod()));
         return p;
+    }
+
+    private static void tagTier(Map<String, Object> out, AhamoveCargo cargo) {
+        if (cargo != null && cargo.tier() != null) {
+            out.put("bulkyTier", cargo.tier());
+        }
+    }
+
+    /** Request BULKY chỉ khi kiện vượt khổ tiêu chuẩn. {@code requestId} là {@code BULKY} (group) hoặc {@code HAN-BIKE-BULKY}. */
+    private static void writeRequests(ArrayNode requests, String requestId, AhamoveCargo cargo) {
+        if (cargo == null || cargo.tier() == null) {
+            return;
+        }
+        ObjectNode req = requests.addObject();
+        req.put("_id", requestId);
+        req.put("tier_code", cargo.tier());
+    }
+
+    /** Kích thước gửi theo cm, đúng đơn vị đang lưu trên đơn. */
+    private void writePackages(ObjectNode body, AhamoveCargo cargo) {
+        if (cargo == null || cargo.packages().isEmpty()) {
+            return;
+        }
+        ArrayNode arr = body.putArray("package_detail");
+        for (AhamoveCargo.Pkg pkg : cargo.packages()) {
+            ObjectNode p = arr.addObject();
+            p.put("weight", pkg.weightKg());
+            if (pkg.lengthCm() != null && pkg.lengthCm() > 0) {
+                p.put("length", pkg.lengthCm());
+            }
+            if (pkg.widthCm() != null && pkg.widthCm() > 0) {
+                p.put("width", pkg.widthCm());
+            }
+            if (pkg.heightCm() != null && pkg.heightCm() > 0) {
+                p.put("height", pkg.heightCm());
+            }
+        }
     }
 
     /** {@code lat/lng} null → chỉ gửi {@code address}, Ahamove tự geocode. */

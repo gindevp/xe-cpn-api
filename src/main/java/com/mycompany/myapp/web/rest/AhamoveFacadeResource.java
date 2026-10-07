@@ -1,5 +1,7 @@
 package com.mycompany.myapp.web.rest;
 
+import com.mycompany.myapp.repository.ShipmentOrderRepository;
+import com.mycompany.myapp.service.partner.AhamoveCargo;
 import com.mycompany.myapp.service.partner.AhamoveOrderClient;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.util.List;
@@ -14,9 +16,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AhamoveFacadeResource {
 
     private final AhamoveOrderClient ahamoveOrderClient;
+    private final ShipmentOrderRepository shipmentOrderRepository;
 
-    public AhamoveFacadeResource(AhamoveOrderClient ahamoveOrderClient) {
+    public AhamoveFacadeResource(AhamoveOrderClient ahamoveOrderClient, ShipmentOrderRepository shipmentOrderRepository) {
         this.ahamoveOrderClient = ahamoveOrderClient;
+        this.shipmentOrderRepository = shipmentOrderRepository;
     }
 
     @GetMapping("/api/ahamove/services")
@@ -47,7 +51,11 @@ public class AhamoveFacadeResource {
             pinLat = null;
             pinLng = null;
         }
-        return ahamoveOrderClient.estimatePickupDistance(officeLat, officeLng, officeAddress, pinLat, pinLng, pinAddress);
+        String orderCode = body.get("orderCode") != null ? String.valueOf(body.get("orderCode")).trim() : "";
+        AhamoveCargo cargo = orderCode.isEmpty()
+            ? null
+            : shipmentOrderRepository.findOneByOrderCodeOrDraftCode(orderCode).map(AhamoveCargo::from).orElse(null);
+        return ahamoveOrderClient.estimatePickupDistance(officeLat, officeLng, officeAddress, pinLat, pinLng, pinAddress, cargo);
     }
 
     private static double toDouble(Object v) {

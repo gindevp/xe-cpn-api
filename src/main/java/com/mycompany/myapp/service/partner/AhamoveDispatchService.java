@@ -196,7 +196,9 @@ public class AhamoveDispatchService {
             order.getOrderCode(),
             advance.longValue()
         );
-        AhamoveOrderClient.CreatedOrder created = ahamoveOrderClient.createOrder(pickup, drop, paymentMethod);
+        AhamoveCargo cargo = AhamoveCargo.from(order);
+        cargo.assertFitsBike();
+        AhamoveOrderClient.CreatedOrder created = ahamoveOrderClient.createOrder(pickup, drop, paymentMethod, cargo);
 
         String actor = currentActor();
         try {
