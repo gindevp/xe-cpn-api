@@ -87,7 +87,14 @@ public class InvoiceManagementResource {
         return invoiceAutoIssueService.backfillStatus();
     }
 
-    /** Thông tin HĐ công ty lần gần nhất của SĐT người gửi hoặc người nhận; không có → 204. */
+    /** SĐT và các MST trên hóa đơn doanh nghiệp đã xuất. Có {@code q} thì lọc một số. */
+    @GetMapping("/buyer-directory")
+    public List<InvoiceAutoIssueService.BuyerDirectoryEntry> buyerDirectory(@RequestParam(value = "q", required = false) String query) {
+        staffAccessService.requireScreenRead(ScreenKey.QUAN_LY_HOA_DON);
+        return invoiceAutoIssueService.buyerDirectory(query);
+    }
+
+    /** MST trên hóa đơn doanh nghiệp đã xuất của SĐT; không có → 204. */
     @GetMapping("/buyer-profile")
     public ResponseEntity<Map<String, String>> buyerProfile(@RequestParam("phone") String phone) {
         return invoiceAutoIssueService.buyerProfile(phone).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());

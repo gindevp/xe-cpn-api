@@ -165,8 +165,15 @@ class InvoiceAutoIssueServiceTest {
         o.setPaymentTerm(PaymentTerm.GUI_TRA);
         o.setSenderPhone(senderPhone);
         o.setReceiverPhone(receiverPhone);
+        o.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
         o.setInvoiceTaxCode(tax);
         o.setInvoiceCompanyName(company);
+        return o;
+    }
+
+    private static ShipmentOrder draftInvoice(String code, String senderPhone, String status, String tax, String company) {
+        ShipmentOrder o = invoicedBy(code, senderPhone, "0900000000", tax, company);
+        o.setInvoiceStatus(status);
         return o;
     }
 
@@ -179,7 +186,8 @@ class InvoiceAutoIssueServiceTest {
                 invoicedBy("O4", "0922", "+84 901 234 567", "0312345678", "Nguoi nhan"),
                 invoicedBy("O3", phone, "0933", "0109876543", "CTY B"),
                 invoicedBy("O2", phone, "0944", "0101243150", "CTY A cu"),
-                invoicedBy("O1", "0999", "0888", "0100000000", "Khong lien quan")
+                invoicedBy("O1", "0999", "0888", "0100000000", "Khong lien quan"),
+                draftInvoice("O0", phone, "SAVED", "9999999999", "Chua xuat")
             )
         );
 
@@ -245,16 +253,37 @@ class InvoiceAutoIssueServiceTest {
         receiverPays.setPaymentTerm(PaymentTerm.NHAN_TRA);
         receiverPays.setSenderPhone("0911111111");
         receiverPays.setReceiverPhone("0922222222");
+        receiverPays.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
         receiverPays.setInvoiceTaxCode("0100233488");
         receiverPays.setInvoiceCompanyName("Cty Nhận");
         ShipmentOrder senderPays = new ShipmentOrder();
         senderPays.setPaymentTerm(PaymentTerm.GUI_TRA);
         senderPays.setSenderPhone("0911111111");
+        senderPays.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
         senderPays.setInvoiceTaxCode("0103179782");
         senderPays.setInvoiceCompanyName("Cty Gửi");
         when(orderRepo.findInvoiceProfilesByPhone(any(), any())).thenReturn(List.of(receiverPays, senderPays));
 
         assertThat(service.buyerProfile("0911111111")).hasValueSatisfying(m -> assertThat(m.get("companyName")).isEqualTo("Cty Nhận"));
         assertThat(service.buyerProfile("09")).isEmpty();
+    }
+
+    @Test
+    void buyerDirectory_groupsPhonesFromIssuedInvoices_newestTaxFirst() {
+        ShipmentOrder newest = invoicedBy("N2", "0901234567", "0988000111", "0101243150", "Moi");
+        newest.setSenderName("AN");
+        newest.setReceiverName("BINH");
+        ShipmentOrder older = invoicedBy("N1", "0901234567", "0977000222", "0312345678", "Cu");
+        ShipmentOrder skipped = draftInvoice("N0", "0901234567", "SAVED", "0100000001", "Chua");
+        when(orderRepo.findIssuedCompanyInvoices(any())).thenReturn(List.of(newest, older, skipped));
+
+        List<InvoiceAutoIssueService.BuyerDirectoryEntry> rows = service.buyerDirectory("");
+
+        assertThat(rows)
+            .extracting(InvoiceAutoIssueService.BuyerDirectoryEntry::phone)
+            .containsExactly("0901234567", "0988000111", "0977000222");
+        assertThat(rows.get(0).name()).isEqualTo("AN");
+        assertThat(rows.get(0).profiles()).extracting(m -> m.get("taxCode")).containsExactly("0101243150", "0312345678");
+        assertThat(rows.get(1).profiles()).extracting(m -> m.get("taxCode")).containsExactly("0101243150");
     }
 }

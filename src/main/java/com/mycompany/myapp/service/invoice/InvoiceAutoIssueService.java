@@ -305,7 +305,7 @@ public class InvoiceAutoIssueService {
 
     // ---------------------------------------------------------------- thông tin công ty theo SĐT
 
-    /** Thông tin HĐ công ty lần gần nhất mà SĐT này là người gửi hoặc người nhận; không có → rỗng. */
+    /** MST hóa đơn doanh nghiệp đã xuất gần nhất của SĐT này; không có → rỗng. */
     @Transactional(readOnly = true)
     public Optional<Map<String, String>> buyerProfile(String phone) {
         return buyerProfiles(phone).stream().findFirst();
@@ -313,10 +313,12 @@ public class InvoiceAutoIssueService {
 
     static final int BUYER_PROFILE_SCAN = 100;
     static final int BUYER_PROFILE_MAX = 5;
+    static final int DIRECTORY_SCAN = 2000;
+    static final int DIRECTORY_PHONES = 200;
 
     /**
-     * Các MST khác nhau SĐT này từng dùng khi là người gửi hoặc người nhận, mới nhất trước.
-     * Mỗi MST lấy thông tin lần gần nhất. Khớp cả số có khoảng trắng, dấu chấm và đầu 84.
+     * Các MST khác nhau trên hóa đơn doanh nghiệp đã xuất mà SĐT này là người gửi hoặc người nhận.
+     * Mới nhất trước. Mỗi MST lấy thông tin lần xuất gần nhất. Khớp số có khoảng trắng, dấu chấm và đầu 84.
      */
     @Transactional(readOnly = true)
     public List<Map<String, String>> buyerProfiles(String phone) {
@@ -327,26 +329,138 @@ public class InvoiceAutoIssueService {
         String canonical = keys.get(0);
         Map<String, Map<String, String>> byTax = new LinkedHashMap<>();
         for (ShipmentOrder o : shipmentOrderRepository.findInvoiceProfilesByPhone(keys, PageRequest.of(0, BUYER_PROFILE_SCAN))) {
+            if (!issuedCompanyInvoice(o)) {
+                continue;
+            }
             if (!phoneMatches(o.getSenderPhone(), keys) && !phoneMatches(o.getReceiverPhone(), keys)) {
                 continue;
             }
-            String tax = o.getInvoiceTaxCode() == null ? "" : o.getInvoiceTaxCode().trim();
-            if (tax.isEmpty() || byTax.containsKey(tax)) {
-                continue;
-            }
-            Map<String, String> m = new LinkedHashMap<>();
-            m.put("phone", canonical);
-            m.put("taxCode", tax);
-            m.put("companyName", o.getInvoiceCompanyName());
-            m.put("address", o.getInvoiceCompanyAddress());
-            m.put("email", o.getInvoiceEmail());
-            m.put("fromOrderCode", o.getOrderCode());
-            byTax.put(tax, m);
+            rememberTax(byTax, canonical, o);
             if (byTax.size() >= BUYER_PROFILE_MAX) {
                 break;
             }
         }
         return new ArrayList<>(byTax.values());
+    }
+
+    /**
+     * CRM SĐT ↔ MST lấy từ hóa đơn doanh nghiệp đã xuất.
+     * Có SĐT thì chỉ một dòng của số đó; không có thì các SĐT trên các hóa đơn mới nhất.
+     */
+    @Transactional(readOnly = true)
+    public List<BuyerDirectoryEntry> buyerDirectory(String query) {
+        List<String> keys = phoneLookupKeys(query);
+        if (!keys.isEmpty()) {
+            String canonical = keys.get(0);
+            String name = null;
+            Map<String, Map<String, String>> byTax = new LinkedHashMap<>();
+            for (ShipmentOrder o : shipmentOrderRepository.findInvoiceProfilesByPhone(keys, PageRequest.of(0, BUYER_PROFILE_SCAN))) {
+                if (!issuedCompanyInvoice(o)) {
+                    continue;
+                }
+                boolean sender = phoneMatches(o.getSenderPhone(), keys);
+                boolean receiver = phoneMatches(o.getReceiverPhone(), keys);
+                if (!sender && !receiver) {
+                    continue;
+                }
+                if (name == null) {
+                    String side = sender ? o.getSenderName() : o.getReceiverName();
+                    if (side != null && !side.isBlank()) {
+                        name = side.trim();
+                    }
+                }
+                rememberTax(byTax, canonical, o);
+                if (byTax.size() >= BUYER_PROFILE_MAX) {
+                    break;
+                }
+            }
+            if (byTax.isEmpty()) {
+                return List.of();
+            }
+            return List.of(new BuyerDirectoryEntry(canonical, name, new ArrayList<>(byTax.values())));
+        }
+        Map<String, PhoneBucket> phones = new LinkedHashMap<>();
+        for (ShipmentOrder o : shipmentOrderRepository.findIssuedCompanyInvoices(PageRequest.of(0, DIRECTORY_SCAN))) {
+            if (!issuedCompanyInvoice(o)) {
+                continue;
+            }
+            offerPhone(phones, o.getSenderPhone(), o.getSenderName(), o);
+            offerPhone(phones, o.getReceiverPhone(), o.getReceiverName(), o);
+            if (phones.size() >= DIRECTORY_PHONES && phones.values().stream().allMatch(b -> b.byTax.size() >= BUYER_PROFILE_MAX)) {
+                break;
+            }
+        }
+        List<BuyerDirectoryEntry> rows = new ArrayList<>();
+        for (PhoneBucket bucket : phones.values()) {
+            if (rows.size() >= DIRECTORY_PHONES) {
+                break;
+            }
+            rows.add(new BuyerDirectoryEntry(bucket.phone, bucket.name, new ArrayList<>(bucket.byTax.values())));
+        }
+        return rows;
+    }
+
+    private static void offerPhone(Map<String, PhoneBucket> phones, String rawPhone, String name, ShipmentOrder order) {
+        List<String> keys = phoneLookupKeys(rawPhone);
+        if (keys.isEmpty()) {
+            return;
+        }
+        String canonical = keys.get(0);
+        PhoneBucket bucket = phones.computeIfAbsent(canonical, PhoneBucket::new);
+        if (bucket.name == null && name != null && !name.isBlank()) {
+            bucket.name = name.trim();
+        }
+        rememberTax(bucket.byTax, canonical, order);
+    }
+
+    private static void rememberTax(Map<String, Map<String, String>> byTax, String phone, ShipmentOrder order) {
+        if (byTax.size() >= BUYER_PROFILE_MAX) {
+            return;
+        }
+        String tax = order.getInvoiceTaxCode() == null ? "" : order.getInvoiceTaxCode().trim();
+        if (tax.isEmpty() || byTax.containsKey(tax)) {
+            return;
+        }
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("phone", phone);
+        m.put("taxCode", tax);
+        m.put("companyName", order.getInvoiceCompanyName());
+        m.put("address", order.getInvoiceCompanyAddress());
+        m.put("email", order.getInvoiceEmail());
+        m.put("fromOrderCode", order.getOrderCode());
+        if (order.getInvoiceIssuedAt() != null) {
+            m.put("issuedAt", order.getInvoiceIssuedAt().toString());
+        }
+        byTax.put(tax, m);
+    }
+
+    private static boolean issuedCompanyInvoice(ShipmentOrder order) {
+        if (order == null) {
+            return false;
+        }
+        String status = order.getInvoiceStatus();
+        if (!MeInvoiceIssueService.STATUS_ISSUED.equals(status) && !MeInvoiceIssueService.STATUS_DUPLICATE.equals(status)) {
+            return false;
+        }
+        return (
+            order.getInvoiceTaxCode() != null &&
+            !order.getInvoiceTaxCode().isBlank() &&
+            order.getInvoiceCompanyName() != null &&
+            !order.getInvoiceCompanyName().isBlank()
+        );
+    }
+
+    public record BuyerDirectoryEntry(String phone, String name, List<Map<String, String>> profiles) {}
+
+    private static final class PhoneBucket {
+
+        private final String phone;
+        private String name;
+        private final Map<String, Map<String, String>> byTax = new LinkedHashMap<>();
+
+        private PhoneBucket(String phone) {
+            this.phone = phone;
+        }
     }
 
     /** {@code 0xxxxxxxxx} đứng trước, kèm dạng {@code 84…}. Rỗng nếu không đủ số. */

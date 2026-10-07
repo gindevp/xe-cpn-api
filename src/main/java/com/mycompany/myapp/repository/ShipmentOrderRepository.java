@@ -143,13 +143,14 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
     List<ShipmentOrder> findAllWithOfficesByIdIn(@Param("ids") java.util.Collection<Long> ids);
 
     /**
-     * Đơn có thông tin HĐ công ty mà SĐT (chỉ chữ số, gồm dạng 0… và 84…) là người gửi hoặc người nhận.
+     * Đơn đã xuất HĐ doanh nghiệp mà SĐT (chỉ chữ số, gồm dạng 0… và 84…) là người gửi hoặc người nhận.
      * So khớp sau khi bỏ dấu cách / chấm / gạch, nên {@code 0901 234 567} vẫn khớp {@code 0901234567}.
      */
     @Query(
         """
         select o from ShipmentOrder o
-        where o.invoiceTaxCode is not null and o.invoiceCompanyName is not null
+        where o.invoiceStatus in ('ISSUED', 'DUPLICATE')
+        and o.invoiceTaxCode is not null and o.invoiceCompanyName is not null
         and (
             function('regexp_replace', o.senderPhone, '[^0-9]', '') in :phones
             or function('regexp_replace', o.receiverPhone, '[^0-9]', '') in :phones
@@ -158,6 +159,17 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
         """
     )
     List<ShipmentOrder> findInvoiceProfilesByPhone(@Param("phones") java.util.Collection<String> phones, Pageable pageable);
+
+    /** Hóa đơn doanh nghiệp đã xuất, mới nhất trước — nguồn CRM SĐT ↔ MST. */
+    @Query(
+        """
+        select o from ShipmentOrder o
+        where o.invoiceStatus in ('ISSUED', 'DUPLICATE')
+        and o.invoiceTaxCode is not null and o.invoiceCompanyName is not null
+        order by o.id desc
+        """
+    )
+    List<ShipmentOrder> findIssuedCompanyInvoices(Pageable pageable);
 
     @Query(
         """
