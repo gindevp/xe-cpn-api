@@ -383,6 +383,9 @@ public class AhamoveDispatchService {
         }
         PartnerAdvance.assertNoRefundDue(order, ENTITY);
         BigDecimal advance = advanceFor(order);
+        if (advance.signum() > 0) {
+            dayClosureGuard.assertCollectionMutable(order);
+        }
         Office office = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
         if (office == null || office.getLatitude() == null || office.getLongitude() == null) {
             throw new BadRequestAlertException("VP nhận chưa có toạ độ GPS (Danh mục VP)", ENTITY, "ahamoveOfficeGps");
@@ -420,7 +423,7 @@ public class AhamoveDispatchService {
         return who != null ? who : currentActor();
     }
 
-    /** NV quầy xác nhận đã nhận tiền mặt tài xế Ahamove ứng → ghi khoản thu (người thu = NV). */
+    /** Đơn gọi Ahamove từ trước khi ghi nhận tự động, chưa bấm nhận tiền ứng. */
     public OrderDetailDTO confirmAdvance(String orderCode) {
         tx.executeWithoutResult(status -> {
             ShipmentOrder order = requireOrder(orderCode);
@@ -543,6 +546,18 @@ public class AhamoveDispatchService {
         attempt.setReason("ASSIGN_PARTNER");
         attempt.setOrder(order);
         deliveryAttemptRepository.save(attempt);
+
+        // Người bàn giao nhận nợ ngay — không chờ bấm "Đã nhận tiền ứng".
+        if (advance.signum() > 0) {
+            String note = truncate(PartnerAdvance.PAYMENT_NOTE_PREFIX, 255);
+            deliveryFacadeService.recordPartnerAdvance(order, advance, note, actor);
+            orderFacadeService.recordEvent(
+                order,
+                "AHAMOVE_ADVANCE_IN",
+                "Nhận " + PartnerAdvance.money(advance) + "đ tài xế Ahamove ứng · người nhận nợ " + actor,
+                actor
+            );
+        }
 
         OrderTransitionRequest tr = new OrderTransitionRequest();
         tr.setToStatus(OrderStatus.OUT_FOR_DELIVERY);

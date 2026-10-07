@@ -126,6 +126,7 @@ class AhamoveDispatchServiceFlowTest {
         verify(client).createOrder(any(), drop.capture(), any(), any());
         assertThat(drop.getValue().cod()).isEqualTo(30000L);
         assertThat(order.getPartnerCodAmount()).isEqualByComparingTo("30000");
+        verify(delivery).recordPartnerAdvance(eq(order), eq(new BigDecimal("30000")), anyString(), eq("system"));
     }
 
     @Test
