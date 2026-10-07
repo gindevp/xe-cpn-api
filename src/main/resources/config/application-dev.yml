@@ -137,6 +137,8 @@ cpn:
   vtech:
     insecure-ssl: ${CPN_VTECH_INSECURE_SSL:true}
   tax-lookup:
+    portal-url: ${CPN_TAX_LOOKUP_PORTAL_URL:https://portal.xevietnam.com/api/fe/com/company_by_tax}
+    portal-app-id: ${CPN_TAX_LOOKUP_PORTAL_APP_ID:APP.XEVN}
     insecure-ssl: ${CPN_TAX_LOOKUP_INSECURE_SSL:true}
   goong:
     base-url: ${CPN_GOONG_BASE_URL:https://rsapi.goong.io}

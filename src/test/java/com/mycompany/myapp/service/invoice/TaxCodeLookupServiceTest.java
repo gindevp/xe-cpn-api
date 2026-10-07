@@ -35,7 +35,18 @@ class TaxCodeLookupServiceTest {
     @Test
     void lookup_upstreamFailure_alertsAdminsOncePerCooldown() {
         ServerEventService events = mock(ServerEventService.class);
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, eventsOf(events), NOWHERE, "", "", NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(
+            JSON,
+            eventsOf(events),
+            NOWHERE,
+            "APP.XEVN",
+            NOWHERE,
+            "",
+            "",
+            NOWHERE,
+            NOWHERE,
+            false
+        ) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 return Map.of("ok", false, "code", "UPSTREAM_ERROR", "message", "lỗi");
@@ -49,7 +60,18 @@ class TaxCodeLookupServiceTest {
     @Test
     void lookup_notFound_doesNotAlert() {
         ServerEventService events = mock(ServerEventService.class);
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, eventsOf(events), NOWHERE, "", "", NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(
+            JSON,
+            eventsOf(events),
+            NOWHERE,
+            "APP.XEVN",
+            NOWHERE,
+            "",
+            "",
+            NOWHERE,
+            NOWHERE,
+            false
+        ) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 return Map.of("ok", false, "code", "NOT_FOUND");
@@ -124,7 +146,7 @@ class TaxCodeLookupServiceTest {
 
     /** Giả lập từng nguồn trả kết quả theo {@code results}; nguồn không có trong map coi như lỗi kết nối. */
     private static TaxCodeLookupService stubSources(List<String> sources, Map<String, Map<String, Object>> results) {
-        return new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, "", "", NOWHERE, NOWHERE, false) {
+        return new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, "APP.XEVN", NOWHERE, "", "", NOWHERE, NOWHERE, false) {
             @Override
             Map<String, Object> fetchFrom(
                 String source,
@@ -140,19 +162,27 @@ class TaxCodeLookupServiceTest {
     }
 
     @Test
-    void fetch_xinvoiceOk_skipsFallbacks() {
+    void fetch_portalOk_skipsFallbacks() {
         List<String> sources = new ArrayList<>();
-        TaxCodeLookupService service = stubSources(sources, Map.of("xinvoice", Map.of("ok", true, "companyName", "X")));
+        TaxCodeLookupService service = stubSources(sources, Map.of("portal", Map.of("ok", true, "companyName", "X")));
         assertThat(service.lookup("0103179782")).containsEntry("companyName", "X");
-        assertThat(sources).containsExactly("xinvoice");
+        assertThat(sources).containsExactly("portal");
     }
 
     @Test
-    void fetch_xinvoiceFails_fallsBackToVietQrThenEsgoo() {
+    void fetch_portalFails_usesXinvoiceAndSkipsRest() {
+        List<String> sources = new ArrayList<>();
+        TaxCodeLookupService service = stubSources(sources, Map.of("xinvoice", Map.of("ok", true, "companyName", "X")));
+        assertThat(service.lookup("0103179782")).containsEntry("companyName", "X");
+        assertThat(sources).containsExactly("portal", "xinvoice");
+    }
+
+    @Test
+    void fetch_portalAndXinvoiceFail_fallsBackToVietQrThenEsgoo() {
         List<String> sources = new ArrayList<>();
         TaxCodeLookupService service = stubSources(sources, Map.of("esgoo", Map.of("ok", true, "companyName", "B")));
         assertThat(service.lookup("0103179782")).containsEntry("companyName", "B");
-        assertThat(sources).containsExactly("xinvoice", "vietqr", "esgoo");
+        assertThat(sources).containsExactly("portal", "xinvoice", "vietqr", "esgoo");
     }
 
     @Test
@@ -160,6 +190,33 @@ class TaxCodeLookupServiceTest {
         List<String> sources = new ArrayList<>();
         TaxCodeLookupService service = stubSources(sources, Map.of("xinvoice", Map.of("ok", false, "code", "NOT_FOUND")));
         assertThat(service.lookup("0103179782")).containsEntry("code", "NOT_FOUND");
+    }
+
+    @Test
+    void parsePortal_success_mapsNameAndAddress() throws Exception {
+        Map<String, Object> out = TaxCodeLookupService.parsePortal(
+            "0110907256",
+            JSON.readTree(
+                "{\"status\":\"SUCCESS\",\"code\":200,\"data\":{\"companyName\":\"CÔNG TY TNHH DU LỊCH X.E VIỆT NAM\",\"taxCode\":\"0110907256\",\"address\":\"Tầng 1, Số 21 Đại Từ, Phường Định Công, TP Hà Nội, Việt Nam.\"}}"
+            )
+        );
+        assertThat(out)
+            .containsEntry("ok", true)
+            .containsEntry("companyName", "CÔNG TY TNHH DU LỊCH X.E VIỆT NAM")
+            .containsEntry("address", "Tầng 1, Số 21 Đại Từ, Phường Định Công, Thành Phố Hà Nội, Việt Nam.");
+    }
+
+    @Test
+    void parsePortal_failedOrOtherTaxCode_isNotFound() throws Exception {
+        assertThat(
+            TaxCodeLookupService.parsePortal("0110907256", JSON.readTree("{\"status\":\"FAILED\",\"code\":1006,\"data\":\"\"}"))
+        ).containsEntry("code", "NOT_FOUND");
+        assertThat(
+            TaxCodeLookupService.parsePortal(
+                "0110907256",
+                JSON.readTree("{\"status\":\"SUCCESS\",\"data\":{\"companyName\":\"CÔNG TY KHÁC\",\"taxCode\":\"0103179782\"}}")
+            )
+        ).containsEntry("ok", false);
     }
 
     @Test
@@ -227,7 +284,18 @@ class TaxCodeLookupServiceTest {
 
     @Test
     void lookup_invalidChecksum_doesNotCallUpstream() {
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, "", "", NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(
+            JSON,
+            NO_EVENTS,
+            NOWHERE,
+            "APP.XEVN",
+            NOWHERE,
+            "",
+            "",
+            NOWHERE,
+            NOWHERE,
+            false
+        ) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 throw new AssertionError("không được gọi nguồn khi MST sai");
@@ -239,7 +307,18 @@ class TaxCodeLookupServiceTest {
     @Test
     void lookup_cachesSuccess_only() {
         int[] calls = { 0 };
-        TaxCodeLookupService service = new TaxCodeLookupService(JSON, NO_EVENTS, NOWHERE, "", "", NOWHERE, NOWHERE, false) {
+        TaxCodeLookupService service = new TaxCodeLookupService(
+            JSON,
+            NO_EVENTS,
+            NOWHERE,
+            "APP.XEVN",
+            NOWHERE,
+            "",
+            "",
+            NOWHERE,
+            NOWHERE,
+            false
+        ) {
             @Override
             Map<String, Object> fetch(String taxCode) {
                 calls[0]++;
