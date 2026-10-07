@@ -126,7 +126,8 @@ cpn:
     username: ${CPN_MISA_USERNAME:0987427086}
     password: ${CPN_MISA_PASSWORD:}
     inv-series: ${CPN_MISA_INV_SERIES:1C26MYY}
-    sign-type: ${CPN_MISA_SIGN_TYPE:5}
+    sign-type: ${CPN_MISA_SIGN_TYPE:2}
+    certificate-sn: ${CPN_MISA_CERTIFICATE_SN:54010C25687C47344477BDD160AB2EFF}
     issue-only-when-requested: ${CPN_MISA_ISSUE_ONLY_WHEN_REQUESTED:true}
   ahamove:
     # Override: set CPN_AHAMOVE_BASE_URL. Default PROD — PARTNER_NOT_FOUND trên stg thường do key prod.

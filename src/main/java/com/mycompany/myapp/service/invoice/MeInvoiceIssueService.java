@@ -613,6 +613,10 @@ public class MeInvoiceIssueService {
 
         ObjectNode root = objectMapper.createObjectNode();
         root.put("SignType", client.getSignType());
+        String certificateSn = client.getCertificateSn();
+        if (certificateSn != null && !certificateSn.isBlank()) {
+            root.put("CertificateSN", certificateSn.trim());
+        }
         ArrayNode data = root.putArray("InvoiceData");
         data.add(invoice);
         root.putNull("PublishInvoiceData");

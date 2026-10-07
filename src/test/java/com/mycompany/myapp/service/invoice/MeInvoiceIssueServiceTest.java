@@ -68,6 +68,8 @@ class MeInvoiceIssueServiceTest {
         when(orderRepo.findOneByOrderCodeOrDraftCode("VT0001ABCD")).thenReturn(Optional.of(order));
         when(client.isEnabled()).thenReturn(true);
         when(client.getInvSeries()).thenReturn("1C26TXE");
+        when(client.getSignType()).thenReturn(2);
+        when(client.getCertificateSn()).thenReturn("54010C25687C47344477BDD160AB2EFF");
     }
 
     private static IssueInvoiceRequest req(String tax, String company, String address, String email) {
@@ -102,6 +104,9 @@ class MeInvoiceIssueServiceTest {
 
         ArgumentCaptor<ObjectNode> body = ArgumentCaptor.forClass(ObjectNode.class);
         verify(client).publish(body.capture());
+        assertThat(body.getValue().get("SignType").asInt()).isEqualTo(2);
+        assertThat(body.getValue().get("CertificateSN").asText()).isEqualTo("54010C25687C47344477BDD160AB2EFF");
+        assertThat(body.getValue().get("PublishInvoiceData").isNull()).isTrue();
         ObjectNode inv = (ObjectNode) body.getValue().get("InvoiceData").get(0);
         assertThat(inv.get("BuyerTaxCode").asText()).isEqualTo("0100233488");
         assertThat(inv.get("BuyerEmail").asText()).isEqualTo("ketoan@abc.vn");

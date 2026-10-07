@@ -39,6 +39,7 @@ public class MisaMeInvoiceClient {
     private final String password;
     private final String invSeries;
     private final int signType;
+    private final String certificateSn;
     private final HttpClient httpClient;
 
     private final Object tokenLock = new Object();
@@ -54,7 +55,8 @@ public class MisaMeInvoiceClient {
         @Value("${cpn.misa.username:}") String username,
         @Value("${cpn.misa.password:}") String password,
         @Value("${cpn.misa.inv-series:1C26MYY}") String invSeries,
-        @Value("${cpn.misa.sign-type:5}") int signType
+        @Value("${cpn.misa.sign-type:2}") int signType,
+        @Value("${cpn.misa.certificate-sn:}") String certificateSn
     ) {
         this.objectMapper = objectMapper;
         this.enabled = enabled;
@@ -65,6 +67,7 @@ public class MisaMeInvoiceClient {
         this.password = password == null ? "" : password;
         this.invSeries = invSeries == null ? "1C26MYY" : invSeries.trim();
         this.signType = signType;
+        this.certificateSn = certificateSn == null ? "" : certificateSn.trim();
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
     }
 
@@ -82,6 +85,11 @@ public class MisaMeInvoiceClient {
 
     public int getSignType() {
         return signType;
+    }
+
+    /** Serial chứng thư HSM. SignType 2 bắt buộc trường này khi phát hành. */
+    public String getCertificateSn() {
+        return certificateSn;
     }
 
     public String resolveToken() {
