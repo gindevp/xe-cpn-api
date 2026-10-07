@@ -21,7 +21,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * MST gắn với SĐT, tối đa {@link #MAX_PER_PHONE}. CRM thêm/sửa/xóa vào bảng này.
- * Xuất hóa đơn doanh nghiệp thì gắn (hoặc đẩy lên đầu) và nếu đã đủ 5 thì bỏ MST cũ nhất.
+ * Xuất hóa đơn doanh nghiệp thì gắn MST vào SĐT người trả cước (theo hình thức thanh toán)
+ * và nếu đã đủ 5 thì bỏ MST cũ nhất.
  * Lần đầu bảng trống thì lấy từ hóa đơn đã xuất.
  */
 @Service
@@ -36,6 +37,7 @@ public class PhoneTaxLinkService {
     private final PhoneTaxLinkRepository linkRepository;
     private final ShipmentOrderRepository shipmentOrderRepository;
     private volatile boolean backfilled;
+    private volatile boolean payerAudited;
 
     public PhoneTaxLinkService(PhoneTaxLinkRepository linkRepository, ShipmentOrderRepository shipmentOrderRepository) {
         this.linkRepository = linkRepository;
@@ -52,6 +54,7 @@ public class PhoneTaxLinkService {
     @Transactional
     public List<Map<String, String>> profiles(String phone) {
         backfillOnce();
+        auditPayerLinksOnce();
         String canonical = canonicalPhone(phone);
         if (canonical == null) {
             return List.of();
@@ -62,6 +65,7 @@ public class PhoneTaxLinkService {
     @Transactional
     public List<BuyerDirectoryEntry> directory(String query) {
         backfillOnce();
+        auditPayerLinksOnce();
         String canonical = canonicalPhone(query);
         if (canonical != null) {
             List<PhoneTaxLink> rows = linkRepository.findByPhoneOrderByUpdatedAtDescIdDesc(canonical);
@@ -95,6 +99,7 @@ public class PhoneTaxLinkService {
     @Transactional
     public Map<String, String> create(String phone, String taxCode, String companyName, String address, String email, String contactName) {
         backfillOnce();
+        auditPayerLinksOnce();
         return toMap(saveLink(phone, contactName, taxCode, companyName, address, email, null, false));
     }
 
@@ -130,11 +135,12 @@ public class PhoneTaxLinkService {
         linkRepository.deleteById(id);
     }
 
-    /** Gắn MST của hóa đơn doanh nghiệp vừa xuất vào SĐT người gửi và người nhận. Lỗi ở đây không được hoàn tác hóa đơn. */
+    /** Gắn MST của hóa đơn doanh nghiệp vừa xuất vào SĐT người trả cước. Lỗi ở đây không được hoàn tác hóa đơn. */
     @Transactional
     public void rememberIssued(ShipmentOrder order) {
         try {
             backfillOnce();
+            auditPayerLinksOnce();
             linkIssued(order);
         } catch (RuntimeException e) {
             LOG.warn("Không lưu được MST theo SĐT của đơn {}: {}", order == null ? "" : order.getOrderCode(), e.toString());
@@ -142,32 +148,86 @@ public class PhoneTaxLinkService {
     }
 
     private void linkIssued(ShipmentOrder order) {
-        if (order == null || !VietnamTaxCode.isValid(order.getInvoiceTaxCode())) {
+        if (!issuedCompany(order)) {
             return;
         }
-        if (order.getInvoiceCompanyName() == null || order.getInvoiceCompanyName().isBlank()) {
-            return;
-        }
-        String tax = VietnamTaxCode.normalize(order.getInvoiceTaxCode());
         saveLink(
-            order.getSenderPhone(),
-            order.getSenderName(),
-            tax,
+            InvoicePolicy.payerPhone(order),
+            InvoicePolicy.payerName(order),
+            VietnamTaxCode.normalize(order.getInvoiceTaxCode()),
             order.getInvoiceCompanyName(),
             order.getInvoiceCompanyAddress(),
             order.getInvoiceEmail(),
             order.getOrderCode(),
             true
         );
-        saveLink(
-            order.getReceiverPhone(),
-            order.getReceiverName(),
-            tax,
-            order.getInvoiceCompanyName(),
-            order.getInvoiceCompanyAddress(),
-            order.getInvoiceEmail(),
-            order.getOrderCode(),
-            true
+    }
+
+    /**
+     * Gỡ MST đang gắn nhầm vào SĐT không phải người trả của đơn nguồn.
+     * Gắn tay (không có mã đơn) giữ nguyên. Chạy một lần mỗi phiên.
+     */
+    private void auditPayerLinksOnce() {
+        if (payerAudited) {
+            return;
+        }
+        synchronized (this) {
+            if (payerAudited) {
+                return;
+            }
+            try {
+                List<PhoneTaxLink> rows = linkRepository.findByFromOrderCodeIsNotNull();
+                if (!rows.isEmpty()) {
+                    java.util.Map<String, ShipmentOrder> byCode = ordersByCode(rows);
+                    for (PhoneTaxLink row : rows) {
+                        ShipmentOrder order = byCode.get(row.getFromOrderCode());
+                        if (order == null || !issuedCompany(order)) {
+                            continue;
+                        }
+                        String payer = canonicalPhone(InvoicePolicy.payerPhone(order));
+                        if (payer != null && payer.equals(row.getPhone())) {
+                            continue;
+                        }
+                        linkRepository.delete(row);
+                        if (payer != null && linkRepository.findByPhoneAndTaxCode(payer, row.getTaxCode()).isEmpty()) {
+                            linkIssued(order);
+                        }
+                    }
+                }
+                payerAudited = true;
+            } catch (RuntimeException e) {
+                payerAudited = true;
+                LOG.warn("Không rà được MST theo người trả cước: {}", e.toString());
+            }
+        }
+    }
+
+    private java.util.Map<String, ShipmentOrder> ordersByCode(List<PhoneTaxLink> rows) {
+        java.util.Set<String> codes = new java.util.LinkedHashSet<>();
+        for (PhoneTaxLink row : rows) {
+            if (row.getFromOrderCode() != null && !row.getFromOrderCode().isBlank()) {
+                codes.add(row.getFromOrderCode());
+            }
+        }
+        java.util.Map<String, ShipmentOrder> byCode = new java.util.HashMap<>();
+        List<String> list = new ArrayList<>(codes);
+        for (int i = 0; i < list.size(); i += 500) {
+            List<String> slice = list.subList(i, Math.min(i + 500, list.size()));
+            for (ShipmentOrder order : shipmentOrderRepository.findWithOfficesByOrderCodeIn(slice)) {
+                if (order.getOrderCode() != null) {
+                    byCode.put(order.getOrderCode(), order);
+                }
+            }
+        }
+        return byCode;
+    }
+
+    private static boolean issuedCompany(ShipmentOrder order) {
+        return (
+            order != null &&
+            VietnamTaxCode.isValid(order.getInvoiceTaxCode()) &&
+            order.getInvoiceCompanyName() != null &&
+            !order.getInvoiceCompanyName().isBlank()
         );
     }
 

@@ -17,5 +17,7 @@ public interface PhoneTaxLinkRepository extends JpaRepository<PhoneTaxLink, Long
 
     long countByPhone(String phone);
 
+    List<PhoneTaxLink> findByFromOrderCodeIsNotNull();
+
     List<PhoneTaxLink> findAllByOrderByUpdatedAtDesc(Pageable pageable);
 }

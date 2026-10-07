@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.mycompany.myapp.domain.PhoneTaxLink;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.PhoneTaxLinkRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import java.time.Instant;
@@ -28,7 +29,15 @@ import org.springframework.web.server.ResponseStatusException;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class PhoneTaxLinkServiceTest {
 
-    private static final String[] TAXES = { "0101243150", "0312345673", "0100233488", "0103179782", "0106688883", "0107777776" };
+    private static final String[] TAXES = {
+        "0101243150",
+        "0312345673",
+        "0100233488",
+        "0103179782",
+        "0106688883",
+        "0107777776",
+        "0123456787",
+    };
 
     @Mock
     private PhoneTaxLinkRepository links;
@@ -79,6 +88,10 @@ class PhoneTaxLinkServiceTest {
         })
             .when(links)
             .delete(any());
+        when(links.findByFromOrderCodeIsNotNull()).thenAnswer(inv ->
+            store.stream().filter(r -> r.getFromOrderCode() != null && !r.getFromOrderCode().isBlank()).toList()
+        );
+        when(orders.findWithOfficesByOrderCodeIn(any())).thenReturn(List.of());
         service = new PhoneTaxLinkService(links, orders);
     }
 
@@ -95,15 +108,24 @@ class PhoneTaxLinkServiceTest {
     }
 
     @Test
-    void rememberIssued_linksBothPhones_andDropsOldest() {
-        ShipmentOrder first = issued("O1", "0901234567", "0988000111", TAXES[0], "Moi");
+    void rememberIssued_linksOnlyPayer_andDropsOldest() {
+        ShipmentOrder first = issued("O1", "0901234567", "0988000111", TAXES[0], "Moi", PaymentTerm.GUI_TRA);
         service.rememberIssued(first);
-        assertThat(store).extracting(PhoneTaxLink::getPhone).containsExactlyInAnyOrder("0901234567", "0988000111");
+        assertThat(store).extracting(PhoneTaxLink::getPhone).containsExactly("0901234567");
 
-        for (int i = 1; i < 5; i++) {
-            service.rememberIssued(issued("O" + (i + 1), "0901234567", "091100000" + i, TAXES[i], "Cty " + i));
+        ShipmentOrder receiverPays = issued("R1", "0901234567", "0988000111", TAXES[1], "Nhan", PaymentTerm.NHAN_TRA);
+        service.rememberIssued(receiverPays);
+        assertThat(store).filteredOn(r -> r.getTaxCode().equals(TAXES[1])).extracting(PhoneTaxLink::getPhone).containsExactly("0988000111");
+
+        service.rememberIssued(issued("C1", "0911000000", "0922000000", TAXES[2], "Cod", PaymentTerm.COD));
+        assertThat(store)
+            .filteredOn(r -> "C1".equals(r.getFromOrderCode()))
+            .extracting(PhoneTaxLink::getPhone)
+            .containsExactly("0922000000");
+
+        for (int i = 2; i <= 6; i++) {
+            service.rememberIssued(issued("O" + (i + 1), "0901234567", "091100000" + i, TAXES[i], "Cty " + i, PaymentTerm.GUI_TRA));
         }
-        service.rememberIssued(issued("O6", "0901234567", "0977000222", TAXES[5], "Moi nhat"));
 
         List<String> senderTaxes = store
             .stream()
@@ -111,7 +133,18 @@ class PhoneTaxLinkServiceTest {
             .sorted(Comparator.comparing(PhoneTaxLink::getUpdatedAt).reversed())
             .map(PhoneTaxLink::getTaxCode)
             .toList();
-        assertThat(senderTaxes).hasSize(5).doesNotContain(TAXES[0]).first().isEqualTo(TAXES[5]);
+        assertThat(senderTaxes).hasSize(5).doesNotContain(TAXES[0]).first().isEqualTo(TAXES[6]);
+    }
+
+    @Test
+    void audit_dropsTaxLinkedToNonPayer() {
+        ShipmentOrder senderPays = issued("O1", "0901234567", "0988000111", TAXES[0], "Gui", PaymentTerm.GUI_TRA);
+        store.add(link("0901234567", TAXES[0], "O1"));
+        store.add(link("0988000111", TAXES[0], "O1"));
+        when(orders.findWithOfficesByOrderCodeIn(any())).thenReturn(List.of(senderPays));
+
+        assertThat(service.profiles("0901234567")).extracting(m -> m.get("taxCode")).containsExactly(TAXES[0]);
+        assertThat(store).extracting(PhoneTaxLink::getPhone).containsExactly("0901234567");
     }
 
     @Test
@@ -126,17 +159,30 @@ class PhoneTaxLinkServiceTest {
         assertThat(service.profiles("09")).isEmpty();
     }
 
-    private static ShipmentOrder issued(String code, String sender, String receiver, String tax, String company) {
+    private static ShipmentOrder issued(String code, String sender, String receiver, String tax, String company, PaymentTerm term) {
         ShipmentOrder o = new ShipmentOrder();
         o.setOrderCode(code);
+        o.setPaymentTerm(term);
         o.setSenderPhone(sender);
         o.setReceiverPhone(receiver);
         o.setSenderName("AN");
+        o.setReceiverName("BINH");
         o.setInvoiceTaxCode(tax);
         o.setInvoiceCompanyName(company);
         o.setInvoiceCompanyAddress("Dia chi");
         o.setInvoiceStatus(MeInvoiceIssueService.STATUS_ISSUED);
         o.setInvoiceIssuedAt(Instant.parse("2026-10-02T02:00:00Z"));
         return o;
+    }
+
+    private static PhoneTaxLink link(String phone, String tax, String orderCode) {
+        PhoneTaxLink row = new PhoneTaxLink();
+        row.setId(phone.equals("0901234567") ? 1L : 2L);
+        row.setPhone(phone);
+        row.setTaxCode(tax);
+        row.setCompanyName("Cty");
+        row.setFromOrderCode(orderCode);
+        row.setUpdatedAt(Instant.parse("2026-10-02T02:00:00Z"));
+        return row;
     }
 }
