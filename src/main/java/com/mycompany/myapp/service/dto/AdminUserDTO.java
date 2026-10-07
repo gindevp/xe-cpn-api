@@ -58,6 +58,12 @@ public class AdminUserDTO implements Serializable {
     /** Home office code, or {@code ALL} when scopeAllOffices. Null if no profile. */
     private String officeCode;
 
+    /** Id VP đang dùng (mã VP có thể trùng). Null khi toàn hệ thống. */
+    private Long officeId;
+
+    /** VP nhân viên được phép chuyển sang, gồm VP đang dùng. Rỗng khi toàn hệ thống. */
+    private java.util.List<com.mycompany.myapp.service.staff.StaffOfficeService.OfficeOption> allowedOffices;
+
     private String staffCode;
 
     private String staffDisplayName;
@@ -208,6 +214,22 @@ public class AdminUserDTO implements Serializable {
 
     public void setOfficeCode(String officeCode) {
         this.officeCode = officeCode;
+    }
+
+    public Long getOfficeId() {
+        return officeId;
+    }
+
+    public void setOfficeId(Long officeId) {
+        this.officeId = officeId;
+    }
+
+    public java.util.List<com.mycompany.myapp.service.staff.StaffOfficeService.OfficeOption> getAllowedOffices() {
+        return allowedOffices;
+    }
+
+    public void setAllowedOffices(java.util.List<com.mycompany.myapp.service.staff.StaffOfficeService.OfficeOption> allowedOffices) {
+        this.allowedOffices = allowedOffices;
     }
 
     public String getStaffCode() {

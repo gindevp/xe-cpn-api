@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261008090000-staff-office-access" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="staff_office_access"/>
+            </not>
+        </preConditions>
+        <comment>VP nhân viên được phép chuyển sang. VP đang dùng vẫn là staff_profile.office_id.</comment>
+        <createTable tableName="staff_office_access">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="staff_profile_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="office_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint
+            tableName="staff_office_access"
+            columnNames="staff_profile_id, office_id"
+            constraintName="uk_staff_office_access"
+        />
+        <addForeignKeyConstraint
+            baseTableName="staff_office_access"
+            baseColumnNames="staff_profile_id"
+            constraintName="fk_staff_office_access_profile"
+            referencedTableName="staff_profile"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+        <addForeignKeyConstraint
+            baseTableName="staff_office_access"
+            baseColumnNames="office_id"
+            constraintName="fk_staff_office_access_office"
+            referencedTableName="office"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+    </changeSet>
+</databaseChangeLog>

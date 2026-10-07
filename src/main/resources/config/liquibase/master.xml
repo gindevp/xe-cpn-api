@@ -129,5 +129,6 @@
     <include file="config/liquibase/changelog/20261007180000_pod_photo_caption.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261007200000_phone_tax_link.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261007210000_invoice_buyer_name.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261008090000_staff_office_access.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 

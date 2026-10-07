@@ -12,6 +12,7 @@ import com.mycompany.myapp.service.MailService;
 import com.mycompany.myapp.service.UserService;
 import com.mycompany.myapp.service.dto.AdminUserDTO;
 import com.mycompany.myapp.service.dto.PasswordChangeDTO;
+import com.mycompany.myapp.service.staff.StaffOfficeService;
 import com.mycompany.myapp.web.rest.errors.*;
 import com.mycompany.myapp.web.rest.vm.KeyAndPasswordVM;
 import com.mycompany.myapp.web.rest.vm.ManagedUserVM;
@@ -49,18 +50,22 @@ public class AccountResource {
 
     private final PermissionService permissionService;
 
+    private final StaffOfficeService staffOfficeService;
+
     public AccountResource(
         UserRepository userRepository,
         UserService userService,
         MailService mailService,
         StaffProfileRepository staffProfileRepository,
-        PermissionService permissionService
+        PermissionService permissionService,
+        StaffOfficeService staffOfficeService
     ) {
         this.userRepository = userRepository;
         this.userService = userService;
         this.mailService = mailService;
         this.staffProfileRepository = staffProfileRepository;
         this.permissionService = permissionService;
+        this.staffOfficeService = staffOfficeService;
     }
 
     /**
@@ -109,6 +114,15 @@ public class AccountResource {
             .orElseThrow(() -> new AccountResourceException("User could not be found"));
     }
 
+    public record ActiveOfficeRequest(Long officeId) {}
+
+    /** {@code PUT /account/active-office} : nhân viên chuyển VP đang dùng (trong danh sách được gán). */
+    @PutMapping("/account/active-office")
+    public AdminUserDTO switchActiveOffice(@RequestBody ActiveOfficeRequest request) {
+        staffOfficeService.switchActive(request != null ? request.officeId() : null);
+        return getAccount();
+    }
+
     private AdminUserDTO toAccountDto(User user) {
         AdminUserDTO dto = new AdminUserDTO(user);
         staffProfileRepository.findOneByUserLoginIgnoreCase(user.getLogin()).ifPresent(profile -> enrichWithStaffProfile(dto, profile));
@@ -124,7 +138,9 @@ public class AccountResource {
             dto.setOfficeCode("ALL");
         } else if (profile.getOffice() != null) {
             dto.setOfficeCode(profile.getOffice().getCode());
+            dto.setOfficeId(profile.getOffice().getId());
         }
+        dto.setAllowedOffices(staffOfficeService.allowedOffices(profile));
         dto.setRoleGroupCode(permissionService.groupCodeOf(profile).orElse(null));
         Map<ScreenKey, ScreenPerm> perms = permissionService.isSystemAdmin()
             ? permissionService.fullAccessMap()

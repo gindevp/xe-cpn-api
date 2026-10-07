@@ -148,6 +148,9 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
      * Nộp tiền: mọi NV, StaffDepositService chỉ cho thao tác phiếu của chính mình.
      */
     private static boolean isSelfServiceWrite(String method, String path) {
+        if ("PUT".equals(method) && "/api/account/active-office".equals(path)) {
+            return true;
+        }
         return "POST".equals(method) && ("/api/attendance/check-in".equals(path) || path.startsWith("/api/my-deposits"));
     }
 

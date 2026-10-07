@@ -17,6 +17,7 @@ import com.mycompany.myapp.service.security.RoleGroupService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,7 @@ public class StaffAdminFacadeService {
     private final PasswordEncoder passwordEncoder;
     private final RoleGroupService roleGroupService;
     private final PermissionService permissionService;
+    private final StaffOfficeService staffOfficeService;
 
     public StaffAdminFacadeService(
         UserRepository userRepository,
@@ -46,7 +48,8 @@ public class StaffAdminFacadeService {
         AuthorityRepository authorityRepository,
         PasswordEncoder passwordEncoder,
         RoleGroupService roleGroupService,
-        PermissionService permissionService
+        PermissionService permissionService,
+        StaffOfficeService staffOfficeService
     ) {
         this.userRepository = userRepository;
         this.staffProfileRepository = staffProfileRepository;
@@ -55,11 +58,14 @@ public class StaffAdminFacadeService {
         this.passwordEncoder = passwordEncoder;
         this.roleGroupService = roleGroupService;
         this.permissionService = permissionService;
+        this.staffOfficeService = staffOfficeService;
     }
 
     @Transactional(readOnly = true)
     public List<StaffUserDTO> list() {
-        return staffProfileRepository.findAll().stream().map(this::toDto).toList();
+        List<StaffProfile> profiles = staffProfileRepository.findAll();
+        Map<Long, List<Long>> extra = staffOfficeService.extraOfficeIdsByProfile(profiles.stream().map(StaffProfile::getId).toList());
+        return profiles.stream().map(p -> toDto(p, extra.getOrDefault(p.getId(), List.of()))).toList();
     }
 
     public StaffUserDTO upsert(StaffUserDTO req) {
@@ -175,8 +181,12 @@ public class StaffAdminFacadeService {
             userRepository.save(user);
         }
         profile = staffProfileRepository.save(profile);
+        staffOfficeService.replaceAllowed(profile, req.allowedOfficeIds());
         permissionService.invalidateCache();
-        return toDto(profile);
+        return toDto(
+            profile,
+            staffOfficeService.extraOfficeIdsByProfile(List.of(profile.getId())).getOrDefault(profile.getId(), List.of())
+        );
     }
 
     public void delete(String loginRaw) {
@@ -187,7 +197,12 @@ public class StaffAdminFacadeService {
         if (isCurrentUser(login)) {
             throw new BadRequestAlertException("Không thể xóa chính tài khoản đang đăng nhập", ENTITY, "cannotDeleteSelf");
         }
-        staffProfileRepository.findOneByUserLoginIgnoreCase(login).ifPresent(staffProfileRepository::delete);
+        staffProfileRepository
+            .findOneByUserLoginIgnoreCase(login)
+            .ifPresent(p -> {
+                staffOfficeService.replaceAllowed(p, List.of());
+                staffProfileRepository.delete(p);
+            });
         userRepository.findOneByLogin(login).ifPresent(userRepository::delete);
         permissionService.invalidateCache();
     }
@@ -217,7 +232,7 @@ public class StaffAdminFacadeService {
         user.setAuthorities(authorities);
     }
 
-    private StaffUserDTO toDto(StaffProfile p) {
+    private StaffUserDTO toDto(StaffProfile p, List<Long> extraOfficeIds) {
         boolean active = !Boolean.FALSE.equals(p.getActive());
         Boolean activated = userRepository.findOneByLogin(p.getUserLogin()).map(User::isActivated).orElse(active);
         return new StaffUserDTO(
@@ -229,11 +244,15 @@ public class StaffAdminFacadeService {
             p.getRoleGroup() != null ? p.getRoleGroup().getCode() : (p.getRoleCode() != null ? p.getRoleCode().name() : null),
             Boolean.TRUE.equals(p.getScopeAllOffices()) || p.getOffice() == null ? null : p.getOffice().getId(),
             p.getStaffCode(),
-            p.getDisplayName()
+            p.getDisplayName(),
+            Boolean.TRUE.equals(p.getScopeAllOffices()) ? List.of() : extraOfficeIds
         );
     }
 
-    /** {@code officeId} ưu tiên hơn {@code officeCode}: nhiều VP có thể trùng mã (khác địa chỉ). */
+    /**
+     * {@code officeId} ưu tiên hơn {@code officeCode}: nhiều VP có thể trùng mã (khác địa chỉ).
+     * {@code allowedOfficeIds}: VP được chuyển sang ngoài VP đang dùng; null = giữ nguyên.
+     */
     public record StaffUserDTO(
         String username,
         String roleCode,
@@ -243,6 +262,7 @@ public class StaffAdminFacadeService {
         String roleGroupCode,
         Long officeId,
         String staffCode,
-        String displayName
+        String displayName,
+        List<Long> allowedOfficeIds
     ) {}
 }
