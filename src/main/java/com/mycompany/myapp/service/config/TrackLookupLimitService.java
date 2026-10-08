@@ -51,8 +51,8 @@ public class TrackLookupLimitService {
         if (limit < 0 || limit > 10000) {
             throw new IllegalArgumentException("Số lần mỗi ngày phải từ 0 đến 10000. 0 = không giới hạn.");
         }
-        if (refresh < 15 || refresh > 300) {
-            throw new IllegalArgumentException("Thời gian làm mới QR phải từ 15 đến 300 giây.");
+        if (refresh < 15 || refresh > 36000) {
+            throw new IllegalArgumentException("Thời gian làm mới QR phải từ 15 đến 36000 giây.");
         }
         TrackLookupPolicy row = current();
         row.setEnabled(incoming == null || incoming.isEnabled());
@@ -128,7 +128,7 @@ public class TrackLookupLimitService {
         dto.setEnabled(row.getEnabled() == null || row.getEnabled());
         dto.setDailyLimit(row.getDailyLimit() == null ? DEFAULT_LIMIT : row.getDailyLimit());
         int refresh = row.getQrRefreshSeconds() == null ? 60 : row.getQrRefreshSeconds();
-        dto.setQrRefreshSeconds(refresh < 15 || refresh > 300 ? 60 : refresh);
+        dto.setQrRefreshSeconds(refresh < 15 || refresh > 36000 ? 60 : refresh);
         return dto;
     }
 }
