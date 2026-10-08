@@ -19,6 +19,8 @@ public class IntegrationConfigDTO implements Serializable {
     @Size(max = 32)
     private String ahamoveMobile;
 
+    private String ahamoveSenderMobile;
+
     @Size(max = 2000)
     private String ahamoveToken;
 
@@ -75,6 +77,14 @@ public class IntegrationConfigDTO implements Serializable {
 
     public void setAhamoveMobile(String ahamoveMobile) {
         this.ahamoveMobile = ahamoveMobile;
+    }
+
+    public String getAhamoveSenderMobile() {
+        return ahamoveSenderMobile;
+    }
+
+    public void setAhamoveSenderMobile(String ahamoveSenderMobile) {
+        this.ahamoveSenderMobile = ahamoveSenderMobile;
     }
 
     public String getAhamoveToken() {

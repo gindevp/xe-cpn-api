@@ -73,6 +73,11 @@ public class IntegrationConfig implements Serializable {
     @Column(name = "ahamove_payment_method", length = 32)
     private String ahamovePaymentMethod;
 
+    /** Số tài xế gọi lúc lấy hàng. Trống thì dùng {@link #ahamoveMobile}. */
+    @Size(max = 32)
+    @Column(name = "ahamove_sender_mobile", length = 32)
+    private String ahamoveSenderMobile;
+
     @Size(max = 255)
     @Column(name = "telegram_token", length = 255)
     private String telegramToken;
@@ -542,6 +547,14 @@ public class IntegrationConfig implements Serializable {
 
     public void setAhamovePaymentMethod(String ahamovePaymentMethod) {
         this.ahamovePaymentMethod = ahamovePaymentMethod;
+    }
+
+    public String getAhamoveSenderMobile() {
+        return ahamoveSenderMobile;
+    }
+
+    public void setAhamoveSenderMobile(String ahamoveSenderMobile) {
+        this.ahamoveSenderMobile = ahamoveSenderMobile;
     }
 
     public String getAutocallVtechWebhookToken() {

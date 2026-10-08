@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261008140000-ahamove-sender-mobile" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="integration_config" columnName="ahamove_sender_mobile"/>
+            </not>
+        </preConditions>
+        <comment>SĐT người gửi Ahamove gọi cho tài xế lúc lấy hàng. Trống thì dùng SĐT tài khoản.</comment>
+        <addColumn tableName="integration_config">
+            <column name="ahamove_sender_mobile" type="varchar(32)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

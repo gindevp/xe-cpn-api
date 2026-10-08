@@ -118,6 +118,9 @@ public class ConfigFacadeService {
                 current.setAhamovePaymentMethod(pm);
             }
         }
+        if (incoming.getAhamoveSenderMobile() != null) {
+            current.setAhamoveSenderMobile(AhamoveAuthClient.normalizeMobile(incoming.getAhamoveSenderMobile()));
+        }
         if (!notBlank(current.getAhamoveWebhookToken())) {
             current.setAhamoveWebhookToken(newWebhookToken());
         }

@@ -56,6 +56,7 @@ class AhamoveDispatchServiceFlowTest {
     private PartnerFeeExpenseRepository feeRepo;
     private AhamoveDispatchService service;
     private ShipmentOrder order;
+    private IntegrationConfig cfg;
 
     @BeforeEach
     void setUp() {
@@ -101,7 +102,7 @@ class AhamoveDispatchServiceFlowTest {
         order.setDeliveryAddress("12 Láng Hạ");
         when(orderRepo.findOneByOrderCodeOrDraftCode("GP-0001")).thenReturn(Optional.of(order));
 
-        IntegrationConfig cfg = new IntegrationConfig();
+        cfg = new IntegrationConfig();
         cfg.setAhamoveMobile("0912345678");
         cfg.setAhamoveWebhookToken("tok123");
         when(cfgRepo.findAll()).thenReturn(List.of(cfg));
@@ -170,6 +171,18 @@ class AhamoveDispatchServiceFlowTest {
         verify(client).createOrder(any(), drop.capture(), any(), any());
         assertThat(drop.getValue().cod()).isZero();
         assertThat(order.getPartnerCodAmount()).isNull();
+    }
+
+    @Test
+    void dispatch_senderMobile_isWhoTheDriverCalls() {
+        cfg.setAhamoveSenderMobile("0988111222");
+        when(client.createOrder(any(), any(), any(), any())).thenReturn(
+            new AhamoveOrderClient.CreatedOrder("AHA7", "ASSIGNING", null, null, null)
+        );
+        service.dispatch("GP-0001", pin());
+        ArgumentCaptor<AhamoveOrderClient.Stop> pickup = ArgumentCaptor.forClass(AhamoveOrderClient.Stop.class);
+        verify(client).createOrder(pickup.capture(), any(), any(), any());
+        assertThat(pickup.getValue().mobile()).isEqualTo("84988111222");
     }
 
     @Test

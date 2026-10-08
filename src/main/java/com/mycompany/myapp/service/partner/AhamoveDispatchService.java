@@ -166,10 +166,12 @@ public class AhamoveDispatchService {
         Office pickupOffice = ok.office();
         BigDecimal advance = ok.advance();
         IntegrationConfig cfg = integrationConfigRepository.findAll().stream().findFirst().orElse(null);
-        String pickupMobile = cfg != null ? AhamoveAuthClient.normalizeMobile(cfg.getAhamoveMobile()) : null;
-        if (pickupMobile == null) {
+        String accountMobile = cfg != null ? AhamoveAuthClient.normalizeMobile(cfg.getAhamoveMobile()) : null;
+        if (accountMobile == null) {
             throw new BadRequestAlertException("Chưa cấu hình SĐT tài khoản Ahamove (Tích hợp)", ENTITY, "ahamoveMobileMissing");
         }
+        String senderMobile = cfg != null ? AhamoveAuthClient.normalizeMobile(cfg.getAhamoveSenderMobile()) : null;
+        String pickupMobile = senderMobile != null ? senderMobile : accountMobile;
         String paymentMethod = cfg.getAhamovePaymentMethod() != null ? cfg.getAhamovePaymentMethod() : "BALANCE";
         String dropAddress = notBlank(req.getAddress()) ? req.getAddress().trim() : order.getDeliveryAddress();
         if (!notBlank(dropAddress)) {
