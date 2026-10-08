@@ -326,10 +326,13 @@ public class AhamoveDispatchService {
         if (path != null && path.isArray() && path.size() > 1) {
             JsonNode pickup = path.get(0);
             if (pickup != null) {
+                collectUrls(pickup.get("pop_info"), pickupPods);
                 collectUrls(pickup.get("por_info"), pickupPods);
-                collectUrls(pickup.get("pod_info"), pickupPods);
+                if (path.size() > 1) {
+                    collectUrls(pickup.get("pod_info"), pickupPods);
+                }
             }
-            drop = path.get(path.size() - 1);
+            drop = path.size() > 1 ? path.get(path.size() - 1) : path.get(0);
         }
         List<String> pods = new ArrayList<>();
         if (drop != null) {

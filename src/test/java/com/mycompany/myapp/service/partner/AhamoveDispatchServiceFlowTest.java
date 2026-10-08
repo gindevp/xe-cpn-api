@@ -417,7 +417,7 @@ class AhamoveDispatchServiceFlowTest {
         when(delivery.appendPodPhotos(eq(order), any(), eq("Lúc nhận"))).thenReturn(1);
         service.applyWebhook(
             om.readTree(
-                "{\"_id\":\"AHA1\",\"status\":\"IN PROCESS\",\"path\":[{\"status\":\"COMPLETED\",\"por_info\":[{\"image_url\":\"https://img/nhan.jpg\"}]},{\"status\":\"ACCEPTED\"}]}"
+                "{\"_id\":\"AHA1\",\"status\":\"IN PROCESS\",\"path\":[{\"status\":\"COMPLETED\",\"pop_info\":[{\"url\":\"https://img/nhan.jpg\"}]},{\"status\":\"ACCEPTED\"}]}"
             )
         );
         verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/nhan.jpg")), eq("Lúc nhận"));
@@ -430,7 +430,7 @@ class AhamoveDispatchServiceFlowTest {
         outForDelivery();
         when(orderRepo.findOneByOrderCodeOrDraftCode("GP-0001")).thenReturn(Optional.of(order));
         when(client.fetchOrder("AHA1")).thenReturn(
-            om.readTree("{\"_id\":\"AHA1\",\"path\":[{\"por_info\":\"https://img/nhan.jpg\"},{\"pod_info\":\"https://img/giao.jpg\"}]}")
+            om.readTree("{\"_id\":\"AHA1\",\"path\":[{\"pop_info\":\"https://img/nhan.jpg\"},{\"pod_info\":\"https://img/giao.jpg\"}]}")
         );
         when(delivery.appendPodPhotos(eq(order), any(), anyString())).thenReturn(1);
         service.pullPhotos("GP-0001");
