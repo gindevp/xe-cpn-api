@@ -38,6 +38,7 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -456,7 +457,20 @@ public class AhamoveDispatchService {
         return who != null ? who : currentActor();
     }
 
-    /** Đơn gọi Ahamove từ trước khi ghi nhận tự động, chưa bấm nhận tiền ứng. */
+    /** Đơn gọi Ahamove từ trước khi ghi nợ lúc bàn giao — ghi nợ người bấm bàn giao, không chờ nút xác nhận. */
+    @Scheduled(fixedDelay = 300_000, initialDelay = 45_000)
+    public void catchUpUncollectedAdvances() {
+        for (ShipmentOrder order : shipmentOrderRepository.findAhamoveAdvanceUncollected()) {
+            String code = order.getOrderCode();
+            try {
+                confirmAdvance(code);
+                LOG.info("Ahamove advance catch-up recorded debt for {}", code);
+            } catch (RuntimeException e) {
+                LOG.warn("Ahamove advance catch-up {} skipped: {}", code, e.getMessage());
+            }
+        }
+    }
+
     public OrderDetailDTO confirmAdvance(String orderCode) {
         tx.executeWithoutResult(status -> {
             ShipmentOrder order = requireOrder(orderCode);

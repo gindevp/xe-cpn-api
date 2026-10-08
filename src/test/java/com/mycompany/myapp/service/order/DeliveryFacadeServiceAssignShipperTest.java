@@ -183,6 +183,7 @@ class DeliveryFacadeServiceAssignShipperTest {
         service.recordPartnerAdvance(order, new java.math.BigDecimal("50000"), "POD AHAMOVE ỨNG", "dungtm");
 
         assertThat(order.getPartnerCodCollectedAt()).isNotNull();
+        assertThat(order.getPartnerCodCollectedBy()).isEqualTo("dungtm");
         assertThat(order.getPaidAmount()).isEqualByComparingTo("50000");
         ArgumentCaptor<OrderPayment> pay = ArgumentCaptor.forClass(OrderPayment.class);
         verify(paymentRepo).save(pay.capture());

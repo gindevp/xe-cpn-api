@@ -189,4 +189,20 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
         """
     )
     List<String> findLatestSenderNames(@Param("phone") String phone, Pageable pageable);
+
+    /** Ahamove đã gửi số tài xế ứng nhưng chưa ghi nợ người bàn giao. */
+    @Query(
+        """
+        select o from ShipmentOrder o
+        where o.partnerCode = 'AHAMOVE'
+        and o.partnerCodCollectedAt is null
+        and o.partnerCodAmount > 0
+        and o.status in (
+            com.mycompany.myapp.domain.enumeration.OrderStatus.OUT_FOR_DELIVERY,
+            com.mycompany.myapp.domain.enumeration.OrderStatus.DELIVERED,
+            com.mycompany.myapp.domain.enumeration.OrderStatus.FAILED_DELIVERY
+        )
+        """
+    )
+    List<ShipmentOrder> findAhamoveAdvanceUncollected();
 }
