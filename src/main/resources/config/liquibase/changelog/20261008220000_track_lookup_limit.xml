@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261008220000-track-lookup-policy" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="track_lookup_policy"/>
+            </not>
+        </preConditions>
+        <comment>Số lần tra cứu công khai mỗi thiết bị trong một ngày.</comment>
+        <createTable tableName="track_lookup_policy">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="enabled" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="daily_limit" type="int" defaultValueNumeric="30">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="${datetimeType}"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="20261008220000-track-lookup-counter" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="track_lookup_counter"/>
+            </not>
+        </preConditions>
+        <createTable tableName="track_lookup_counter">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="device_key" type="varchar(80)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="day_vn" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="hits" type="int">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="track_lookup_counter" columnNames="device_key, day_vn" constraintName="ux_track_lookup_counter_device_day"/>
+    </changeSet>
+
+    <changeSet id="20261008220000-qr-refresh-seconds" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="track_lookup_policy" columnName="qr_refresh_seconds"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="track_lookup_policy">
+            <column name="qr_refresh_seconds" type="int" defaultValueNumeric="60">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20261008220000-office-qr-screen" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="office_qr_screen"/>
+            </not>
+        </preConditions>
+        <comment>Một màn hình QR đang phát cho mỗi văn phòng. display_key là bí mật trong link.</comment>
+        <createTable tableName="office_qr_screen">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="office_code" type="varchar(32)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_office_qr_screen_office"/>
+            </column>
+            <column name="display_key" type="varchar(48)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_office_qr_screen_key"/>
+            </column>
+            <column name="device_id" type="varchar(80)"/>
+            <column name="seen_at" type="${datetimeType}"/>
+            <column name="token_hash" type="varchar(64)"/>
+            <column name="token_expires_at" type="${datetimeType}"/>
+        </createTable>
+    </changeSet>
+</databaseChangeLog>

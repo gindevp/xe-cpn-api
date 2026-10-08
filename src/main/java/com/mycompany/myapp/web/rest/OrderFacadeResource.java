@@ -6,6 +6,7 @@ import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.domain.enumeration.ReturnStage;
 import com.mycompany.myapp.security.SecurityUtils;
+import com.mycompany.myapp.service.config.TrackLookupLimitService;
 import com.mycompany.myapp.service.dto.order.AddPaymentRequest;
 import com.mycompany.myapp.service.dto.order.AssignShipperRequest;
 import com.mycompany.myapp.service.dto.order.CreateDraftOrderRequest;
@@ -47,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -72,6 +74,13 @@ public class OrderFacadeResource {
     private static final int CREATE_CODE_RETRIES = 2;
 
     private final OrderFacadeService orderFacadeService;
+    private TrackLookupLimitService trackLookupLimitService;
+
+    @Autowired
+    public void setTrackLookupLimitService(TrackLookupLimitService trackLookupLimitService) {
+        this.trackLookupLimitService = trackLookupLimitService;
+    }
+
     private final TripFacadeService tripFacadeService;
     private final DeliveryFacadeService deliveryFacadeService;
     private final ExceptionFacadeService exceptionFacadeService;
@@ -291,7 +300,10 @@ public class OrderFacadeResource {
     }
 
     @PostMapping("/track")
-    public TrackOrderResponse track(@Valid @RequestBody TrackOrderRequest request) {
+    public TrackOrderResponse track(@Valid @RequestBody TrackOrderRequest request, jakarta.servlet.http.HttpServletRequest http) {
+        if (trackLookupLimitService != null) {
+            trackLookupLimitService.consume(http.getHeader("X-Device-Id"), clientIp(http));
+        }
         return orderFacadeService.track(request);
     }
 

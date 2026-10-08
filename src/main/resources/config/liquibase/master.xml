@@ -134,6 +134,7 @@
     <include file="config/liquibase/changelog/20261008110000_invoice_buyer_id_phone.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261008140000_ahamove_sender_mobile.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261008190000_fix_thanh_pho_address.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261008220000_track_lookup_limit.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
 

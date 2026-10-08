@@ -76,6 +76,7 @@ public class SecurityConfiguration {
                     // Ảnh MinIO: thẻ img không gửi JWT, URL có chữ ký hạn dùng
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/media/**")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.GET, "/api/session-policy")).permitAll()
+                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/office-screen/**")).permitAll()
                     // Webhook Auto Call HHVN: xác thực bằng chữ ký HMAC trong AutoCallResource
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/hhvn/webhook")).permitAll()
                     // Webhook Auto Call Vtech: xác thực bằng token CPN sinh (AutoCallResource)

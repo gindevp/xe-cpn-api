@@ -116,6 +116,8 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             path.startsWith("/api/admin/session-policy") ||
             path.startsWith("/api/admin/invoice-auto-issue") ||
             path.startsWith("/api/admin/deposit-account") ||
+            path.startsWith("/api/admin/track-lookup-policy") ||
+            path.startsWith("/api/admin/office-screens") ||
             path.startsWith("/api/scan-voices")
         ) {
             staffAccessService.requireScreenWrite(ScreenKey.BAO_TRI);
@@ -169,6 +171,9 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             return true;
         }
         if ("POST".equals(method) && ("/api/orders/track".equals(path) || path.startsWith("/api/orders/track/invoice"))) {
+            return true;
+        }
+        if ("POST".equals(method) && path.startsWith("/api/public/office-screen/")) {
             return true;
         }
         if (
