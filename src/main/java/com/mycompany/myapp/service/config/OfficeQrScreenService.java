@@ -6,6 +6,8 @@ import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.OfficeQrScreenRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
+import com.mycompany.myapp.repository.OrderGoodsPhotoRepository;
+import com.mycompany.myapp.service.storage.StoredMedia;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import jakarta.persistence.EntityManager;
 import java.nio.charset.StandardCharsets;
@@ -37,6 +39,8 @@ public class OfficeQrScreenService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final Pattern TENHANG = Pattern.compile("\\[TENHANG\\]([\\s\\S]*?)\\[/TENHANG\\]");
     private static final Pattern LOAI = Pattern.compile("\\[LOAI\\]([\\s\\S]*?)\\[/LOAI\\]");
+    private static final Pattern PKGKG = Pattern.compile("\\[PKGKG\\]([\\d.,\\s]*)\\[/PKGKG\\]");
+    private static final Pattern PKGDIM = Pattern.compile("\\[PKGDIM\\]([\\d.x|\\s]*)\\[/PKGDIM\\]");
     private static final List<OrderStatus> OPEN = List.of(
         OrderStatus.CONFIRMED,
         OrderStatus.WAITING,
@@ -48,17 +52,23 @@ public class OfficeQrScreenService {
 
     private final OfficeQrScreenRepository screenRepository;
     private final OfficeRepository officeRepository;
+    private final OrderGoodsPhotoRepository goodsPhotoRepository;
+    private final StoredMedia storedMedia;
     private final TrackLookupLimitService trackLookupLimitService;
     private final EntityManager em;
 
     public OfficeQrScreenService(
         OfficeQrScreenRepository screenRepository,
         OfficeRepository officeRepository,
+        OrderGoodsPhotoRepository goodsPhotoRepository,
+        StoredMedia storedMedia,
         TrackLookupLimitService trackLookupLimitService,
         EntityManager em
     ) {
         this.screenRepository = screenRepository;
         this.officeRepository = officeRepository;
+        this.goodsPhotoRepository = goodsPhotoRepository;
+        this.storedMedia = storedMedia;
         this.trackLookupLimitService = trackLookupLimitService;
         this.em = em;
     }
@@ -67,7 +77,17 @@ public class OfficeQrScreenService {
 
     public record Pulse(String officeCode, String officeName, int refreshSeconds, String token, Instant expiresAt) {}
 
-    public record PickupOrder(String orderCode, String goodsLabel, String senderPhone, String receiverPhone, String fromOfficeName) {}
+    public record Piece(int seq, String weightKg, String dimensions) {}
+
+    public record PickupOrder(
+        String orderCode,
+        String goodsLabel,
+        String senderPhone,
+        String receiverPhone,
+        String fromOfficeName,
+        List<Piece> packages,
+        String photoUrl
+    ) {}
 
     @Transactional
     public List<ScreenLink> listLinks() {
@@ -171,7 +191,9 @@ public class OfficeQrScreenService {
                     goodsLabel(o),
                     o.getSenderPhone(),
                     o.getReceiverPhone(),
-                    o.getFromOffice() != null ? o.getFromOffice().getName() : null
+                    o.getFromOffice() != null ? o.getFromOffice().getName() : null,
+                    pieces(o),
+                    photoUrl(o)
                 )
             );
         }
@@ -231,6 +253,90 @@ public class OfficeQrScreenService {
 
     private static String digits(String raw) {
         return raw == null ? "" : raw.replaceAll("\\D", "");
+    }
+
+    static List<Piece> pieces(ShipmentOrder order) {
+        String note = order.getNote() == null ? "" : order.getNote();
+        String[] weights = between(note, PKGKG).split(",", -1);
+        String[] dims = between(note, PKGDIM).split("\\|", -1);
+        int declared = order.getQuantity() == null ? 1 : Math.max(1, order.getQuantity());
+        int n = Math.max(declared, Math.max(countFilled(weights), countFilled(dims)));
+        boolean anyPkg = countFilled(weights) > 0 || countFilled(dims) > 0;
+        List<Piece> out = new ArrayList<>();
+        if (!anyPkg) {
+            String weight = order.getWeightKg() == null ? "" : trimNum(order.getWeightKg().toPlainString());
+            String dim = prettyDim(order.getDimensionsText());
+            if (!weight.isBlank() || !dim.isBlank()) {
+                out.add(new Piece(1, weight, dim));
+            }
+            return out;
+        }
+        for (int i = 0; i < n; i++) {
+            String weight = i < weights.length ? trimNum(weights[i]) : "";
+            String dim = i < dims.length ? prettyDim(dims[i]) : "";
+            if (weight.isBlank() && dim.isBlank()) {
+                continue;
+            }
+            out.add(new Piece(i + 1, weight, dim));
+        }
+        return out;
+    }
+
+    private String photoUrl(ShipmentOrder order) {
+        if (order.getId() == null) {
+            return null;
+        }
+        return goodsPhotoRepository
+            .findOneByOrderId(order.getId())
+            .map(p -> storedMedia.expose(p.getPhotoUrl()))
+            .filter(url -> url != null && !url.isBlank())
+            .orElse(null);
+    }
+
+    private static int countFilled(String[] parts) {
+        int n = 0;
+        for (String part : parts) {
+            if (part != null && !part.isBlank()) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private static String trimNum(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String s = raw.trim();
+        if (s.isEmpty()) {
+            return "";
+        }
+        try {
+            return new java.math.BigDecimal(s).stripTrailingZeros().toPlainString();
+        } catch (NumberFormatException ex) {
+            return s;
+        }
+    }
+
+    private static String prettyDim(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        String[] p = raw.trim().toLowerCase(Locale.ROOT).split("x");
+        if (p.length != 3) {
+            return raw.trim();
+        }
+        try {
+            String d = trimNum(p[0]);
+            String r = trimNum(p[1]);
+            String c = trimNum(p[2]);
+            if (d.isEmpty() && r.isEmpty() && c.isEmpty()) {
+                return "";
+            }
+            return d + " × " + r + " × " + c + " cm";
+        } catch (NumberFormatException ex) {
+            return raw.trim();
+        }
     }
 
     static String goodsLabel(ShipmentOrder order) {
