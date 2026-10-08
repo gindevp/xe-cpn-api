@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261008190000-fix-thanh-pho" author="cpn">
+        <comment>Dia chi MST da luu mat dau o chu Thanh Pho (Th?nh Ph?) khi doi viet tat TP.</comment>
+        <sql>
+            UPDATE shipment_order
+            SET invoice_company_address = REPLACE(
+                invoice_company_address,
+                'Th?nh Ph?',
+                CONVERT(UNHEX('5468C3A06E68205068E1BB91') USING utf8mb4)
+            )
+            WHERE invoice_company_address LIKE '%Th?nh Ph?%';
+
+            UPDATE phone_tax_link
+            SET address = REPLACE(
+                address,
+                'Th?nh Ph?',
+                CONVERT(UNHEX('5468C3A06E68205068E1BB91') USING utf8mb4)
+            )
+            WHERE address LIKE '%Th?nh Ph?%';
+        </sql>
+    </changeSet>
+</databaseChangeLog>

@@ -321,8 +321,12 @@ public class TaxCodeLookupService {
         return t.isEmpty() || "null".equalsIgnoreCase(t) ? null : t;
     }
 
+    /** "Thành Phố" viết bằng escape để dấu không phụ thuộc encoding lúc biên dịch. */
+    private static final String THANH_PHO = "Th\u00e0nh Ph\u1ed1";
+
     /**
      * Địa chỉ tra theo MST: {@code TP} → {@code Thành Phố}.
+     * Ghép chuỗi trực tiếp, không dùng {@code appendReplacement} (replacement của Matcher dễ làm mất dấu).
      * Thiếu "Việt Nam" thì thêm đuôi {@code , Việt Nam.}; bỏ dấu chấm / phẩy sát cuối trước khi thêm
      * để không thành {@code ., Việt Nam.}.
      */
@@ -342,12 +346,21 @@ public class TaxCodeLookupService {
     static String expandTp(String s) {
         Matcher m = TP_ABBR.matcher(s);
         StringBuilder sb = new StringBuilder();
+        int last = 0;
         while (m.find()) {
+            sb.append(s, last, m.start());
             int next = m.end();
             boolean glued = next < s.length() && Character.isLetter(s.charAt(next));
-            m.appendReplacement(sb, Matcher.quoteReplacement(glued ? "Thành Phố " : "Thành Phố"));
+            sb.append(THANH_PHO);
+            if (glued) {
+                sb.append(' ');
+            }
+            last = m.end();
         }
-        m.appendTail(sb);
+        if (last == 0) {
+            return s;
+        }
+        sb.append(s, last, s.length());
         return sb.toString().replaceAll("\\s{2,}", " ").trim();
     }
 
