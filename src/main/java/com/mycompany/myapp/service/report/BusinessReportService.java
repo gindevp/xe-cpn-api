@@ -74,6 +74,9 @@ public class BusinessReportService {
 
     public record OfficeRow(String officeCode, String officeName, long delivered, long backlog) {}
 
+    /** Một ngày trên biểu đồ: đơn gửi (tạo trong ngày), đơn nhận (giao trong ngày), doanh thu = tổng cước đơn gửi. */
+    public record DayRow(LocalDate date, long sent, long received, BigDecimal revenue) {}
+
     public record Report(
         LocalDate from,
         LocalDate to,
@@ -82,7 +85,8 @@ public class BusinessReportService {
         LocalDate previousFrom,
         LocalDate previousTo,
         Totals previous,
-        List<OfficeRow> offices
+        List<OfficeRow> offices,
+        List<DayRow> days
     ) {}
 
     record Period(LocalDate from, LocalDate to, Instant start, Instant end) {
@@ -118,7 +122,17 @@ public class BusinessReportService {
         List<RevenueLedger.ReceiptLine> prevLines = revenueLedger.receiptLines(prev.start(), prev.end());
         Totals previous = totals(office, prevLines, deliveredByOffice(prev), backlogByOffice(prev, prevLines));
 
-        return new Report(f, t, office, current, prev.from(), prev.to(), previous, officeRows(office, delivered, backlog));
+        return new Report(
+            f,
+            t,
+            office,
+            current,
+            prev.from(),
+            prev.to(),
+            previous,
+            officeRows(office, delivered, backlog),
+            dayRows(office, cur)
+        );
     }
 
     private String resolveOffice(String requested) {
@@ -224,6 +238,65 @@ public class BusinessReportService {
             out.add(new OfficeRow(code, names.getOrDefault(code, code.isEmpty() ? "Chưa rõ VP" : code), d, b));
         }
         out.sort(Comparator.comparing(OfficeRow::officeName, String.CASE_INSENSITIVE_ORDER));
+        return out;
+    }
+
+    private List<DayRow> dayRows(String office, Period p) {
+        Map<LocalDate, long[]> sent = new TreeMap<>();
+        Map<LocalDate, BigDecimal> revenue = new TreeMap<>();
+        String officeKey = office == null ? "" : office;
+        List<Object[]> created = em
+            .createQuery(
+                "select o.createdAt, o.fareAmount from ShipmentOrder o left join o.fromOffice fr" +
+                " where o.createdAt >= :start and o.createdAt < :end" +
+                " and (:office = '' or upper(fr.code) = :office)",
+                Object[].class
+            )
+            .setParameter("start", p.start())
+            .setParameter("end", p.end())
+            .setParameter("office", officeKey)
+            .getResultList();
+        for (Object[] r : created) {
+            if (r[0] == null) {
+                continue;
+            }
+            LocalDate day = ((Instant) r[0]).atZone(VN).toLocalDate();
+            sent.computeIfAbsent(day, d -> new long[] { 0 })[0]++;
+            BigDecimal fare = r[1] instanceof BigDecimal b ? b : BigDecimal.ZERO;
+            revenue.merge(day, fare, BigDecimal::add);
+        }
+
+        Map<LocalDate, Long> received = new TreeMap<>();
+        List<Object[]> pods = em
+            .createQuery(
+                "select o.id, e.eventAt from OrderEvent e join e.order o left join o.finalToOffice ft left join o.toOffice t" +
+                " where o.status = :delivered and upper(e.action) in :acts" +
+                " and e.eventAt >= :start and e.eventAt < :end" +
+                " and (:office = '' or upper(coalesce(ft.code, t.code)) = :office)" +
+                " and not exists (select 1 from OrderEvent e2 where e2.order = o and upper(e2.action) in :acts and e2.eventAt > e.eventAt)",
+                Object[].class
+            )
+            .setParameter("delivered", OrderStatus.DELIVERED)
+            .setParameter("acts", InvoicePolicy.DELIVERED_ACTIONS)
+            .setParameter("start", p.start())
+            .setParameter("end", p.end())
+            .setParameter("office", officeKey)
+            .getResultList();
+        java.util.Set<Object> seen = new java.util.HashSet<>();
+        for (Object[] r : pods) {
+            if (r[0] == null || r[1] == null || !seen.add(r[0])) {
+                continue;
+            }
+            LocalDate day = ((Instant) r[1]).atZone(VN).toLocalDate();
+            received.merge(day, 1L, Long::sum);
+        }
+
+        List<DayRow> out = new ArrayList<>();
+        for (LocalDate d = p.from(); !d.isAfter(p.to()); d = d.plusDays(1)) {
+            long s = sent.containsKey(d) ? sent.get(d)[0] : 0;
+            long rc = received.getOrDefault(d, 0L);
+            out.add(new DayRow(d, s, rc, revenue.getOrDefault(d, BigDecimal.ZERO)));
+        }
         return out;
     }
 
