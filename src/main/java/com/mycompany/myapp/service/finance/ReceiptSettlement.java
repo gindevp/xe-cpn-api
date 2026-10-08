@@ -5,6 +5,7 @@ import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentKind;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.service.order.OrderMoney;
+import com.mycompany.myapp.service.order.PartnerAdvance;
 import java.math.BigDecimal;
 
 /**
@@ -108,12 +109,16 @@ public final class ReceiptSettlement {
         // Đơn hoàn: mọi tiền đã thu quy về VP gửi.
         BigDecimal deliveryPaid = returned ? BigDecimal.ZERO : OrderMoney.nz(t.deliverySidePaid()).min(paid);
         BigDecimal senderHeld = paid.subtract(deliveryPaid);
-        BigDecimal senderFareDue = guiTra && !returned && (delivered || pastSenderWarehouse(order)) ? due : BigDecimal.ZERO;
-        BigDecimal deliveryFareDue = delivered && !guiTra ? due : BigDecimal.ZERO;
+        // Tài xế Ahamove đã ứng cước nhưng NV chưa ghi nhận: số đó là nợ người book ship (phần giao), không phải VP gửi.
+        BigDecimal pendingAdvance = !returned && PartnerAdvance.pending(order) ? PartnerAdvance.amount(order).min(due) : BigDecimal.ZERO;
+        BigDecimal senderFareDue = guiTra && !returned && (delivered || pastSenderWarehouse(order))
+            ? nonNegative(due.subtract(pendingAdvance))
+            : BigDecimal.ZERO;
+        BigDecimal deliveryFareDue = delivered && !guiTra ? nonNegative(due.subtract(pendingAdvance)) : BigDecimal.ZERO;
         BigDecimal deliveryCod = delivered ? cod : BigDecimal.ZERO;
 
         BigDecimal senderExpected = senderHeld.add(senderFareDue);
-        BigDecimal deliveryExpected = deliveryPaid.add(deliveryFareDue).add(deliveryCod);
+        BigDecimal deliveryExpected = deliveryPaid.add(deliveryFareDue).add(deliveryCod).add(pendingAdvance);
 
         BigDecimal receipted = OrderMoney.nz(t.receipted()).max(BigDecimal.ZERO);
         BigDecimal rSender = receipted.min(senderExpected);

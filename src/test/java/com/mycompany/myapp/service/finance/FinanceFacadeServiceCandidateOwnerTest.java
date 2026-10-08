@@ -6,9 +6,11 @@ import static org.mockito.Mockito.when;
 
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderEvent;
+import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.ForwardStage;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
+import com.mycompany.myapp.domain.enumeration.PaymentKind;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.AuditLogRepository;
 import com.mycompany.myapp.repository.DayClosureRepository;
@@ -148,6 +150,68 @@ class FinanceFacadeServiceCandidateOwnerTest {
         when(orderEventRepository.findByOrder_IdOrderByEventAtAsc(7L)).thenReturn(List.of(event("CREATE", "vietnc")));
 
         assertThat(senderOwner()).isEqualTo("vietnc");
+    }
+
+    @Test
+    void ahamoveAdvance_ownerIsCollectorNotAnonymousPod() {
+        order.setStatus(OrderStatus.DELIVERED);
+        order.setPaidAmount(new BigDecimal("125000"));
+        order.setFareAmount(new BigDecimal("125000"));
+        Office to = new Office();
+        to.setCode("VP_LD");
+        order.setToOffice(to);
+        order.setFinalToOffice(to);
+        OrderPayment prepaid = new OrderPayment();
+        prepaid.setAmount(new BigDecimal("55000"));
+        prepaid.setPaymentKind(PaymentKind.TRUOC);
+        prepaid.setNote("Thu đầu gửi");
+        prepaid.setCollectorUsername("xe00102");
+        prepaid.setPaymentAt(Instant.parse("2026-10-07T07:36:25Z"));
+        OrderPayment advance = new OrderPayment();
+        advance.setAmount(new BigDecimal("70000"));
+        advance.setPaymentKind(PaymentKind.SAU);
+        advance.setNote("POD AHAMOVE ỨNG");
+        advance.setCollectorUsername("dungtm");
+        advance.setPaymentAt(Instant.parse("2026-10-07T09:17:08Z"));
+        when(orderPaymentRepository.findByOrder_IdOrderByPaymentAtDesc(7L)).thenReturn(List.of(advance, prepaid));
+        when(orderPaymentRepository.sumGroupedByOrderIds(any())).thenReturn(
+            List.<Object[]>of(new Object[] { 7L, PaymentKind.SAU, "POD AHAMOVE ỨNG", new BigDecimal("70000") })
+        );
+
+        List<CandidateDTO> rows = service.candidates(null, null);
+        assertThat(rows).anySatisfy(r -> {
+            assertThat(r.portion()).isEqualTo(ReceiptSettlement.SENDER);
+            assertThat(r.dueAmount()).isEqualByComparingTo("55000");
+            assertThat(r.debtOwnerUsername()).isEqualTo("xe00102");
+        });
+        assertThat(rows).anySatisfy(r -> {
+            assertThat(r.portion()).isEqualTo(ReceiptSettlement.DELIVERY);
+            assertThat(r.dueAmount()).isEqualByComparingTo("70000");
+            assertThat(r.debtOwnerUsername()).isEqualTo("dungtm");
+        });
+    }
+
+    @Test
+    void pendingAhamoveAdvance_ownerIsShipStaffNotAnonymousPod() {
+        order.setStatus(OrderStatus.DELIVERED);
+        order.setPaidAmount(new BigDecimal("55000"));
+        order.setFareAmount(new BigDecimal("125000"));
+        order.setPartnerCodAmount(new BigDecimal("70000"));
+        when(orderEventRepository.findByOrder_IdOrderByEventAtAsc(7L)).thenReturn(
+            List.of(event("CREATE", "xe00102"), event("PUSH_SHIP", "dungtm"), event("POD", "anonymousUser"))
+        );
+
+        List<CandidateDTO> rows = service.candidates(null, null);
+        assertThat(rows).anySatisfy(r -> {
+            assertThat(r.portion()).isEqualTo(ReceiptSettlement.DELIVERY);
+            assertThat(r.dueAmount()).isEqualByComparingTo("70000");
+            assertThat(r.debtOwnerUsername()).isEqualTo("dungtm");
+        });
+        assertThat(rows).anySatisfy(r -> {
+            assertThat(r.portion()).isEqualTo(ReceiptSettlement.SENDER);
+            assertThat(r.dueAmount()).isEqualByComparingTo("55000");
+            assertThat(r.debtOwnerUsername()).isEqualTo("xe00102");
+        });
     }
 
     @Test

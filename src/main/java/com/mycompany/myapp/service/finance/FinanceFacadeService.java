@@ -1578,31 +1578,63 @@ public class FinanceFacadeService {
     }
 
     /**
-     * Người làm đơn ra khỏi kho giao (POD / giao thành công) — chịu trách nhiệm trên phiếu thu nhận trả/COD.
+     * Người đang giữ tiền phía giao. Ưu tiên người thu (POD / tài xế ứng), không lấy actor webhook
+     * {@code anonymousUser} của POD Ahamove — nếu không thì tiền ứng nhảy về phiếu VP gửi hoặc user ảo.
      */
     private String resolveDeliveryActor(ShipmentOrder order) {
-        if (order.getId() != null) {
-            List<OrderEvent> events = orderEventRepository.findByOrder_IdOrderByEventAtAsc(order.getId());
-            for (int i = events.size() - 1; i >= 0; i--) {
-                OrderEvent event = events.get(i);
-                String action = event.getAction() == null ? "" : event.getAction().trim().toUpperCase();
-                if ("POD".equals(action) || "POD_QUAY".equals(action) || "POD_HOME".equals(action) || "DELIVERED".equals(action)) {
-                    String actor = event.getActorUsername();
-                    if (actor != null && !actor.isBlank()) {
-                        return actor.trim();
-                    }
-                }
+        if (order.getId() == null) {
+            return resolveDebtOwner(order);
+        }
+        for (OrderPayment p : orderPaymentRepository.findByOrder_IdOrderByPaymentAtDesc(order.getId())) {
+            if (p.getAmount() == null || p.getAmount().signum() <= 0) {
+                continue;
             }
-            var lastPay = orderPaymentRepository.findFirstByOrder_IdOrderByPaymentAtDesc(order.getId());
-            if (lastPay.isPresent()) {
-                String note = lastPay.get().getNote() == null ? "" : lastPay.get().getNote().toUpperCase();
-                String collector = lastPay.get().getCollectorUsername();
-                if (collector != null && !collector.isBlank() && note.contains("POD")) {
-                    return collector.trim();
-                }
+            String note = p.getNote() == null ? "" : p.getNote().trim().toUpperCase();
+            if (note.startsWith("RECEIPT")) {
+                continue;
+            }
+            boolean deliveryCash =
+                ReceiptSettlement.isDeliverySidePayment(p.getPaymentKind(), p.getNote()) || p.getPaymentKind() == PaymentKind.COD;
+            String collector = staffActorName(p.getCollectorUsername());
+            if (deliveryCash && collector != null) {
+                return collector;
             }
         }
+        List<OrderEvent> events = orderEventRepository.findByOrder_IdOrderByEventAtAsc(order.getId());
+        String podStaff = null;
+        String shipStaff = null;
+        for (int i = events.size() - 1; i >= 0; i--) {
+            OrderEvent event = events.get(i);
+            String action = event.getAction() == null ? "" : event.getAction().trim().toUpperCase();
+            String actor = staffActor(event);
+            if (actor == null) {
+                continue;
+            }
+            if (
+                podStaff == null &&
+                ("POD".equals(action) || "POD_QUAY".equals(action) || "POD_HOME".equals(action) || "DELIVERED".equals(action))
+            ) {
+                podStaff = actor;
+            }
+            if (shipStaff == null && ("PUSH_SHIP".equals(action) || "AHAMOVE_ADVANCE_IN".equals(action))) {
+                shipStaff = actor;
+            }
+        }
+        if (podStaff != null) {
+            return podStaff;
+        }
+        if (shipStaff != null) {
+            return shipStaff;
+        }
         return resolveDebtOwner(order);
+    }
+
+    private static String staffActorName(String login) {
+        if (login == null || login.isBlank()) {
+            return null;
+        }
+        String a = login.trim();
+        return "customer".equalsIgnoreCase(a) || "system".equalsIgnoreCase(a) || "anonymousUser".equalsIgnoreCase(a) ? null : a;
     }
 
     private String resolveDebtOwner(ShipmentOrder order) {

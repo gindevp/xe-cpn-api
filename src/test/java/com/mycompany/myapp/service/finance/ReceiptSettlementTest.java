@@ -109,6 +109,17 @@ class ReceiptSettlementTest {
     }
 
     @Test
+    void guiTra_pendingAhamoveAdvance_unpaidShipFeeIsDeliveryNotSender() {
+        ShipmentOrder o = order(PaymentTerm.GUI_TRA, OrderStatus.DELIVERED, ForwardStage.DELIVERING, "125000", "55000", "0");
+        o.setPartnerCodAmount(new BigDecimal("70000"));
+        Split s = ReceiptSettlement.split(o, Totals.ZERO);
+        assertThat(s.senderOut()).isEqualByComparingTo("55000");
+        assertThat(s.senderHeldOut()).isEqualByComparingTo("55000");
+        assertThat(s.senderFareDue()).isEqualByComparingTo("0");
+        assertThat(s.deliveryOut()).isEqualByComparingTo("70000");
+    }
+
+    @Test
     void deliverySidePayment_detectsPodAndReceiptNotes() {
         assertThat(ReceiptSettlement.isDeliverySidePayment(PaymentKind.SAU, "POD QUAY")).isTrue();
         assertThat(ReceiptSettlement.isDeliverySidePayment(PaymentKind.SAU, "RECEIPT")).isTrue();
