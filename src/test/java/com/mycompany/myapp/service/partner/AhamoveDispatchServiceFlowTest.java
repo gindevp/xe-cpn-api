@@ -406,7 +406,7 @@ class AhamoveDispatchServiceFlowTest {
         verify(delivery).pod(eq("GP-0001"), pod.capture());
         assertThat(pod.getValue().getChannel()).isEqualTo("HOME");
         assertThat(pod.getValue().getPhotos()).containsExactly("https://img/p.jpg");
-        assertThat(pod.getValue().getCaption()).isEqualTo("Giao");
+        assertThat(pod.getValue().getCaption()).isEqualTo("Lúc giao");
         assertThat(pod.getValue().getCollectedAmount()).isEqualByComparingTo("0");
         assertThat(order.getPartnerPodUrl()).isEqualTo("https://img/p.jpg");
     }
@@ -414,14 +414,28 @@ class AhamoveDispatchServiceFlowTest {
     @Test
     void webhook_pickupPhoto_savedWithoutDelivering() throws Exception {
         outForDelivery();
-        when(delivery.appendPodPhotos(eq(order), any(), eq("Nhận"))).thenReturn(1);
+        when(delivery.appendPodPhotos(eq(order), any(), eq("Lúc nhận"))).thenReturn(1);
         service.applyWebhook(
             om.readTree(
-                "{\"_id\":\"AHA1\",\"status\":\"IN PROCESS\",\"path\":[{\"status\":\"COMPLETED\",\"pod_info\":[{\"image_url\":\"https://img/nhan.jpg\"}]},{\"status\":\"ACCEPTED\"}]}"
+                "{\"_id\":\"AHA1\",\"status\":\"IN PROCESS\",\"path\":[{\"status\":\"COMPLETED\",\"por_info\":[{\"image_url\":\"https://img/nhan.jpg\"}]},{\"status\":\"ACCEPTED\"}]}"
             )
         );
-        verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/nhan.jpg")), eq("Nhận"));
+        verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/nhan.jpg")), eq("Lúc nhận"));
         verify(orders).recordEvent(eq(order), eq("AHAMOVE_PICKUP_POD"), anyString(), eq("ahamove"));
+        verify(delivery, never()).pod(anyString(), any());
+    }
+
+    @Test
+    void pullPhotos_savesPickupAndDrop() throws Exception {
+        outForDelivery();
+        when(orderRepo.findOneByOrderCodeOrDraftCode("GP-0001")).thenReturn(Optional.of(order));
+        when(client.fetchOrder("AHA1")).thenReturn(
+            om.readTree("{\"_id\":\"AHA1\",\"path\":[{\"por_info\":\"https://img/nhan.jpg\"},{\"pod_info\":\"https://img/giao.jpg\"}]}")
+        );
+        when(delivery.appendPodPhotos(eq(order), any(), anyString())).thenReturn(1);
+        service.pullPhotos("GP-0001");
+        verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/nhan.jpg")), eq("Lúc nhận"));
+        verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/giao.jpg")), eq("Lúc giao"));
         verify(delivery, never()).pod(anyString(), any());
     }
 

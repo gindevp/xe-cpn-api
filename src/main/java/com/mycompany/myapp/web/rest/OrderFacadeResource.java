@@ -36,6 +36,7 @@ import com.mycompany.myapp.service.order.DeliveryFacadeService;
 import com.mycompany.myapp.service.order.ExceptionFacadeService;
 import com.mycompany.myapp.service.order.OrderFacadeService;
 import com.mycompany.myapp.service.order.PublicSenderLookupService;
+import com.mycompany.myapp.service.partner.AhamoveDispatchService;
 import com.mycompany.myapp.service.trip.TripFacadeService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import jakarta.validation.Valid;
@@ -78,6 +79,7 @@ public class OrderFacadeResource {
     private final FinanceFacadeService financeFacadeService;
     private final PublicInvoiceService publicInvoiceService;
     private final PublicSenderLookupService publicSenderLookupService;
+    private final AhamoveDispatchService ahamoveDispatchService;
 
     public OrderFacadeResource(
         OrderFacadeService orderFacadeService,
@@ -87,7 +89,8 @@ public class OrderFacadeResource {
         MeInvoiceIssueService meInvoiceIssueService,
         FinanceFacadeService financeFacadeService,
         PublicInvoiceService publicInvoiceService,
-        PublicSenderLookupService publicSenderLookupService
+        PublicSenderLookupService publicSenderLookupService,
+        AhamoveDispatchService ahamoveDispatchService
     ) {
         this.publicInvoiceService = publicInvoiceService;
         this.publicSenderLookupService = publicSenderLookupService;
@@ -97,6 +100,7 @@ public class OrderFacadeResource {
         this.deliveryFacadeService = deliveryFacadeService;
         this.exceptionFacadeService = exceptionFacadeService;
         this.meInvoiceIssueService = meInvoiceIssueService;
+        this.ahamoveDispatchService = ahamoveDispatchService;
     }
 
     @GetMapping("")
@@ -169,7 +173,13 @@ public class OrderFacadeResource {
     }
 
     @GetMapping("/{orderCode}")
-    public ResponseEntity<OrderDetailDTO> getOrder(@PathVariable String orderCode) {
+    public ResponseEntity<OrderDetailDTO> getOrder(
+        @PathVariable String orderCode,
+        @RequestParam(defaultValue = "false") boolean ahamovePhotos
+    ) {
+        if (ahamovePhotos) {
+            ahamoveDispatchService.pullPhotos(orderCode);
+        }
         return ResponseEntity.ok(orderFacadeService.getByCode(orderCode));
     }
 

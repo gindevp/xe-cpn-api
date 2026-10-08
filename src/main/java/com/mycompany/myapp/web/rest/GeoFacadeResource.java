@@ -1,5 +1,6 @@
 package com.mycompany.myapp.web.rest;
 
+import com.mycompany.myapp.service.geo.GoogleMapsLinkService;
 import com.mycompany.myapp.service.partner.GoongPlacesService;
 import com.mycompany.myapp.service.partner.OsmNominatimService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
@@ -20,10 +21,16 @@ public class GeoFacadeResource {
 
     private final OsmNominatimService osmNominatimService;
     private final GoongPlacesService goongPlacesService;
+    private final GoogleMapsLinkService googleMapsLinkService;
 
-    public GeoFacadeResource(OsmNominatimService osmNominatimService, GoongPlacesService goongPlacesService) {
+    public GeoFacadeResource(
+        OsmNominatimService osmNominatimService,
+        GoongPlacesService goongPlacesService,
+        GoogleMapsLinkService googleMapsLinkService
+    ) {
         this.osmNominatimService = osmNominatimService;
         this.goongPlacesService = goongPlacesService;
+        this.googleMapsLinkService = googleMapsLinkService;
     }
 
     @GetMapping("/api/geo/autocomplete")
@@ -52,6 +59,16 @@ public class GeoFacadeResource {
     @GetMapping("/api/geo/reverse")
     public Map<String, Object> reverse(@RequestParam("lat") double lat, @RequestParam("lng") double lng) {
         return osmNominatimService.reverse(lat, lng);
+    }
+
+    /** Link rút gọn maps.app.goo.gl → GPS địa điểm sau khi redirect. */
+    @GetMapping("/api/geo/maps-link")
+    public Map<String, Object> mapsLink(@RequestParam("url") String url) {
+        GoogleMapsLinkService.Pin pin = googleMapsLinkService.resolve(url);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("lat", pin.lat());
+        out.put("lng", pin.lng());
+        return out;
     }
 
     /**

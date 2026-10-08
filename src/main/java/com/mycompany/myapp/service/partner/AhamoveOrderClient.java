@@ -403,6 +403,21 @@ public class AhamoveOrderClient {
         }
     }
 
+    /** Đơn Ahamove hiện tại, gồm ảnh nhận (`por_info`) và ảnh giao (`pod_info`). */
+    public JsonNode fetchOrder(String orderId) {
+        if (orderId == null || orderId.isBlank()) {
+            return null;
+        }
+        String token = requireToken();
+        try {
+            String url = baseUrl() + "/orders/" + URLEncoder.encode(orderId.trim(), StandardCharsets.UTF_8);
+            return getJson(url, token);
+        } catch (Exception e) {
+            LOG.warn("Ahamove fetch order {} failed: {}", orderId, e.getMessage());
+            return null;
+        }
+    }
+
     /** Hủy đơn Ahamove — chỉ được khi tài xế chưa lấy hàng (IDLE/ASSIGNING/ACCEPTED/CONFIRMING/PAYING). */
     public void cancelOrder(String orderId, String comment) {
         if (orderId == null || orderId.isBlank()) {

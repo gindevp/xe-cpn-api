@@ -42,6 +42,19 @@ class AhamoveDispatchServiceTest {
     }
 
     @Test
+    void parseWebhook_pickupPorInfoAndDropPod() throws Exception {
+        String json =
+            """
+            {"_id":"24AB7XQ9","status":"COMPLETED",
+             "path":[{"status":"COMPLETED","por_info":[{"image_url":"https://img.ahamove.com/nhan.jpg"}],"pod_info":""},
+                     {"status":"COMPLETED","pod_info":"https://img.ahamove.com/giao.jpg","por_info":""}]}
+            """;
+        AhamoveDispatchService.WebhookUpdate u = AhamoveDispatchService.parseWebhook(om.readTree(json));
+        assertThat(u.pickupPodUrls()).containsExactly("https://img.ahamove.com/nhan.jpg");
+        assertThat(u.podUrls()).containsExactly("https://img.ahamove.com/giao.jpg");
+    }
+
+    @Test
     void parseWebhook_pickupAndDropPhotos() throws Exception {
         String json =
             """
