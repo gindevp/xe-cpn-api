@@ -167,7 +167,7 @@ public class DeliveryFacadeService {
                 continue;
             }
             String raw = photo.trim();
-            if (urls.contains(raw) || added >= 3 || seq > 6) {
+            if (urls.contains(raw) || added >= 3 || seq > 9) {
                 continue;
             }
             String url = storeMedia(truncateUrl(raw), "pod");

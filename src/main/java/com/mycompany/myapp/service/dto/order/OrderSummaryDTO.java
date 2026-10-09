@@ -62,6 +62,10 @@ public class OrderSummaryDTO {
     private BigDecimal partnerCodAmount;
     private Instant partnerCodCollectedAt;
     private String partnerCodCollectedBy;
+
+    private String partnerShipConfirmedBy;
+
+    private java.time.Instant partnerShipConfirmedAt;
     private Long shipperId;
     private String shipperName;
     private String shipperPhone;
@@ -526,6 +530,22 @@ public class OrderSummaryDTO {
 
     public void setPartnerCodCollectedBy(String partnerCodCollectedBy) {
         this.partnerCodCollectedBy = partnerCodCollectedBy;
+    }
+
+    public String getPartnerShipConfirmedBy() {
+        return partnerShipConfirmedBy;
+    }
+
+    public void setPartnerShipConfirmedBy(String partnerShipConfirmedBy) {
+        this.partnerShipConfirmedBy = partnerShipConfirmedBy;
+    }
+
+    public java.time.Instant getPartnerShipConfirmedAt() {
+        return partnerShipConfirmedAt;
+    }
+
+    public void setPartnerShipConfirmedAt(java.time.Instant partnerShipConfirmedAt) {
+        this.partnerShipConfirmedAt = partnerShipConfirmedAt;
     }
 
     public Long getShipperId() {

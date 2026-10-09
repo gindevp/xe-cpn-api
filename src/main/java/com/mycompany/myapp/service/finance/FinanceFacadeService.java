@@ -259,7 +259,8 @@ public class FinanceFacadeService {
             e.getPayerUsername(),
             ownerName == null || ownerName.isEmpty() ? null : ownerName,
             PARTNER_FEE,
-            e.getIncurredAt()
+            e.getIncurredAt(),
+            shipSubstitute(o, e.getPayerUsername(), true) ? Boolean.TRUE : null
         );
     }
 
@@ -445,7 +446,8 @@ public class FinanceFacadeService {
             owner,
             ownerName == null || ownerName.isEmpty() ? null : ownerName,
             portion,
-            resolveCollectedAt(o, portion)
+            resolveCollectedAt(o, portion),
+            ReceiptSettlement.DELIVERY.equals(portion) && shipSubstitute(o, owner, false) ? Boolean.TRUE : null
         );
     }
 
@@ -1706,8 +1708,28 @@ public class FinanceFacadeService {
         /** SENDER | DELIVERY */
         String portion,
         /** Thời điểm nhận tiền khách (payment/POD/WH), ISO instant. */
-        Instant collectedAt
+        Instant collectedAt,
+        /** Người lập phiếu đang chịu nợ ship thay vì người giao chưa xác nhận. */
+        Boolean shipDebtSubstitute
     ) {}
+
+    /** Đơn Ahamove chưa có người giao xác nhận, và {@code owner} đang giữ nợ ship. */
+    private static boolean shipSubstitute(ShipmentOrder o, String owner, boolean feeLine) {
+        if (o == null || owner == null || owner.isBlank()) {
+            return false;
+        }
+        if (o.getPartnerShipConfirmedBy() != null && !o.getPartnerShipConfirmedBy().isBlank()) {
+            return false;
+        }
+        if (!"AHAMOVE".equals(o.getPartnerCode()) || o.getPartnerOrderId() == null || o.getPartnerOrderId().isBlank()) {
+            return false;
+        }
+        if (feeLine) {
+            return true;
+        }
+        String debtor = o.getPartnerCodCollectedBy();
+        return debtor != null && debtor.equalsIgnoreCase(owner.trim());
+    }
 
     /** portion null = tự phân bổ (phần giao trước). */
     public record ReceiptLineRequest(String orderCode, BigDecimal amountCollected, String portion) {}

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261009170000-partner-ship-confirm" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="shipment_order" columnName="partner_ship_confirmed_by"/>
+            </not>
+        </preConditions>
+        <comment>Người giao xác nhận chịu nợ ship (app quét hoặc bấm bù). Null = người bàn giao web đang chịu nợ thay.</comment>
+        <addColumn tableName="shipment_order">
+            <column name="partner_ship_confirmed_by" type="varchar(50)"/>
+            <column name="partner_ship_confirmed_at" type="${datetimeType}"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

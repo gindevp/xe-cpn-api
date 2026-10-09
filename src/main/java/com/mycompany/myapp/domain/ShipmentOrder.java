@@ -380,6 +380,14 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "partner_cod_collected_by", length = 50)
     private String partnerCodCollectedBy;
 
+    /** Người giao đã xác nhận chịu nợ ship (quét app hoặc bấm bù). Null = người bàn giao web đang chịu nợ thay. */
+    @Size(max = 50)
+    @Column(name = "partner_ship_confirmed_by", length = 50)
+    private String partnerShipConfirmedBy;
+
+    @Column(name = "partner_ship_confirmed_at")
+    private Instant partnerShipConfirmedAt;
+
     @Column(name = "delivery_lat", precision = 10, scale = 7)
     private BigDecimal deliveryLat;
 
@@ -1333,6 +1341,22 @@ public class ShipmentOrder implements Serializable {
 
     public void setPartnerCodCollectedBy(String partnerCodCollectedBy) {
         this.partnerCodCollectedBy = partnerCodCollectedBy;
+    }
+
+    public String getPartnerShipConfirmedBy() {
+        return partnerShipConfirmedBy;
+    }
+
+    public void setPartnerShipConfirmedBy(String partnerShipConfirmedBy) {
+        this.partnerShipConfirmedBy = partnerShipConfirmedBy;
+    }
+
+    public Instant getPartnerShipConfirmedAt() {
+        return partnerShipConfirmedAt;
+    }
+
+    public void setPartnerShipConfirmedAt(Instant partnerShipConfirmedAt) {
+        this.partnerShipConfirmedAt = partnerShipConfirmedAt;
     }
 
     public BigDecimal getDeliveryLat() {

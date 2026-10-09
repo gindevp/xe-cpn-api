@@ -25,4 +25,6 @@ public interface PartnerFeeExpenseRepository extends JpaRepository<PartnerFeeExp
     List<PartnerFeeExpense> findOpenByPayer(@Param("payer") String payer);
 
     List<PartnerFeeExpense> findByReceipt_Id(Long receiptId);
+
+    List<PartnerFeeExpense> findByOrder_Id(Long orderId);
 }

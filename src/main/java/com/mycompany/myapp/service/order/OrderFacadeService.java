@@ -2065,6 +2065,8 @@ public class OrderFacadeService {
         dto.setPartnerCodAmount(o.getPartnerCodAmount());
         dto.setPartnerCodCollectedAt(o.getPartnerCodCollectedAt());
         dto.setPartnerCodCollectedBy(o.getPartnerCodCollectedBy());
+        dto.setPartnerShipConfirmedBy(o.getPartnerShipConfirmedBy());
+        dto.setPartnerShipConfirmedAt(o.getPartnerShipConfirmedAt());
         if (o.getShipper() != null) {
             dto.setShipperId(o.getShipper().getId());
             dto.setShipperName(o.getShipper().getFullName());

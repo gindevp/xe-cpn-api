@@ -46,6 +46,21 @@ public class AhamoveDispatchResource {
         return ahamoveDispatchService.confirmAdvance(orderCode);
     }
 
+    /** App quét đủ kiện, xác nhận giao ship. Không đổi trạng thái đơn. */
+    @PostMapping("/api/orders/{orderCode}/ahamove/ship-handover")
+    public OrderDetailDTO shipHandover(
+        @PathVariable String orderCode,
+        @RequestBody(required = false) AhamoveDispatchService.ShipHandoverRequest body
+    ) {
+        return ahamoveDispatchService.confirmShipHandover(orderCode, body);
+    }
+
+    /** Người giao tự nhận nợ đơn ship. Ai bấm người đó chịu nợ. Không đổi trạng thái. */
+    @PostMapping("/api/orders/{orderCode}/ahamove/claim-debt")
+    public OrderDetailDTO claimDebt(@PathVariable String orderCode) {
+        return ahamoveDispatchService.claimShipDebt(orderCode);
+    }
+
     /** Trả lại tiền ứng cho tài xế khi giao không được. */
     @PostMapping("/api/orders/{orderCode}/ahamove/advance-refund")
     public OrderDetailDTO advanceRefund(@PathVariable String orderCode) {

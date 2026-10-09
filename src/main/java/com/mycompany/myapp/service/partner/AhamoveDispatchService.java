@@ -33,8 +33,10 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -55,9 +57,10 @@ public class AhamoveDispatchService {
     private static final Logger LOG = LoggerFactory.getLogger(AhamoveDispatchService.class);
     private static final String ENTITY = "ahamove";
     public static final String PARTNER_CODE = "AHAMOVE";
-    /** Nhãn ảnh POD: lúc tài xế đến nhận hàng, và lúc giao cho khách. */
-    public static final String CAPTION_PICKUP = "Lúc nhận";
-    public static final String CAPTION_DROP = "Lúc giao";
+    /** Nhãn ảnh POD: điều phối giao ship trên app, shipper nhận, shipper giao. */
+    public static final String CAPTION_OFFICE = "Điều phối giao ship";
+    public static final String CAPTION_PICKUP = "Shipper nhận";
+    public static final String CAPTION_DROP = "Shipper giao";
     private static final java.util.Set<String> PARTNER_DONE = java.util.Set.of("CANCELLED", "COMPLETED", "FAILED");
     /** Tài xế đã lấy hàng — phí Ahamove phát sinh (huỷ trước lúc này thì không mất phí). */
     static final java.util.Set<String> PARTNER_PICKED_UP = java.util.Set.of("IN PROCESS", "IN_PROCESS", "COMPLETED", "FAILED");
@@ -166,6 +169,29 @@ public class AhamoveDispatchService {
 
         public void setBulkyTier(String bulkyTier) {
             this.bulkyTier = bulkyTier;
+        }
+    }
+
+    /** App: ảnh điều phối + số thứ tự kiện đã quét. */
+    public static class ShipHandoverRequest {
+
+        private List<String> photos = new ArrayList<>();
+        private List<Integer> packageSeqs = new ArrayList<>();
+
+        public List<String> getPhotos() {
+            return photos;
+        }
+
+        public void setPhotos(List<String> photos) {
+            this.photos = photos;
+        }
+
+        public List<Integer> getPackageSeqs() {
+            return packageSeqs;
+        }
+
+        public void setPackageSeqs(List<Integer> packageSeqs) {
+            this.packageSeqs = packageSeqs;
         }
     }
 
@@ -617,6 +643,142 @@ public class AhamoveDispatchService {
         return orderFacadeService.getByCode(orderCode);
     }
 
+    /**
+     * App quét đủ kiện rồi xác nhận giao ship. Lưu ảnh điều phối, chuyển nợ sang người bấm.
+     * Không đổi trạng thái đơn — giao thành công chỉ khi Ahamove báo về.
+     */
+    public OrderDetailDTO confirmShipHandover(String orderCode, ShipHandoverRequest request) {
+        ShipHandoverRequest req = request != null ? request : new ShipHandoverRequest();
+        String actor = currentActor();
+        tx.executeWithoutResult(status -> {
+            ShipmentOrder order = requireOrder(orderCode);
+            if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY) {
+                throw new BadRequestAlertException("Chỉ xác nhận giao ship khi đơn đang giao", ENTITY, "ahamoveHandoverStatus");
+            }
+            assertAhamoveOrder(order);
+            assertAllPackages(order, req.getPackageSeqs());
+            if (req.getPhotos() == null || req.getPhotos().stream().noneMatch(AhamoveDispatchService::notBlank)) {
+                throw new BadRequestAlertException("Cần ảnh điều phối giao ship", ENTITY, "ahamoveHandoverPhoto");
+            }
+            deliveryFacadeService.appendPodPhotos(order, req.getPhotos(), CAPTION_OFFICE);
+            applyShipDebtClaim(order, actor);
+        });
+        return orderFacadeService.getByCode(orderCode);
+    }
+
+    /**
+     * Người giao tự bấm trên đúng đơn (đang giao / giao thành công / giao thất bại). Ai bấm người đó chịu nợ.
+     * Không đổi trạng thái đơn.
+     */
+    public OrderDetailDTO claimShipDebt(String orderCode) {
+        String actor = currentActor();
+        tx.executeWithoutResult(status -> applyShipDebtClaim(requireOrder(orderCode), actor));
+        return orderFacadeService.getByCode(orderCode);
+    }
+
+    /** Chuyển nợ ứng (dương) và phí trả ship (âm) sang {@code actor}. Không đổi trạng thái. */
+    void applyShipDebtClaim(ShipmentOrder order, String actor) {
+        assertAhamoveOrder(order);
+        OrderStatus st = order.getStatus();
+        if (st != OrderStatus.OUT_FOR_DELIVERY && st != OrderStatus.DELIVERED && st != OrderStatus.FAILED_DELIVERY) {
+            throw new BadRequestAlertException(
+                "Chỉ xác nhận nợ ở đơn đang giao, giao thành công hoặc giao thất bại",
+                ENTITY,
+                "ahamoveClaimStatus"
+            );
+        }
+        String who = truncate(actor, 50);
+        if (who != null && who.equalsIgnoreCase(order.getPartnerShipConfirmedBy())) {
+            return;
+        }
+        dayClosureGuard.assertCollectionMutable(order);
+        reassignAdvance(order, who);
+        reassignFees(order, who);
+        order.setPartnerShipConfirmedBy(who);
+        order.setPartnerShipConfirmedAt(Instant.now());
+        shipmentOrderRepository.save(order);
+        orderFacadeService.recordEvent(order, "AHAMOVE_SHIP_CONFIRM", "Xác nhận giao ship · nợ chuyển sang " + who, who);
+    }
+
+    static void assertAllPackages(ShipmentOrder order, List<Integer> seqs) {
+        int qty = order.getQuantity() == null || order.getQuantity() < 1 ? 1 : order.getQuantity();
+        Set<Integer> got = new HashSet<>();
+        if (seqs != null) {
+            for (Integer seq : seqs) {
+                if (seq != null) {
+                    got.add(seq);
+                }
+            }
+        }
+        for (int i = 1; i <= qty; i++) {
+            if (!got.contains(i)) {
+                throw new BadRequestAlertException(
+                    "Chưa quét đủ kiện của " + order.getOrderCode() + " (" + got.size() + "/" + qty + ")",
+                    ENTITY,
+                    "ahamovePackagesIncomplete"
+                );
+            }
+        }
+    }
+
+    private static void assertAhamoveOrder(ShipmentOrder order) {
+        if (!PARTNER_CODE.equals(order.getPartnerCode()) || !notBlank(order.getPartnerOrderId())) {
+            throw new BadRequestAlertException("Đơn không giao qua Ahamove", ENTITY, "ahamoveNotDispatched");
+        }
+    }
+
+    private void reassignAdvance(ShipmentOrder order, String actor) {
+        BigDecimal amount = PartnerAdvance.amount(order);
+        if (amount.signum() <= 0) {
+            return;
+        }
+        if (order.getPartnerCodCollectedAt() == null) {
+            String note = truncate(PartnerAdvance.PAYMENT_NOTE_PREFIX, 255);
+            deliveryFacadeService.recordPartnerAdvance(order, amount, note, actor);
+            return;
+        }
+        OrderPayment payment = orderPaymentRepository
+            .findByOrder_IdOrderByPaymentAtDesc(order.getId())
+            .stream()
+            .filter(p -> p.getNote() != null && p.getNote().startsWith(PartnerAdvance.PAYMENT_NOTE_PREFIX))
+            .findFirst()
+            .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy khoản thu tiền ứng", ENTITY, "ahamoveAdvanceMissing"));
+        if (actor.equalsIgnoreCase(payment.getCollectorUsername())) {
+            order.setPartnerCodCollectedBy(actor);
+            return;
+        }
+        Instant paidAt = payment.getPaymentAt() != null ? payment.getPaymentAt() : order.getPartnerCodCollectedAt();
+        if (receiptOrderLineRepository.existsByOrder_IdAndReceipt_CreatedAtGreaterThanEqual(order.getId(), paidAt)) {
+            throw new BadRequestAlertException(
+                "Tiền ứng đã nằm trong phiếu thu — hủy phiếu trước khi chuyển nợ",
+                ENTITY,
+                "ahamoveAdvanceInReceipt"
+            );
+        }
+        Office receiving = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
+        dayClosureGuard.assertOfficeOpen(receiving, LocalDate.ofInstant(paidAt, DayClosureGuard.VN));
+        payment.setCollectorUsername(actor);
+        orderPaymentRepository.save(payment);
+        order.setPartnerCodCollectedBy(actor);
+    }
+
+    private void reassignFees(ShipmentOrder order, String actor) {
+        for (PartnerFeeExpense fee : partnerFeeExpenseRepository.findByOrder_Id(order.getId())) {
+            if (fee.getReceipt() != null) {
+                if (fee.getPayerUsername() != null && !fee.getPayerUsername().equalsIgnoreCase(actor)) {
+                    throw new BadRequestAlertException(
+                        "Phí Ahamove đã nằm trong phiếu thu — hủy phiếu trước khi chuyển nợ",
+                        ENTITY,
+                        "ahamoveFeeInReceipt"
+                    );
+                }
+                continue;
+            }
+            fee.setPayerUsername(actor);
+            partnerFeeExpenseRepository.save(fee);
+        }
+    }
+
     private void saveDispatched(
         String code,
         AhamoveOrderClient.CreatedOrder created,
@@ -779,7 +941,8 @@ public class AhamoveDispatchService {
         if (partnerFeeExpenseRepository.existsByPartnerOrderId(partnerOrderId)) {
             return;
         }
-        String payer = dispatcherOf(order);
+        String confirmed = order.getPartnerShipConfirmedBy();
+        String payer = notBlank(confirmed) ? confirmed.trim() : dispatcherOf(order);
         PartnerFeeExpense e = new PartnerFeeExpense();
         e.setOrder(order);
         e.setPartnerCode(PARTNER_CODE);

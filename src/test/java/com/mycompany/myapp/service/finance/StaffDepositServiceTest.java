@@ -95,6 +95,6 @@ class StaffDepositServiceTest {
     }
 
     private static CandidateDTO cand(String code, String due, String portion, String owner, Instant at) {
-        return new CandidateDTO(code, null, null, null, null, new BigDecimal(due), "DELIVERED", null, owner, null, portion, at);
+        return new CandidateDTO(code, null, null, null, null, new BigDecimal(due), "DELIVERED", null, owner, null, portion, at, null);
     }
 }

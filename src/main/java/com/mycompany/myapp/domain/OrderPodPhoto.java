@@ -36,7 +36,7 @@ public class OrderPodPhoto implements Serializable {
     private String capturedByUsername;
 
     @Min(value = 1)
-    @Max(value = 6)
+    @Max(value = 9)
     @Column(name = "sequence_no")
     private Integer sequenceNo;
 

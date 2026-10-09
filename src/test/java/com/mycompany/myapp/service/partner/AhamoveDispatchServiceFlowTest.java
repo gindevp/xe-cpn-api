@@ -434,7 +434,7 @@ class AhamoveDispatchServiceFlowTest {
         verify(delivery).pod(eq("GP-0001"), pod.capture());
         assertThat(pod.getValue().getChannel()).isEqualTo("HOME");
         assertThat(pod.getValue().getPhotos()).containsExactly("https://img/p.jpg");
-        assertThat(pod.getValue().getCaption()).isEqualTo("Lúc giao");
+        assertThat(pod.getValue().getCaption()).isEqualTo("Shipper giao");
         assertThat(pod.getValue().getCollectedAmount()).isEqualByComparingTo("0");
         assertThat(order.getPartnerPodUrl()).isEqualTo("https://img/p.jpg");
     }
@@ -442,13 +442,13 @@ class AhamoveDispatchServiceFlowTest {
     @Test
     void webhook_pickupPhoto_savedWithoutDelivering() throws Exception {
         outForDelivery();
-        when(delivery.appendPodPhotos(eq(order), any(), eq("Lúc nhận"))).thenReturn(1);
+        when(delivery.appendPodPhotos(eq(order), any(), eq("Shipper nhận"))).thenReturn(1);
         service.applyWebhook(
             om.readTree(
                 "{\"_id\":\"AHA1\",\"status\":\"IN PROCESS\",\"path\":[{\"status\":\"COMPLETED\",\"pop_info\":[{\"url\":\"https://img/nhan.jpg\"}]},{\"status\":\"ACCEPTED\"}]}"
             )
         );
-        verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/nhan.jpg")), eq("Lúc nhận"));
+        verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/nhan.jpg")), eq("Shipper nhận"));
         verify(orders).recordEvent(eq(order), eq("AHAMOVE_PICKUP_POD"), anyString(), eq("ahamove"));
         verify(delivery, never()).pod(anyString(), any());
     }
@@ -462,8 +462,8 @@ class AhamoveDispatchServiceFlowTest {
         );
         when(delivery.appendPodPhotos(eq(order), any(), anyString())).thenReturn(1);
         service.pullPhotos("GP-0001");
-        verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/nhan.jpg")), eq("Lúc nhận"));
-        verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/giao.jpg")), eq("Lúc giao"));
+        verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/nhan.jpg")), eq("Shipper nhận"));
+        verify(delivery).appendPodPhotos(eq(order), eq(List.of("https://img/giao.jpg")), eq("Shipper giao"));
         verify(delivery, never()).pod(anyString(), any());
     }
 
@@ -568,5 +568,43 @@ class AhamoveDispatchServiceFlowTest {
         assertThat(service.webhookTokenValid(null, "tok123")).isTrue();
         assertThat(service.webhookTokenValid("bad", null)).isFalse();
         assertThat(service.webhookTokenValid(null, null)).isFalse();
+    }
+
+    @Test
+    void claim_movesAdvanceAndFee_withoutChangingStatus() {
+        order.setStatus(OrderStatus.OUT_FOR_DELIVERY);
+        order.setPartnerCode("AHAMOVE");
+        order.setPartnerOrderId("AHA1");
+        order.setQuantity(2);
+        order.setPartnerCodAmount(new BigDecimal("30000"));
+        order.setPartnerCodCollectedAt(Instant.parse("2026-10-09T08:00:00Z"));
+        order.setPartnerCodCollectedBy("webuser");
+        OrderPayment payment = new OrderPayment();
+        payment.setAmount(new BigDecimal("30000"));
+        payment.setNote("POD AHAMOVE ỨNG");
+        payment.setCollectorUsername("webuser");
+        payment.setPaymentAt(order.getPartnerCodCollectedAt());
+        when(paymentRepo.findByOrder_IdOrderByPaymentAtDesc(10L)).thenReturn(List.of(payment));
+        PartnerFeeExpense fee = new PartnerFeeExpense();
+        fee.setAmount(new BigDecimal("25000"));
+        fee.setPayerUsername("webuser");
+        when(feeRepo.findByOrder_Id(10L)).thenReturn(List.of(fee));
+
+        service.applyShipDebtClaim(order, "giaohang");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.OUT_FOR_DELIVERY);
+        assertThat(order.getPartnerCodCollectedBy()).isEqualTo("giaohang");
+        assertThat(order.getPartnerShipConfirmedBy()).isEqualTo("giaohang");
+        assertThat(payment.getCollectorUsername()).isEqualTo("giaohang");
+        assertThat(fee.getPayerUsername()).isEqualTo("giaohang");
+    }
+
+    @Test
+    void handover_requiresEveryPackage() {
+        order.setQuantity(2);
+        assertThatThrownBy(() -> AhamoveDispatchService.assertAllPackages(order, List.of(1)))
+            .extracting(e -> ((BadRequestAlertException) e).getErrorKey())
+            .isEqualTo("ahamovePackagesIncomplete");
+        AhamoveDispatchService.assertAllPackages(order, List.of(2, 1));
     }
 }
