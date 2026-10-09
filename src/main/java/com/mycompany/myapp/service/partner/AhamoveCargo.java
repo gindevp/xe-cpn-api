@@ -69,6 +69,25 @@ public final class AhamoveCargo {
         return tier;
     }
 
+    /**
+     * Bậc NV chọn lúc bàn giao. Rỗng / {@code STANDARD} = tiêu chuẩn, không gửi BULKY.
+     * {@code TIER_2}..{@code TIER_4} gửi đúng bậc Ahamove.
+     */
+    public AhamoveCargo withTierChoice(String raw) {
+        return new AhamoveCargo(packages, parseTierChoice(raw), oversize);
+    }
+
+    public static String parseTierChoice(String raw) {
+        if (raw == null || raw.isBlank() || "STANDARD".equalsIgnoreCase(raw.trim())) {
+            return null;
+        }
+        String t = raw.trim().toUpperCase(java.util.Locale.ROOT);
+        if ("TIER_2".equals(t) || "TIER_3".equals(t) || "TIER_4".equals(t)) {
+            return t;
+        }
+        throw new BadRequestAlertException("Phụ phí hàng cồng kềnh không hợp lệ", "ahamove", "ahamoveBulkyTier");
+    }
+
     public void assertFitsBike() {
         if (oversize) {
             throw new BadRequestAlertException("Kiện vượt xe máy Ahamove (tối đa 90×70×90 cm, 80 kg/kiện)", "ahamove", "ahamoveBulkyOver");

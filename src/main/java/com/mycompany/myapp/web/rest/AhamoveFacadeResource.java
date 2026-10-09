@@ -55,6 +55,10 @@ public class AhamoveFacadeResource {
         AhamoveCargo cargo = orderCode.isEmpty()
             ? null
             : shipmentOrderRepository.findOneByOrderCodeOrDraftCode(orderCode).map(AhamoveCargo::from).orElse(null);
+        if (body.containsKey("bulkyTier")) {
+            String choice = body.get("bulkyTier") == null ? "" : String.valueOf(body.get("bulkyTier"));
+            cargo = (cargo == null ? AhamoveCargo.from(null) : cargo).withTierChoice(choice);
+        }
         return ahamoveOrderClient.estimatePickupDistance(officeLat, officeLng, officeAddress, pinLat, pinLng, pinAddress, cargo);
     }
 

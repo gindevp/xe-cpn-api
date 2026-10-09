@@ -43,6 +43,18 @@ class AhamoveCargoTest {
     }
 
     @Test
+    void tierChoiceOverridesPackageTier() {
+        AhamoveCargo auto = AhamoveCargo.from(order("[PKGKG]35[/PKGKG]\n[PKGDIM]55x45x50[/PKGDIM]", null));
+        assertThat(auto.tier()).isEqualTo("TIER_2");
+        assertThat(auto.withTierChoice("").tier()).isNull();
+        assertThat(auto.withTierChoice("STANDARD").tier()).isNull();
+        assertThat(auto.withTierChoice("tier_3").tier()).isEqualTo("TIER_3");
+        assertThatThrownBy(() -> auto.withTierChoice("TIER_9")).isInstanceOf(
+            com.mycompany.myapp.web.rest.errors.BadRequestAlertException.class
+        );
+    }
+
+    @Test
     void overBikeLimitIsRejected() {
         AhamoveCargo cargo = AhamoveCargo.from(order(null, "90"));
         assertThatThrownBy(cargo::assertFitsBike).isInstanceOf(com.mycompany.myapp.web.rest.errors.BadRequestAlertException.class);

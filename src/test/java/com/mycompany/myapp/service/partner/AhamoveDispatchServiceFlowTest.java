@@ -186,6 +186,34 @@ class AhamoveDispatchServiceFlowTest {
     }
 
     @Test
+    void dispatch_chosenTier_overridesPackageTier() {
+        order.setNote("[PKGKG]35[/PKGKG]\n[PKGDIM]55x45x50[/PKGDIM]");
+        when(client.createOrder(any(), any(), any(), any())).thenReturn(
+            new AhamoveOrderClient.CreatedOrder("AHA8", "ASSIGNING", null, null, null)
+        );
+        AhamoveDispatchService.DispatchRequest req = pin();
+        req.setBulkyTier("TIER_4");
+        service.dispatch("GP-0001", req);
+        ArgumentCaptor<AhamoveCargo> cargo = ArgumentCaptor.forClass(AhamoveCargo.class);
+        verify(client).createOrder(any(), any(), any(), cargo.capture());
+        assertThat(cargo.getValue().tier()).isEqualTo("TIER_4");
+    }
+
+    @Test
+    void dispatch_standardChoice_sendsNoBulkyTier() {
+        order.setNote("[PKGKG]35[/PKGKG]\n[PKGDIM]55x45x50[/PKGDIM]");
+        when(client.createOrder(any(), any(), any(), any())).thenReturn(
+            new AhamoveOrderClient.CreatedOrder("AHA9", "ASSIGNING", null, null, null)
+        );
+        AhamoveDispatchService.DispatchRequest req = pin();
+        req.setBulkyTier("");
+        service.dispatch("GP-0001", req);
+        ArgumentCaptor<AhamoveCargo> cargo = ArgumentCaptor.forClass(AhamoveCargo.class);
+        verify(client).createOrder(any(), any(), any(), cargo.capture());
+        assertThat(cargo.getValue().tier()).isNull();
+    }
+
+    @Test
     void dispatch_bulkyPackage_sendsTier() {
         order.setNote("[PKGKG]35[/PKGKG]\n[PKGDIM]55x45x50[/PKGDIM]");
         when(client.createOrder(any(), any(), any(), any())).thenReturn(

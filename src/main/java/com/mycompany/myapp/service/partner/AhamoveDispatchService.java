@@ -125,6 +125,8 @@ public class AhamoveDispatchService {
         private Double lng;
         private String address;
         private String remarks;
+        /** Rỗng = tiêu chuẩn. {@code TIER_2}/{@code TIER_3}/{@code TIER_4} = phụ phí cồng kềnh NV chọn. Null = tự xét theo kiện. */
+        private String bulkyTier;
 
         public Double getLat() {
             return lat;
@@ -156,6 +158,14 @@ public class AhamoveDispatchService {
 
         public void setRemarks(String remarks) {
             this.remarks = remarks;
+        }
+
+        public String getBulkyTier() {
+            return bulkyTier;
+        }
+
+        public void setBulkyTier(String bulkyTier) {
+            this.bulkyTier = bulkyTier;
         }
     }
 
@@ -203,6 +213,9 @@ public class AhamoveDispatchService {
             advance.longValue()
         );
         AhamoveCargo cargo = AhamoveCargo.from(order);
+        if (req.getBulkyTier() != null) {
+            cargo = cargo.withTierChoice(req.getBulkyTier());
+        }
         cargo.assertFitsBike();
         AhamoveOrderClient.CreatedOrder created = ahamoveOrderClient.createOrder(pickup, drop, paymentMethod, cargo);
 
