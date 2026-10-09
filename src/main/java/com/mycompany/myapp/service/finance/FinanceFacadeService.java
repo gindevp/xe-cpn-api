@@ -47,6 +47,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -504,7 +505,7 @@ public class FinanceFacadeService {
         for (int i = 0; i < orderIds.size(); i += 500) {
             List<Long> chunk = orderIds.subList(i, Math.min(orderIds.size(), i + 500));
             for (Object[] row : orderPaymentRepository.sumGroupedByOrderIds(chunk)) {
-                BigDecimal[] a = acc.computeIfAbsent((Long) row[0], k -> zeros3());
+                BigDecimal[] a = acc.computeIfAbsent((Long) row[0], k -> zeros5());
                 PaymentKind kind = (PaymentKind) row[1];
                 BigDecimal amount = toBigDecimal(row[3]);
                 if (ReceiptSettlement.isDeliverySidePayment(kind, (String) row[2])) {
@@ -514,17 +515,19 @@ public class FinanceFacadeService {
                 }
             }
             for (Object[] row : receiptOrderLineRepository.sumAmountByOrderIds(chunk)) {
-                BigDecimal[] a = acc.computeIfAbsent((Long) row[0], k -> zeros3());
-                a[2] = a[2].add(toBigDecimal(row[1]));
+                BigDecimal[] a = acc.computeIfAbsent((Long) row[0], k -> zeros5());
+                String portion = row[2] == null ? "" : row[2].toString().trim().toUpperCase();
+                int idx = ReceiptSettlement.SENDER.equals(portion) ? 2 : ReceiptSettlement.DELIVERY.equals(portion) ? 3 : 4;
+                a[idx] = a[idx].add(toBigDecimal(row[1]));
             }
         }
         Map<Long, ReceiptSettlement.Totals> out = new HashMap<>();
-        acc.forEach((id, a) -> out.put(id, new ReceiptSettlement.Totals(a[0], a[1], a[2])));
+        acc.forEach((id, a) -> out.put(id, new ReceiptSettlement.Totals(a[0], a[1], a[2], a[3], a[4])));
         return out;
     }
 
-    private static BigDecimal[] zeros3() {
-        return new BigDecimal[] { BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO };
+    private static BigDecimal[] zeros5() {
+        return new BigDecimal[] { BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO };
     }
 
     private static BigDecimal toBigDecimal(Object v) {
@@ -627,10 +630,15 @@ public class FinanceFacadeService {
                 shipmentOrderRepository.save(order);
             }
 
-            ReceiptOrderLine rol = new ReceiptOrderLine();
-            rol.setAmountCollected(amount);
-            rol.setOrder(order);
-            lines.add(rol);
+            if (toSender.signum() > 0) {
+                lines.add(receiptLine(order, toSender, ReceiptSettlement.SENDER));
+            }
+            if (toDelivery.signum() > 0) {
+                lines.add(receiptLine(order, toDelivery, ReceiptSettlement.DELIVERY));
+            }
+            if (toSender.signum() == 0 && toDelivery.signum() == 0 && amount.signum() > 0) {
+                lines.add(receiptLine(order, amount, null));
+            }
         }
         BigDecimal feeTotal = fees.stream().map(e -> OrderMoney.nz(e.getAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
         total = total.subtract(feeTotal);
@@ -644,13 +652,22 @@ public class FinanceFacadeService {
         receipt.setCreatedByUsername(actor);
         receipt.setOffice(office);
         receipt = receiptRepository.save(receipt);
+        Map<Long, BigDecimal> shownAmount = new HashMap<>();
+        Map<Long, ShipmentOrder> shownOrder = new HashMap<>();
         for (ReceiptOrderLine rol : lines) {
             rol.setReceipt(receipt);
             receiptOrderLineRepository.save(rol);
+            if (rol.getOrder() == null || rol.getOrder().getId() == null) {
+                continue;
+            }
+            shownAmount.merge(rol.getOrder().getId(), OrderMoney.nz(rol.getAmountCollected()), BigDecimal::add);
+            shownOrder.putIfAbsent(rol.getOrder().getId(), rol.getOrder());
+        }
+        for (Map.Entry<Long, BigDecimal> entry : shownAmount.entrySet()) {
             appendReceiptEvent(
-                rol.getOrder(),
+                shownOrder.get(entry.getKey()),
                 "RECEIPT_CREATE",
-                receipt.getReceiptCode() + " · " + money(rol.getAmountCollected()),
+                receipt.getReceiptCode() + " · " + money(entry.getValue()),
                 actor,
                 now
             );
@@ -678,7 +695,7 @@ public class FinanceFacadeService {
             "Người nộp: " +
             receipt.getPayerName() +
             " · " +
-            lines.size() +
+            distinctOrderCount(lines) +
             " đơn · " +
             money(total) +
             (fees.isEmpty() ? "" : " (đã trừ phí Ahamove " + money(feeTotal) + " · " + feeOrderCodes(fees) + ")") +
@@ -743,7 +760,7 @@ public class FinanceFacadeService {
     private static String orderCodes(List<ReceiptOrderLine> lines) {
         return String.join(
             ", ",
-            lines.stream().map(l -> l.getOrder() != null ? l.getOrder().getOrderCode() : null).filter(Objects::nonNull).toList()
+            lines.stream().map(l -> l.getOrder() != null ? l.getOrder().getOrderCode() : null).filter(Objects::nonNull).distinct().toList()
         );
     }
 
@@ -1087,9 +1104,10 @@ public class FinanceFacadeService {
         List<ReceiptOrderLine> lines = receiptOrderLineRepository.findByReceipt_Id(receipt.getId());
         Instant createdAt = receipt.getCreatedAt();
         String creator = receipt.getCreatedByUsername();
+        Set<Long> reversedOrders = new HashSet<>();
         for (ReceiptOrderLine line : lines) {
             ShipmentOrder order = line.getOrder();
-            if (order == null || order.getId() == null) {
+            if (order == null || order.getId() == null || !reversedOrders.add(order.getId())) {
                 continue;
             }
             dayClosureGuard.assertCollectionMutable(order);
@@ -1112,7 +1130,7 @@ public class FinanceFacadeService {
             "Người nộp: " +
             receipt.getPayerName() +
             " · " +
-            lines.size() +
+            distinctOrderCount(lines) +
             " đơn · " +
             money(receipt.getTotalAmount()) +
             (receipt.getConfirmedAt() != null ? " · đã xác nhận bởi " + receipt.getConfirmedByUsername() : "") +
@@ -1122,7 +1140,11 @@ public class FinanceFacadeService {
             reason;
         Instant now = Instant.now();
         String actor = actor();
+        Set<Long> cancelledOrders = reversedOrders;
         for (ReceiptOrderLine line : lines) {
+            if (line.getOrder() == null || line.getOrder().getId() == null || !cancelledOrders.add(line.getOrder().getId())) {
+                continue;
+            }
             appendReceiptEvent(line.getOrder(), "RECEIPT_CANCEL", receipt.getReceiptCode() + " · lý do: " + reason, actor, now);
         }
         for (PartnerFeeExpense e : partnerFeeExpenseRepository.findByReceipt_Id(receipt.getId())) {
@@ -1416,14 +1438,31 @@ public class FinanceFacadeService {
         return profile.getOffice();
     }
 
+    private static ReceiptOrderLine receiptLine(ShipmentOrder order, BigDecimal amount, String portion) {
+        ReceiptOrderLine rol = new ReceiptOrderLine();
+        rol.setAmountCollected(amount);
+        rol.setPortion(portion);
+        rol.setOrder(order);
+        return rol;
+    }
+
+    private static long distinctOrderCount(List<ReceiptOrderLine> lines) {
+        return lines.stream().map(l -> l.getOrder() != null ? l.getOrder().getId() : null).filter(Objects::nonNull).distinct().count();
+    }
+
     private ReceiptDTO toReceiptDto(Receipt r, List<ReceiptOrderLine> lines) {
-        List<Map<String, Object>> lineViews = new ArrayList<>();
+        Map<String, Map<String, Object>> merged = new LinkedHashMap<>();
         Instant customerPaidAt = null;
         for (ReceiptOrderLine l : lines) {
-            Map<String, Object> m = new HashMap<>();
-            m.put("orderCode", l.getOrder() != null ? l.getOrder().getOrderCode() : null);
-            m.put("amountCollected", l.getAmountCollected());
-            lineViews.add(m);
+            String code = l.getOrder() != null ? l.getOrder().getOrderCode() : null;
+            String key = code == null ? "line-" + merged.size() : code;
+            Map<String, Object> m = merged.computeIfAbsent(key, k -> {
+                Map<String, Object> row = new HashMap<>();
+                row.put("orderCode", code);
+                row.put("amountCollected", BigDecimal.ZERO);
+                return row;
+            });
+            m.put("amountCollected", OrderMoney.nz((BigDecimal) m.get("amountCollected")).add(OrderMoney.nz(l.getAmountCollected())));
             if (l.getOrder() != null && l.getOrder().getId() != null) {
                 Instant paid = resolveCustomerPaidAtForOrder(l.getOrder().getId());
                 if (paid != null && (customerPaidAt == null || paid.isAfter(customerPaidAt))) {
@@ -1434,6 +1473,7 @@ public class FinanceFacadeService {
         if (customerPaidAt == null) {
             customerPaidAt = r.getCreatedAt();
         }
+        List<Map<String, Object>> lineViews = new ArrayList<>(merged.values());
         return new ReceiptDTO(
             r.getId(),
             r.getReceiptCode(),

@@ -127,6 +127,16 @@ class ReceiptSettlementTest {
         assertThat(ReceiptSettlement.isDeliverySidePayment(PaymentKind.TRUOC, "POD")).isFalse();
     }
 
+    @Test
+    void deliveryReceipt_doesNotClearSenderHeldCash() {
+        ShipmentOrder o = order(PaymentTerm.GUI_TRA, OrderStatus.DELIVERED, ForwardStage.DELIVERING, "80000", "80000", "0");
+        Totals t = new Totals(new BigDecimal("50000"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("50000"), BigDecimal.ZERO);
+        Split s = ReceiptSettlement.split(o, t);
+        assertThat(s.senderOut()).isEqualByComparingTo("30000");
+        assertThat(s.senderHeldOut()).isEqualByComparingTo("30000");
+        assertThat(s.deliveryOut()).isEqualByComparingTo("0");
+    }
+
     private static Totals totals(String deliverySidePaid, String codPaid, String receipted) {
         return new Totals(new BigDecimal(deliverySidePaid), new BigDecimal(codPaid), new BigDecimal(receipted));
     }

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261009220000-receipt-line-portion" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="receipt_order_line" columnName="portion"/>
+            </not>
+        </preConditions>
+        <comment>Phần phiếu thu: SENDER hoặc DELIVERY. Null giữ cách trừ cũ (VP gửi trước).</comment>
+        <addColumn tableName="receipt_order_line">
+            <column name="portion" type="varchar(20)"/>
+        </addColumn>
+        <sql>
+            UPDATE receipt_order_line l
+            INNER JOIN receipt r ON r.id = l.receipt_id
+            SET l.portion = 'DELIVERY'
+            WHERE l.portion IS NULL
+              AND r.payer_code IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM order_payment p
+                WHERE p.order_id = l.order_id
+                  AND p.payment_kind = 'SAU'
+                  AND p.note LIKE 'POD%'
+                  AND LOWER(p.collector_username) = LOWER(r.payer_code)
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM order_payment p
+                WHERE p.order_id = l.order_id
+                  AND p.payment_kind = 'TRUOC'
+                  AND LOWER(p.collector_username) = LOWER(r.payer_code)
+              );
+
+            UPDATE receipt_order_line l
+            INNER JOIN receipt r ON r.id = l.receipt_id
+            SET l.portion = 'SENDER'
+            WHERE l.portion IS NULL
+              AND r.payer_code IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM order_payment p
+                WHERE p.order_id = l.order_id
+                  AND p.payment_kind = 'TRUOC'
+                  AND LOWER(p.collector_username) = LOWER(r.payer_code)
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM order_payment p
+                WHERE p.order_id = l.order_id
+                  AND p.payment_kind = 'SAU'
+                  AND p.note LIKE 'POD%'
+                  AND LOWER(p.collector_username) = LOWER(r.payer_code)
+              );
+        </sql>
+    </changeSet>
+</databaseChangeLog>

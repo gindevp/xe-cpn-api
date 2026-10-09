@@ -26,6 +26,11 @@ public class ReceiptOrderLine implements Serializable {
     @Column(name = "amount_collected", precision = 21, scale = 2, nullable = false)
     private BigDecimal amountCollected;
 
+    /** SENDER hoặc DELIVERY. Null = phiếu cũ, chưa tách phần. */
+    @Size(max = 20)
+    @Column(name = "portion", length = 20)
+    private String portion;
+
     @ManyToOne(optional = false)
     @NotNull
     @JsonIgnoreProperties(value = { "office" }, allowSetters = true)
@@ -75,6 +80,14 @@ public class ReceiptOrderLine implements Serializable {
 
     public void setAmountCollected(BigDecimal amountCollected) {
         this.amountCollected = amountCollected;
+    }
+
+    public String getPortion() {
+        return portion;
+    }
+
+    public void setPortion(String portion) {
+        this.portion = portion;
     }
 
     public Receipt getReceipt() {

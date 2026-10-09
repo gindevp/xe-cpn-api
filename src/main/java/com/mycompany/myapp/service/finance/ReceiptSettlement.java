@@ -14,7 +14,7 @@ import java.math.BigDecimal;
  *   <li>{@link #SENDER}: tiền VP gửi đang giữ (thu đầu gửi / thu tay) + cước gửi trả còn nợ sau nhập kho gửi.</li>
  *   <li>{@link #DELIVERY}: tiền thu lúc giao + cước nhận trả còn nợ + COD — chỉ sau DELIVERED.</li>
  * </ul>
- * Số đã lập phiếu trừ vào phần SENDER trước, phần dư trừ vào DELIVERY.
+ * Phiếu đã ghi phần (SENDER / DELIVERY) trừ đúng phần đó. Phiếu cũ không ghi phần vẫn trừ SENDER trước, phần dư vào DELIVERY.
  */
 public final class ReceiptSettlement {
 
@@ -32,9 +32,22 @@ public final class ReceiptSettlement {
     /**
      * @param deliverySidePaid tổng payment SAU thu phía giao (POD… / RECEIPT)
      * @param codPaid tổng payment COD đã ghi
-     * @param receipted tổng dòng phiếu thu đã lập cho đơn
+     * @param receiptedSender phiếu đã ghi rõ phần VP gửi
+     * @param receiptedDelivery phiếu đã ghi rõ phần giao
+     * @param receiptedLegacy phiếu cũ không ghi phần — trừ VP gửi trước
      */
-    record Totals(BigDecimal deliverySidePaid, BigDecimal codPaid, BigDecimal receipted) {
+    record Totals(
+        BigDecimal deliverySidePaid,
+        BigDecimal codPaid,
+        BigDecimal receiptedSender,
+        BigDecimal receiptedDelivery,
+        BigDecimal receiptedLegacy
+    ) {
+        /** {@code receiptedLegacy} là tổng phiếu chưa tách phần. */
+        Totals(BigDecimal deliverySidePaid, BigDecimal codPaid, BigDecimal receiptedLegacy) {
+            this(deliverySidePaid, codPaid, BigDecimal.ZERO, BigDecimal.ZERO, receiptedLegacy);
+        }
+
         static final Totals ZERO = new Totals(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
     }
 
@@ -120,9 +133,12 @@ public final class ReceiptSettlement {
         BigDecimal senderExpected = senderHeld.add(senderFareDue);
         BigDecimal deliveryExpected = deliveryPaid.add(deliveryFareDue).add(deliveryCod).add(pendingAdvance);
 
-        BigDecimal receipted = OrderMoney.nz(t.receipted()).max(BigDecimal.ZERO);
-        BigDecimal rSender = receipted.min(senderExpected);
-        BigDecimal rDelivery = receipted.subtract(rSender);
+        BigDecimal rSender = OrderMoney.nz(t.receiptedSender()).max(BigDecimal.ZERO).min(senderExpected);
+        BigDecimal rDelivery = OrderMoney.nz(t.receiptedDelivery()).max(BigDecimal.ZERO).min(deliveryExpected);
+        BigDecimal legacy = OrderMoney.nz(t.receiptedLegacy()).max(BigDecimal.ZERO);
+        BigDecimal takeSender = legacy.min(senderExpected.subtract(rSender));
+        rSender = rSender.add(takeSender);
+        rDelivery = rDelivery.add(legacy.subtract(takeSender).min(deliveryExpected.subtract(rDelivery)));
 
         return new Split(
             senderExpected.subtract(rSender),
