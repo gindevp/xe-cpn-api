@@ -109,7 +109,12 @@ public class InventoryHourlyReportService {
         ReturnStage rs = o.getReturnStage();
         if (rs != null) {
             String office = o.getFromOffice() != null ? o.getFromOffice().getCode() : null;
-            if (rs == ReturnStage.RETURN_PENDING || rs == ReturnStage.RT_DELIVERING || rs == ReturnStage.RT_WH_IN) {
+            if (
+                rs == ReturnStage.RETURN_PENDING ||
+                rs == ReturnStage.RT_ORIGIN_WH_IN ||
+                rs == ReturnStage.RT_DELIVERING ||
+                rs == ReturnStage.RT_WH_IN
+            ) {
                 return office == null ? null : new Classified("TRA", office);
             }
             String to = o.getToOffice() != null ? o.getToOffice().getCode() : office;
