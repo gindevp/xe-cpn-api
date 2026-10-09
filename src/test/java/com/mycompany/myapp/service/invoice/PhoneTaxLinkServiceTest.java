@@ -137,14 +137,29 @@ class PhoneTaxLinkServiceTest {
     }
 
     @Test
-    void audit_dropsTaxLinkedToNonPayer() {
-        ShipmentOrder senderPays = issued("O1", "0901234567", "0988000111", TAXES[0], "Gui", PaymentTerm.GUI_TRA);
+    void savedTaxStaysOnPhone_evenWhenThatPersonDoesNotPay() {
         store.add(link("0901234567", TAXES[0], "O1"));
         store.add(link("0988000111", TAXES[0], "O1"));
-        when(orders.findWithOfficesByOrderCodeIn(any())).thenReturn(List.of(senderPays));
 
-        assertThat(service.profiles("0901234567")).extracting(m -> m.get("taxCode")).containsExactly(TAXES[0]);
-        assertThat(store).extracting(PhoneTaxLink::getPhone).containsExactly("0901234567");
+        assertThat(service.profiles("0988000111")).extracting(m -> m.get("taxCode")).containsExactly(TAXES[0]);
+        assertThat(store).extracting(PhoneTaxLink::getPhone).containsExactlyInAnyOrder("0901234567", "0988000111");
+    }
+
+    @Test
+    void latestPartyProfile_usesEitherPhone_senderWinsTie() {
+        PhoneTaxLink sender = link("0368265468", TAXES[0], "OLD");
+        sender.setAddress("Ha Noi");
+        sender.setUpdatedAt(Instant.parse("2026-10-01T02:00:00Z"));
+        PhoneTaxLink receiver = link("0988000111", TAXES[1], "NEW");
+        receiver.setId(3L);
+        receiver.setAddress("HCM");
+        receiver.setUpdatedAt(Instant.parse("2026-10-08T02:00:00Z"));
+        store.add(sender);
+        store.add(receiver);
+
+        assertThat(service.latestPartyProfile("0368265468", "0900000000")).get().extracting(PhoneTaxLink::getTaxCode).isEqualTo(TAXES[0]);
+        assertThat(service.latestPartyProfile("0900000000", "0988000111")).get().extracting(PhoneTaxLink::getTaxCode).isEqualTo(TAXES[1]);
+        assertThat(service.latestPartyProfile("0368265468", "0988000111")).get().extracting(PhoneTaxLink::getPhone).isEqualTo("0988000111");
     }
 
     @Test

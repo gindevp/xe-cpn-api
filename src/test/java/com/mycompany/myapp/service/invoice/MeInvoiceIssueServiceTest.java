@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.domain.OrderEvent;
 import com.mycompany.myapp.domain.OrderIssue;
+import com.mycompany.myapp.domain.PhoneTaxLink;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.IssueStatus;
 import com.mycompany.myapp.domain.enumeration.IssueType;
@@ -479,6 +480,30 @@ class MeInvoiceIssueServiceTest {
         when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
         assertThat(service.autoIssueOne(7L)).isEqualTo("ON_CREDIT");
         verify(client, never()).publish(any());
+    }
+
+    @Test
+    void autoIssue_receiverHasSavedTax_issuesCompanyDespiteSenderPays() {
+        order.setId(7L);
+        paidSenderOrder(OrderStatus.DELIVERED);
+        order.setReceiverPhone("0368265468");
+        order.setInvoiceRequested(false);
+        PhoneTaxLink row = new PhoneTaxLink();
+        row.setPhone("0368265468");
+        row.setTaxCode("0100233488");
+        row.setCompanyName("CONG TY A");
+        row.setAddress("Ha Noi");
+        row.setContactName("tran nhan");
+        PhoneTaxLinkService links = mock(PhoneTaxLinkService.class);
+        when(links.latestPartyProfile(order.getSenderPhone(), "0368265468")).thenReturn(Optional.of(row));
+        service.setPhoneTaxLinks(links);
+        when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
+        publishOk();
+
+        assertThat(service.autoIssueOne(7L)).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
+        assertThat(order.getInvoiceType()).isEqualTo(InvoicePolicy.TYPE_COMPANY);
+        assertThat(publishedInvoice().get("BuyerTaxCode").asText()).isEqualTo("0100233488");
+        assertThat(order.getInvoiceBuyerPhone()).isEqualTo("0368265468");
     }
 
     @Test

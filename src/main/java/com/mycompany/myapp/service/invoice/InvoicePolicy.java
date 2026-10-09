@@ -15,7 +15,8 @@ import java.util.Locale;
  *   <li>Nhận trả / COD: người mua = người nhận.</li>
  *   <li>Mốc thanh toán: gửi trả = lúc nhập kho gửi ({@code pickedUpAt}); còn lại = lúc giao thành công.</li>
  *   <li>Hạn = mốc + 3 tiếng và đơn đã hoàn tất (giao thành công / hoàn xong về người gửi): khách yêu cầu HĐ công ty
- *   trước hạn, hết hạn hệ thống tự xuất HĐ cá nhân.</li>
+ *   trước hạn, hết hạn hệ thống tự xuất. Người gửi hoặc người nhận đã có MST thì xuất doanh nghiệp theo MST đó,
+ *   không xét hình thức thanh toán; không có MST thì xuất cá nhân.</li>
  * </ul>
  */
 public final class InvoicePolicy {

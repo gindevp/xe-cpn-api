@@ -21,7 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * MST gắn với SĐT, tối đa {@link #MAX_PER_PHONE}. CRM thêm/sửa/xóa vào bảng này.
- * Xuất hóa đơn doanh nghiệp thì gắn MST vào SĐT người trả cước (theo hình thức thanh toán)
+ * Xuất hóa đơn doanh nghiệp thì gắn MST vào SĐT người mua trên hóa đơn (không theo hình thức thanh toán)
  * và nếu đã đủ 5 thì bỏ MST cũ nhất.
  * Lần đầu bảng trống thì lấy từ hóa đơn đã xuất.
  */
@@ -135,7 +135,26 @@ public class PhoneTaxLinkService {
         linkRepository.deleteById(id);
     }
 
-    /** Gắn MST của hóa đơn doanh nghiệp vừa xuất vào SĐT người trả cước. Lỗi ở đây không được hoàn tác hóa đơn. */
+    /**
+     * MST mới nhất của người gửi hoặc người nhận, không xét ai trả cước.
+     * Chỉ lấy dòng đủ MST, tên công ty và địa chỉ. Cả hai đều có thì lấy dòng cập nhật sau;
+     * cùng thời điểm thì ưu tiên người gửi.
+     */
+    @Transactional
+    public Optional<PhoneTaxLink> latestPartyProfile(String senderPhone, String receiverPhone) {
+        backfillOnce();
+        PhoneTaxLink sender = newestComplete(senderPhone);
+        PhoneTaxLink receiver = newestComplete(receiverPhone);
+        if (sender == null) {
+            return Optional.ofNullable(receiver);
+        }
+        if (receiver == null) {
+            return Optional.of(sender);
+        }
+        return Optional.of(newer(receiver, sender) ? receiver : sender);
+    }
+
+    /** Gắn MST của hóa đơn doanh nghiệp vừa xuất vào SĐT người mua trên hóa đơn. Lỗi ở đây không được hoàn tác hóa đơn. */
     @Transactional
     public void rememberIssued(ShipmentOrder order) {
         try {
@@ -151,9 +170,13 @@ public class PhoneTaxLinkService {
         if (!issuedCompany(order)) {
             return;
         }
+        String phone = order.getInvoiceBuyerPhone();
+        if (phone == null || phone.isBlank()) {
+            phone = InvoicePolicy.payerPhone(order);
+        }
         saveLink(
-            InvoicePolicy.payerPhone(order),
-            InvoicePolicy.payerName(order),
+            phone,
+            InvoicePolicy.buyerPersonName(order),
             VietnamTaxCode.normalize(order.getInvoiceTaxCode()),
             order.getInvoiceCompanyName(),
             order.getInvoiceCompanyAddress(),
@@ -164,62 +187,47 @@ public class PhoneTaxLinkService {
     }
 
     /**
-     * Gỡ MST đang gắn nhầm vào SĐT không phải người trả của đơn nguồn.
-     * Gắn tay (không có mã đơn) giữ nguyên. Chạy một lần mỗi phiên.
+     * Giữ MST đúng SĐT đã lưu. Không chuyển sang người trả cước theo hình thức thanh toán.
      */
     private void auditPayerLinksOnce() {
-        if (payerAudited) {
-            return;
-        }
-        synchronized (this) {
-            if (payerAudited) {
-                return;
-            }
-            try {
-                List<PhoneTaxLink> rows = linkRepository.findByFromOrderCodeIsNotNull();
-                if (!rows.isEmpty()) {
-                    java.util.Map<String, ShipmentOrder> byCode = ordersByCode(rows);
-                    for (PhoneTaxLink row : rows) {
-                        ShipmentOrder order = byCode.get(row.getFromOrderCode());
-                        if (order == null || !issuedCompany(order)) {
-                            continue;
-                        }
-                        String payer = canonicalPhone(InvoicePolicy.payerPhone(order));
-                        if (payer != null && payer.equals(row.getPhone())) {
-                            continue;
-                        }
-                        linkRepository.delete(row);
-                        if (payer != null && linkRepository.findByPhoneAndTaxCode(payer, row.getTaxCode()).isEmpty()) {
-                            linkIssued(order);
-                        }
-                    }
-                }
-                payerAudited = true;
-            } catch (RuntimeException e) {
-                payerAudited = true;
-                LOG.warn("Không rà được MST theo người trả cước: {}", e.toString());
-            }
-        }
+        payerAudited = true;
     }
 
-    private java.util.Map<String, ShipmentOrder> ordersByCode(List<PhoneTaxLink> rows) {
-        java.util.Set<String> codes = new java.util.LinkedHashSet<>();
-        for (PhoneTaxLink row : rows) {
-            if (row.getFromOrderCode() != null && !row.getFromOrderCode().isBlank()) {
-                codes.add(row.getFromOrderCode());
+    private PhoneTaxLink newestComplete(String rawPhone) {
+        String phone = canonicalPhone(rawPhone);
+        if (phone == null) {
+            return null;
+        }
+        for (PhoneTaxLink row : linkRepository.findByPhoneOrderByUpdatedAtDescIdDesc(phone)) {
+            if (completeProfile(row)) {
+                return row;
             }
         }
-        java.util.Map<String, ShipmentOrder> byCode = new java.util.HashMap<>();
-        List<String> list = new ArrayList<>(codes);
-        for (int i = 0; i < list.size(); i += 500) {
-            List<String> slice = list.subList(i, Math.min(i + 500, list.size()));
-            for (ShipmentOrder order : shipmentOrderRepository.findWithOfficesByOrderCodeIn(slice)) {
-                if (order.getOrderCode() != null) {
-                    byCode.put(order.getOrderCode(), order);
-                }
-            }
+        return null;
+    }
+
+    private static boolean completeProfile(PhoneTaxLink row) {
+        return (
+            row != null &&
+            VietnamTaxCode.isValid(row.getTaxCode()) &&
+            row.getCompanyName() != null &&
+            !row.getCompanyName().isBlank() &&
+            row.getAddress() != null &&
+            !row.getAddress().isBlank()
+        );
+    }
+
+    /** true nếu a mới hơn b. */
+    private static boolean newer(PhoneTaxLink a, PhoneTaxLink b) {
+        Instant au = a.getUpdatedAt();
+        Instant bu = b.getUpdatedAt();
+        if (au == null) {
+            return false;
         }
-        return byCode;
+        if (bu == null) {
+            return true;
+        }
+        return au.isAfter(bu);
     }
 
     private static boolean issuedCompany(ShipmentOrder order) {

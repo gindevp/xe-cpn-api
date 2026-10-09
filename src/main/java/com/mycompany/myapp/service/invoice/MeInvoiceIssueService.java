@@ -68,6 +68,42 @@ public class MeInvoiceIssueService {
     private final boolean issueOnlyWhenRequested;
     private PhoneTaxLinkService phoneTaxLinks;
 
+    /**
+     * Đơn chưa khai đủ HĐ công ty thì lấy MST đã lưu của người gửi hoặc người nhận.
+     * Không xét hình thức thanh toán. Đơn đã khai MST thì giữ nguyên.
+     */
+    private void applySavedPartyTax(ShipmentOrder order) {
+        if (phoneTaxLinks == null || order == null || explicitCompany(order)) {
+            return;
+        }
+        phoneTaxLinks
+            .latestPartyProfile(order.getSenderPhone(), order.getReceiverPhone())
+            .ifPresent(row -> {
+                order.setInvoiceRequested(true);
+                order.setInvoiceTaxCode(row.getTaxCode());
+                order.setInvoiceCompanyName(row.getCompanyName());
+                order.setInvoiceCompanyAddress(row.getAddress());
+                if (blankToEmpty(order.getInvoiceEmail()).isBlank() && row.getEmail() != null && !row.getEmail().isBlank()) {
+                    order.setInvoiceEmail(row.getEmail().trim());
+                }
+                if (blankToEmpty(order.getInvoiceBuyerName()).isBlank() && row.getContactName() != null) {
+                    order.setInvoiceBuyerName(InvoicePolicy.upperBuyerName(row.getContactName()));
+                }
+                if (blankToEmpty(order.getInvoiceBuyerPhone()).isBlank()) {
+                    order.setInvoiceBuyerPhone(row.getPhone());
+                }
+            });
+    }
+
+    private static boolean explicitCompany(ShipmentOrder order) {
+        return (
+            Boolean.TRUE.equals(order.getInvoiceRequested()) &&
+            VietnamTaxCode.isValid(order.getInvoiceTaxCode()) &&
+            !blankToEmpty(order.getInvoiceCompanyName()).isBlank() &&
+            !blankToEmpty(order.getInvoiceCompanyAddress()).isBlank()
+        );
+    }
+
     private void rememberBuyerTax(ShipmentOrder order) {
         if (phoneTaxLinks == null || order == null) {
             return;
@@ -204,6 +240,7 @@ public class MeInvoiceIssueService {
         if (OrderMoney.hasUnpaidResidue(order) && !Boolean.TRUE.equals(order.getOnCredit())) {
             return "UNPAID_RESIDUE";
         }
+        applySavedPartyTax(order);
         publish(order, InvoicePolicy.typeToIssue(order));
         appendEvent(order, "INVOICE_ISSUE", "Xuất bù · " + issueDetail(order), actor);
         return order.getInvoiceStatus();
@@ -271,6 +308,7 @@ public class MeInvoiceIssueService {
         if (OrderMoney.hasUnpaidResidue(order)) {
             return "UNPAID_RESIDUE";
         }
+        applySavedPartyTax(order);
         publish(order, InvoicePolicy.typeToIssue(order));
         appendEvent(order, "INVOICE_ISSUE", "Tự xuất sau 3 tiếng · " + issueDetail(order), "system");
         return order.getInvoiceStatus();
