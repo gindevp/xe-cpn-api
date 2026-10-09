@@ -24,6 +24,11 @@ public class TrackLookupPolicy implements Serializable {
     @Column(name = "daily_limit", nullable = false)
     private Integer dailyLimit = 30;
 
+    /** false = mã QR văn phòng giữ nguyên, không đổi theo giây. */
+    @NotNull
+    @Column(name = "qr_auto_refresh", nullable = false)
+    private Boolean qrAutoRefresh = Boolean.TRUE;
+
     /** Số giây một mã QR màn hình văn phòng còn hiệu lực trước khi đổi mã mới. */
     @NotNull
     @Column(name = "qr_refresh_seconds", nullable = false)
@@ -67,6 +72,14 @@ public class TrackLookupPolicy implements Serializable {
 
     public void setDailyLimit(Integer dailyLimit) {
         this.dailyLimit = dailyLimit;
+    }
+
+    public Boolean getQrAutoRefresh() {
+        return qrAutoRefresh;
+    }
+
+    public void setQrAutoRefresh(Boolean qrAutoRefresh) {
+        this.qrAutoRefresh = qrAutoRefresh;
     }
 
     public Integer getQrRefreshSeconds() {

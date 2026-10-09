@@ -64,6 +64,7 @@ public class TrackLookupLimitService {
         TrackLookupPolicy row = current();
         row.setEnabled(incoming == null || incoming.isEnabled());
         row.setDailyLimit(limit);
+        row.setQrAutoRefresh(incoming == null || incoming.isQrAutoRefresh());
         row.setQrRefreshSeconds(refresh);
         row.setQrQuietEnabled(incoming == null || incoming.isQrQuietEnabled());
         row.setQrQuietFrom(quietFrom);
@@ -162,6 +163,7 @@ public class TrackLookupLimitService {
         TrackLookupPolicy row = new TrackLookupPolicy();
         row.setEnabled(true);
         row.setDailyLimit(DEFAULT_LIMIT);
+        row.setQrAutoRefresh(true);
         row.setQrRefreshSeconds(60);
         row.setQrQuietEnabled(true);
         row.setQrQuietFrom("21:00");
@@ -173,6 +175,7 @@ public class TrackLookupLimitService {
         TrackLookupPolicyDTO dto = new TrackLookupPolicyDTO();
         dto.setEnabled(row.getEnabled() == null || row.getEnabled());
         dto.setDailyLimit(row.getDailyLimit() == null ? DEFAULT_LIMIT : row.getDailyLimit());
+        dto.setQrAutoRefresh(row.getQrAutoRefresh() == null || row.getQrAutoRefresh());
         int refresh = row.getQrRefreshSeconds() == null ? 60 : row.getQrRefreshSeconds();
         dto.setQrRefreshSeconds(refresh < 15 || refresh > 36000 ? 60 : refresh);
         dto.setQrQuietEnabled(row.getQrQuietEnabled() == null || row.getQrQuietEnabled());

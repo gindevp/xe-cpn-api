@@ -103,7 +103,8 @@ public class OfficeQrScreenService {
         String token,
         Instant expiresAt,
         boolean quiet,
-        String quietUntil
+        String quietUntil,
+        boolean autoRefresh
     ) {}
 
     public record Piece(int seq, String weightKg, String dimensions) {}
@@ -172,17 +173,31 @@ public class OfficeQrScreenService {
         if (!same && !free) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Màn hình văn phòng này đang mở trên một thiết bị khác");
         }
-        int refresh = trackLookupLimitService.getPolicy().getQrRefreshSeconds();
+        var policy = trackLookupLimitService.getPolicy();
+        int refresh = policy.getQrRefreshSeconds();
+        boolean autoRefresh = policy.isQrAutoRefresh();
         boolean quiet = trackLookupLimitService.qrQuietNow();
         String token = null;
         if (quiet) {
             screen.setTokenHash(null);
             screen.setTokenExpiresAt(null);
+        } else if (!autoRefresh) {
+            boolean missing =
+                !holdingToken ||
+                screen.getTokenHash() == null ||
+                screen.getTokenExpiresAt() == null ||
+                !screen.getTokenExpiresAt().isAfter(now);
+            if (missing) {
+                token = newToken();
+                screen.setTokenHash(sha256(token));
+            }
+            screen.setTokenExpiresAt(now.plus(java.time.Duration.ofDays(365)));
         } else if (
             !holdingToken ||
             screen.getTokenHash() == null ||
             screen.getTokenExpiresAt() == null ||
-            !screen.getTokenExpiresAt().isAfter(now.plusSeconds(1))
+            !screen.getTokenExpiresAt().isAfter(now.plusSeconds(1)) ||
+            screen.getTokenExpiresAt().isAfter(now.plusSeconds(refresh + 5L))
         ) {
             token = newToken();
             screen.setTokenHash(sha256(token));
@@ -202,7 +217,8 @@ public class OfficeQrScreenService {
             token,
             screen.getTokenExpiresAt(),
             quiet,
-            quiet ? trackLookupLimitService.getPolicy().getQrQuietTo() : null
+            quiet ? trackLookupLimitService.getPolicy().getQrQuietTo() : null,
+            autoRefresh
         );
     }
 
@@ -452,6 +468,7 @@ public class OfficeQrScreenService {
         body.put("expiresAt", pulse.expiresAt());
         body.put("quiet", pulse.quiet());
         body.put("quietUntil", pulse.quietUntil());
+        body.put("autoRefresh", pulse.autoRefresh());
         return body;
     }
 }

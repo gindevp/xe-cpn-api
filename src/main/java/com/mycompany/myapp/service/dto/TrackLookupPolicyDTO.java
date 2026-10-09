@@ -8,6 +8,7 @@ public class TrackLookupPolicyDTO implements Serializable {
 
     private boolean enabled = true;
     private int dailyLimit = 30;
+    private boolean qrAutoRefresh = true;
     private int qrRefreshSeconds = 60;
     private boolean qrQuietEnabled = true;
     private String qrQuietFrom = "21:00";
@@ -27,6 +28,14 @@ public class TrackLookupPolicyDTO implements Serializable {
 
     public void setDailyLimit(int dailyLimit) {
         this.dailyLimit = dailyLimit;
+    }
+
+    public boolean isQrAutoRefresh() {
+        return qrAutoRefresh;
+    }
+
+    public void setQrAutoRefresh(boolean qrAutoRefresh) {
+        this.qrAutoRefresh = qrAutoRefresh;
     }
 
     public int getQrRefreshSeconds() {

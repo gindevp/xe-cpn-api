@@ -138,6 +138,7 @@
     <include file="config/liquibase/changelog/20261008233000_qr_quiet_hours.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261009170000_partner_ship_confirm.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261009220000_receipt_line_portion.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261009224500_qr_auto_refresh.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
 
