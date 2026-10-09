@@ -117,10 +117,17 @@ public class DatabaseCutoverService {
         return board();
     }
 
-    @Transactional
-    public Map<String, Object> test(String slotId) {
+    @Transactional(readOnly = true)
+    public Map<String, Object> test(String slotId, String jdbcUrl, String username, String password) {
         staffAccessService.requireScreenWrite(ScreenKey.TICH_HOP);
-        AppDatabaseSlot slot = required(slotId);
+        AppDatabaseSlot stored = required(slotId);
+        AppDatabaseSlot slot = new AppDatabaseSlot();
+        slot.setSlot(stored.getSlot());
+        slot.setLabel(stored.getLabel());
+        slot.setActive(stored.getActive());
+        slot.setJdbcUrl(jdbcUrl != null ? trimToNull(jdbcUrl) : stored.getJdbcUrl());
+        slot.setDbUsername(username != null ? trimToNull(username) : stored.getDbUsername());
+        slot.setDbPassword(password != null ? trimToNull(password) : stored.getDbPassword());
         if (!notBlank(slot.getJdbcUrl()) && !Boolean.TRUE.equals(slot.getActive())) {
             throw new ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
@@ -129,9 +136,6 @@ public class DatabaseCutoverService {
         }
         Creds creds = creds(slot);
         String where = probe(creds);
-        slot.setLastTestAt(Instant.now());
-        slot.setLastTestOk(where.startsWith("ok:"));
-        repository.save(slot);
         if (!where.startsWith("ok:")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, where);
         }
@@ -433,6 +437,12 @@ public class DatabaseCutoverService {
 
     private static String blankToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private record Creds(Endpoint endpoint, String username, String password) {}

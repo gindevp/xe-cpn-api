@@ -30,8 +30,9 @@ public class DatabaseSlotResource {
     }
 
     @PostMapping("/api/integration-config/databases/{slot}/test")
-    public Map<String, Object> test(@PathVariable String slot) {
-        return databaseCutoverService.test(slot);
+    public Map<String, Object> test(@PathVariable String slot, @RequestBody(required = false) Map<String, String> body) {
+        Map<String, String> in = body == null ? Map.of() : body;
+        return databaseCutoverService.test(slot, in.get("jdbcUrl"), in.get("username"), in.get("password"));
     }
 
     @PostMapping("/api/integration-config/databases/switch")
