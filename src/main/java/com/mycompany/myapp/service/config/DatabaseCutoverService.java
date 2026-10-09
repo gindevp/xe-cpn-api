@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -120,17 +121,23 @@ public class DatabaseCutoverService {
     public Map<String, Object> test(String slotId) {
         staffAccessService.requireScreenWrite(ScreenKey.TICH_HOP);
         AppDatabaseSlot slot = required(slotId);
+        if (!notBlank(slot.getJdbcUrl()) && !Boolean.TRUE.equals(slot.getActive())) {
+            throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                slot.getLabel() + " chưa có địa chỉ JDBC. Để trống thì Test nối vào database đang chạy, nên ô nào cũng báo thành công."
+            );
+        }
         Creds creds = creds(slot);
-        String error = probe(creds);
+        String where = probe(creds);
         slot.setLastTestAt(Instant.now());
-        slot.setLastTestOk(error == null);
+        slot.setLastTestOk(where.startsWith("ok:"));
         repository.save(slot);
-        if (error != null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, error);
+        if (!where.startsWith("ok:")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, where);
         }
         Map<String, Object> ok = new LinkedHashMap<>();
         ok.put("ok", true);
-        ok.put("message", "Kết nối " + slot.getLabel() + " thành công");
+        ok.put("message", "Kết nối " + slot.getLabel() + " thành công: " + where.substring(3));
         return ok;
     }
 
@@ -253,12 +260,20 @@ public class DatabaseCutoverService {
         }
     }
 
+    /** {@code ok:user tại host:port/db} khi vào được; còn lại là lỗi. */
     private static String probe(Creds creds) {
         try (Connection c = DriverManager.getConnection(withTimeouts(creds.endpoint.jdbcUrl()), creds.username, creds.password)) {
             if (!c.isValid(8)) {
                 return "Không xác nhận được kết nối";
             }
-            return null;
+            try (Statement st = c.createStatement(); ResultSet rs = st.executeQuery("SELECT CURRENT_USER(), DATABASE()")) {
+                if (!rs.next()) {
+                    return "Không đọc được database vừa nối";
+                }
+                String user = rs.getString(1) == null ? creds.username : rs.getString(1);
+                String database = rs.getString(2) == null ? creds.endpoint.database() : rs.getString(2);
+                return "ok:" + user + " tại " + creds.endpoint.host() + ":" + creds.endpoint.port() + "/" + database;
+            }
         } catch (Exception e) {
             String text = e.getMessage() == null ? "Không kết nối được" : e.getMessage();
             return text.length() > 300 ? text.substring(0, 300) : text;
