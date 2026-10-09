@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261010001500-vehicle-depart-photo" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="vehicle_report_policy"/>
+            </not>
+        </preConditions>
+        <comment>Bật/tắt bắt buộc app chụp ảnh khi báo xe rời. Mặc định bật.</comment>
+        <createTable tableName="vehicle_report_policy">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="depart_photo_required" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <insert tableName="vehicle_report_policy">
+            <column name="id" valueNumeric="1"/>
+            <column name="depart_photo_required" valueBoolean="true"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>

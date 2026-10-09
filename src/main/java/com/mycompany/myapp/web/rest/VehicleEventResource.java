@@ -53,6 +53,16 @@ public class VehicleEventResource {
         return vehicleBoardService.dayTrips(itineraryCode);
     }
 
+    @GetMapping("/vehicle-events/photo-policy")
+    public VehicleBoardDtos.PhotoPolicy photoPolicy() {
+        return vehicleBoardService.photoPolicy();
+    }
+
+    @PutMapping("/vehicle-events/photo-policy")
+    public VehicleBoardDtos.PhotoPolicy savePhotoPolicy(@RequestBody VehicleBoardDtos.PhotoPolicy body) {
+        return vehicleBoardService.savePhotoPolicy(body != null && body.departPhotoRequired());
+    }
+
     @GetMapping("/vehicle-events/report")
     public VehicleBoardDtos.Report reportList(
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,

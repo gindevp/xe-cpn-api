@@ -10,12 +10,14 @@ import com.mycompany.myapp.domain.VehicleEventPhoto;
 import com.mycompany.myapp.domain.VehicleOfficeEvent;
 import com.mycompany.myapp.domain.VehicleOfficeEvent.EventType;
 import com.mycompany.myapp.domain.VehicleOfficeEvent.Source;
+import com.mycompany.myapp.domain.VehicleReportPolicy;
 import com.mycompany.myapp.repository.ItineraryRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OfficeVehicleItineraryRepository;
 import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.repository.VehicleEventPhotoRepository;
 import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
+import com.mycompany.myapp.repository.VehicleReportPolicyRepository;
 import com.mycompany.myapp.security.ScreenKey;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
@@ -74,6 +76,7 @@ public class VehicleBoardService {
     private final OfficeVehicleItineraryRepository officeItineraryRepository;
     private final OfficeRepository officeRepository;
     private final VehicleEventPhotoRepository photoRepository;
+    private final VehicleReportPolicyRepository policyRepository;
     private StoredMedia storedMedia;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -98,11 +101,13 @@ public class VehicleBoardService {
         StaffAccessService staffAccessService,
         OfficeVehicleItineraryRepository officeItineraryRepository,
         OfficeRepository officeRepository,
-        VehicleEventPhotoRepository photoRepository
+        VehicleEventPhotoRepository photoRepository,
+        VehicleReportPolicyRepository policyRepository
     ) {
         this.officeItineraryRepository = officeItineraryRepository;
         this.officeRepository = officeRepository;
         this.photoRepository = photoRepository;
+        this.policyRepository = policyRepository;
         this.tripRepository = tripRepository;
         this.itineraryRepository = itineraryRepository;
         this.eventRepository = eventRepository;
@@ -437,7 +442,7 @@ public class VehicleBoardService {
             );
         }
         items.sort(Comparator.comparing(VehicleBoardDtos.DayItem::plannedDepartAt, Comparator.nullsLast(Comparator.naturalOrder())));
-        return new VehicleBoardDtos.DayBoard(office.getCode(), office.getName(), items);
+        return new VehicleBoardDtos.DayBoard(office.getCode(), office.getName(), items, departPhotoRequired());
     }
 
     public VehicleBoardDtos.Item report(VehicleBoardDtos.ReportRequest req) {
@@ -506,18 +511,19 @@ public class VehicleBoardService {
                     "lateReasonRequired"
                 );
             }
-            if (photo == null) {
+            if (photo != null) {
+                if (!photo.startsWith("data:image/") || !photo.contains(";base64,")) {
+                    throw new BadRequestAlertException("Ảnh xe không hợp lệ", ENTITY, "photoInvalid");
+                }
+                if (photo.length() > MAX_PHOTO_LENGTH) {
+                    throw new BadRequestAlertException("Ảnh xe quá lớn — chụp lại", ENTITY, "photoTooLarge");
+                }
+            } else if (Boolean.TRUE.equals(req.fromApp()) && departPhotoRequired()) {
                 throw new BadRequestAlertException(
                     "Cần chụp ảnh xe trước khi báo xe rời — cập nhật app nếu chưa thấy bước chụp ảnh",
                     ENTITY,
                     "photoRequired"
                 );
-            }
-            if (!photo.startsWith("data:image/") || !photo.contains(";base64,")) {
-                throw new BadRequestAlertException("Ảnh xe không hợp lệ", ENTITY, "photoInvalid");
-            }
-            if (photo.length() > MAX_PHOTO_LENGTH) {
-                throw new BadRequestAlertException("Ảnh xe quá lớn — chụp lại", ENTITY, "photoTooLarge");
             }
         }
         VehicleOfficeEvent e = new VehicleOfficeEvent();
@@ -549,6 +555,34 @@ public class VehicleBoardService {
             photoRepository.save(p);
         }
         return toItem(c, e, pickup);
+    }
+
+    /** App có bắt chụp ảnh khi báo xe rời hay không. Thiếu dòng cấu hình = bật. */
+    @Transactional(readOnly = true)
+    public VehicleBoardDtos.PhotoPolicy photoPolicy() {
+        return new VehicleBoardDtos.PhotoPolicy(departPhotoRequired());
+    }
+
+    /** Ghi: screen Bảo trì. */
+    public VehicleBoardDtos.PhotoPolicy savePhotoPolicy(boolean departPhotoRequired) {
+        staffAccessService.requireScreenWrite(ScreenKey.BAO_TRI);
+        VehicleReportPolicy row = policyRepository
+            .findById(VehicleReportPolicy.SINGLETON_ID)
+            .orElseGet(() -> {
+                VehicleReportPolicy created = new VehicleReportPolicy();
+                created.setId(VehicleReportPolicy.SINGLETON_ID);
+                return created;
+            });
+        row.setDepartPhotoRequired(departPhotoRequired);
+        policyRepository.save(row);
+        return new VehicleBoardDtos.PhotoPolicy(departPhotoRequired);
+    }
+
+    private boolean departPhotoRequired() {
+        return policyRepository
+            .findById(VehicleReportPolicy.SINGLETON_ID)
+            .map(row -> !Boolean.FALSE.equals(row.getDepartPhotoRequired()))
+            .orElse(true);
     }
 
     /** Ảnh xe của một lượt báo (screen bao-gio-xe). */

@@ -27,6 +27,7 @@ import com.mycompany.myapp.repository.OfficeVehicleItineraryRepository;
 import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.repository.VehicleEventPhotoRepository;
 import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
+import com.mycompany.myapp.repository.VehicleReportPolicyRepository;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.dto.trip.AvailableTripDTO;
 import com.mycompany.myapp.service.dto.vehicle.VehicleBoardDtos;
@@ -77,6 +78,9 @@ class VehicleBoardServiceTest {
     @Mock
     private VehicleEventPhotoRepository photoRepository;
 
+    @Mock
+    private VehicleReportPolicyRepository policyRepository;
+
     private VehicleBoardService service;
     private Office ga;
     private Office yb;
@@ -92,11 +96,13 @@ class VehicleBoardServiceTest {
             staffAccessService,
             officeItineraryRepository,
             officeRepository,
-            photoRepository
+            photoRepository,
+            policyRepository
         );
         ga = office(1L, "GA");
         yb = office(2L, "YB");
         lenient().when(vthkClient.isEnabled()).thenReturn(false);
+        lenient().when(policyRepository.findById(com.mycompany.myapp.domain.VehicleReportPolicy.SINGLETON_ID)).thenReturn(Optional.empty());
     }
 
     private static Office office(Long id, String code) {
@@ -273,7 +279,25 @@ class VehicleBoardServiceTest {
             planned,
             reason,
             itineraryCode,
-            photo
+            photo,
+            null
+        );
+    }
+
+    private static VehicleBoardDtos.ReportRequest departFromApp(Instant planned, String photo) {
+        return new VehicleBoardDtos.ReportRequest(
+            "DEPART",
+            "CRM",
+            null,
+            "CH123",
+            "30H-83330",
+            null,
+            null,
+            planned,
+            null,
+            null,
+            photo,
+            true
         );
     }
 
@@ -320,14 +344,39 @@ class VehicleBoardServiceTest {
     }
 
     @Test
-    void departWithoutPhotoIsRejected() {
+    void departWithoutPhotoIsAllowed() {
+        arrivedAtGa();
+        when(eventRepository.saveAndFlush(any(VehicleOfficeEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        VehicleBoardDtos.Item item = service.report(depart(Instant.now(), null, null, null, "  "));
+
+        assertThat(item.reportedAt()).isNotNull();
+        verify(photoRepository, never()).save(any());
+    }
+
+    @Test
+    void appDepartWithoutPhotoIsRejectedWhenRequired() {
         arrivedAtGa();
 
-        assertThatThrownBy(() -> service.report(depart(Instant.now(), null, null, null, "  ")))
+        assertThatThrownBy(() -> service.report(departFromApp(Instant.now(), "  ")))
             .isInstanceOf(BadRequestAlertException.class)
             .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
             .isEqualTo("photoRequired");
         verify(eventRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void appDepartWithoutPhotoIsAllowedWhenPolicyOff() {
+        arrivedAtGa();
+        com.mycompany.myapp.domain.VehicleReportPolicy off = new com.mycompany.myapp.domain.VehicleReportPolicy();
+        off.setDepartPhotoRequired(false);
+        when(policyRepository.findById(com.mycompany.myapp.domain.VehicleReportPolicy.SINGLETON_ID)).thenReturn(Optional.of(off));
+        when(eventRepository.saveAndFlush(any(VehicleOfficeEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        VehicleBoardDtos.Item item = service.report(departFromApp(Instant.now(), "  "));
+
+        assertThat(item.reportedAt()).isNotNull();
+        verify(photoRepository, never()).save(any());
     }
 
     @Test
@@ -365,7 +414,20 @@ class VehicleBoardServiceTest {
         loginAt(ga);
 
         service.report(
-            new VehicleBoardDtos.ReportRequest("ARRIVE", "CRM", null, "CH123", "30H-83330", null, null, Instant.now(), null, null, PHOTO)
+            new VehicleBoardDtos.ReportRequest(
+                "ARRIVE",
+                "CRM",
+                null,
+                "CH123",
+                "30H-83330",
+                null,
+                null,
+                Instant.now(),
+                null,
+                null,
+                PHOTO,
+                null
+            )
         );
         verify(photoRepository, never()).save(any());
     }

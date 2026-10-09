@@ -133,9 +133,14 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             staffAccessService.requireScreenWrite(ScreenKey.QUAN_LY_DON_COD);
             return;
         }
-        // Báo giờ xe đến/rời VP: NV Lên hàng hoặc Xuống hàng
+        // Bật/tắt bắt buộc app chụp ảnh khi báo xe rời
+        if (path.startsWith("/api/vehicle-events/photo-policy")) {
+            staffAccessService.requireScreenWrite(ScreenKey.BAO_TRI);
+            return;
+        }
+        // Báo giờ xe đến/rời VP: app (Lên hàng / Xuống hàng) hoặc tab Chấm xe trên Báo giờ xe
         if (path.startsWith("/api/vehicle-events")) {
-            staffAccessService.requireScreenWrite(ScreenKey.HANG_CHO_LEN_XE, ScreenKey.QUET_NHAP);
+            staffAccessService.requireScreenWrite(ScreenKey.HANG_CHO_LEN_XE, ScreenKey.QUET_NHAP, ScreenKey.BAO_GIO_XE);
             return;
         }
         // Gọi Auto Call bù: tab Nhập kho giao
