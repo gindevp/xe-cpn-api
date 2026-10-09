@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261010013000-app-database-slot" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="app_database_slot"/>
+            </not>
+        </preConditions>
+        <comment>Hai database chuyển qua lại. Để trống URL của slot A = dùng database trong biến môi trường.</comment>
+        <createTable tableName="app_database_slot">
+            <column name="slot" type="varchar(1)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="label" type="varchar(40)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="jdbc_url" type="varchar(700)"/>
+            <column name="db_username" type="varchar(100)"/>
+            <column name="db_password" type="varchar(255)"/>
+            <column name="active" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_test_ok" type="boolean"/>
+            <column name="last_test_at" type="${datetimeType}"/>
+            <column name="last_sync_at" type="${datetimeType}"/>
+        </createTable>
+        <insert tableName="app_database_slot">
+            <column name="slot" value="A"/>
+            <column name="label" value="Database 1"/>
+            <column name="active" valueBoolean="true"/>
+        </insert>
+        <insert tableName="app_database_slot">
+            <column name="slot" value="B"/>
+            <column name="label" value="Database 2"/>
+            <column name="active" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>

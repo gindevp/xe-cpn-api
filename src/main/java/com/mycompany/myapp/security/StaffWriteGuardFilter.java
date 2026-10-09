@@ -1,5 +1,6 @@
 package com.mycompany.myapp.security;
 
+import com.mycompany.myapp.service.config.DatabaseCutoverService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,9 +24,11 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
     private static final Set<String> WRITE_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
 
     private final StaffAccessService staffAccessService;
+    private final DatabaseCutoverService databaseCutoverService;
 
-    public StaffWriteGuardFilter(StaffAccessService staffAccessService) {
+    public StaffWriteGuardFilter(StaffAccessService staffAccessService, DatabaseCutoverService databaseCutoverService) {
         this.staffAccessService = staffAccessService;
+        this.databaseCutoverService = databaseCutoverService;
     }
 
     @Override
@@ -33,6 +36,10 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         throws ServletException, IOException {
         String method = request.getMethod();
         String path = request.getRequestURI();
+        if (WRITE_METHODS.contains(method) && databaseCutoverService.isCuttingOver()) {
+            response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Đang đồng bộ database, thử lại sau");
+            return;
+        }
         if (
             WRITE_METHODS.contains(method) && path.startsWith("/api/") && !isPublicWrite(method, path) && !isSelfServiceWrite(method, path)
         ) {

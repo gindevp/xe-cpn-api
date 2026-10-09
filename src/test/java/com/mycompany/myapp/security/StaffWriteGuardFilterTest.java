@@ -5,6 +5,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import com.mycompany.myapp.service.config.DatabaseCutoverService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockFilterChain;
@@ -15,7 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 class StaffWriteGuardFilterTest {
 
     private final StaffAccessService access = mock(StaffAccessService.class);
-    private final StaffWriteGuardFilter filter = new StaffWriteGuardFilter(access);
+    private final StaffWriteGuardFilter filter = new StaffWriteGuardFilter(access, mock(DatabaseCutoverService.class));
 
     private MockHttpServletResponse post(String path) throws Exception {
         MockHttpServletRequest req = new MockHttpServletRequest("POST", path);

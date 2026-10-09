@@ -140,6 +140,7 @@
     <include file="config/liquibase/changelog/20261009220000_receipt_line_portion.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261009224500_qr_auto_refresh.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261010001500_vehicle_depart_photo.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261010013000_app_database_slot.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
 

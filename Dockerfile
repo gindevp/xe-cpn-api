@@ -19,6 +19,9 @@ RUN chmod +x mvnw \
 
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends mysql-client-8.0 \
+ && rm -rf /var/lib/apt/lists/*
 RUN useradd -r -u 1001 cpn
 COPY --from=build /app/target/cpn-0.0.1-SNAPSHOT.jar /app/app.jar
 USER 1001
