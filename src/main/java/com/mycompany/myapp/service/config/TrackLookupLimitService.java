@@ -8,7 +8,9 @@ import com.mycompany.myapp.service.dto.TrackLookupPolicyDTO;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 import java.util.Locale;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -54,10 +56,18 @@ public class TrackLookupLimitService {
         if (refresh < 15 || refresh > 36000) {
             throw new IllegalArgumentException("Thời gian làm mới QR phải từ 15 đến 36000 giây.");
         }
+        String quietFrom = clock(incoming == null ? "21:00" : incoming.getQrQuietFrom());
+        String quietTo = clock(incoming == null ? "07:00" : incoming.getQrQuietTo());
+        if (quietFrom.equals(quietTo)) {
+            throw new IllegalArgumentException("Giờ tắt QR và giờ bật lại phải khác nhau.");
+        }
         TrackLookupPolicy row = current();
         row.setEnabled(incoming == null || incoming.isEnabled());
         row.setDailyLimit(limit);
         row.setQrRefreshSeconds(refresh);
+        row.setQrQuietEnabled(incoming == null || incoming.isQrQuietEnabled());
+        row.setQrQuietFrom(quietFrom);
+        row.setQrQuietTo(quietTo);
         row.setUpdatedAt(Instant.now());
         TrackLookupPolicyDTO saved = toDto(policyRepository.save(row));
         cached = saved;
@@ -99,6 +109,39 @@ public class TrackLookupLimitService {
         counterRepository.save(row);
     }
 
+    /** Đang trong khung tắt QR (giờ Việt Nam). Khung qua nửa đêm khi giờ tắt muộn hơn giờ bật. */
+    public boolean qrQuietNow() {
+        TrackLookupPolicyDTO policy = getPolicy();
+        if (!policy.isQrQuietEnabled()) {
+            return false;
+        }
+        LocalTime from = LocalTime.parse(policy.getQrQuietFrom());
+        LocalTime to = LocalTime.parse(policy.getQrQuietTo());
+        if (from.equals(to)) {
+            return false;
+        }
+        LocalTime now = LocalTime.now(VN);
+        if (from.isBefore(to)) {
+            return !now.isBefore(from) && now.isBefore(to);
+        }
+        return !now.isBefore(from) || now.isBefore(to);
+    }
+
+    private static String clock(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalArgumentException("Giờ tắt QR phải dạng HH:mm, ví dụ 21:00");
+        }
+        try {
+            LocalTime time = LocalTime.parse(raw.trim());
+            if (time.getSecond() != 0 || time.getNano() != 0) {
+                throw new IllegalArgumentException("Giờ tắt QR chỉ nhận giờ và phút");
+            }
+            return String.format("%02d:%02d", time.getHour(), time.getMinute());
+        } catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException("Giờ tắt QR phải dạng HH:mm, ví dụ 21:00");
+        }
+    }
+
     static String deviceKey(String deviceIdHeader, String clientIp) {
         String id = deviceIdHeader == null ? "" : deviceIdHeader.trim();
         if (id.matches("[A-Za-z0-9._-]{8,80}")) {
@@ -120,6 +163,9 @@ public class TrackLookupLimitService {
         row.setEnabled(true);
         row.setDailyLimit(DEFAULT_LIMIT);
         row.setQrRefreshSeconds(60);
+        row.setQrQuietEnabled(true);
+        row.setQrQuietFrom("21:00");
+        row.setQrQuietTo("07:00");
         return row;
     }
 
@@ -129,6 +175,9 @@ public class TrackLookupLimitService {
         dto.setDailyLimit(row.getDailyLimit() == null ? DEFAULT_LIMIT : row.getDailyLimit());
         int refresh = row.getQrRefreshSeconds() == null ? 60 : row.getQrRefreshSeconds();
         dto.setQrRefreshSeconds(refresh < 15 || refresh > 36000 ? 60 : refresh);
+        dto.setQrQuietEnabled(row.getQrQuietEnabled() == null || row.getQrQuietEnabled());
+        dto.setQrQuietFrom(row.getQrQuietFrom() == null || row.getQrQuietFrom().isBlank() ? "21:00" : row.getQrQuietFrom());
+        dto.setQrQuietTo(row.getQrQuietTo() == null || row.getQrQuietTo().isBlank() ? "07:00" : row.getQrQuietTo());
         return dto;
     }
 }

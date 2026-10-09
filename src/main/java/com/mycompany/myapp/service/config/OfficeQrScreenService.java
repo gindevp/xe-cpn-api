@@ -3,10 +3,12 @@ package com.mycompany.myapp.service.config;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OfficeQrScreen;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.ForwardStage;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.OfficeQrScreenRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderGoodsPhotoRepository;
+import com.mycompany.myapp.service.order.CustomerTrackStatus;
 import com.mycompany.myapp.service.storage.StoredMedia;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import jakarta.persistence.EntityManager;
@@ -49,6 +51,25 @@ public class OfficeQrScreenService {
         OrderStatus.OUT_FOR_DELIVERY,
         OrderStatus.FAILED_DELIVERY
     );
+    /** Nhập kho gửi và hàng trên xe nằm ở văn phòng gửi; nhập kho giao có thể đã tới VP nhận hoặc vẫn gắn VP gửi. */
+    private static final List<ForwardStage> SENDER_VISIBLE_STAGES = List.of(
+        ForwardStage.WH_IN,
+        ForwardStage.TRANSFERRING,
+        ForwardStage.DEST_WH_IN
+    );
+    private static final List<OrderStatus> SENDER_VISIBLE_IF_NO_STAGE = List.of(
+        OrderStatus.CONFIRMED,
+        OrderStatus.IN_TRANSIT,
+        OrderStatus.AT_DEST
+    );
+    private static final String LOOKUP_FROM =
+        "select o from ShipmentOrder o left join fetch o.fromOffice left join o.fromOffice fr" +
+        " left join o.finalToOffice ft left join o.toOffice t" +
+        " where o.status in :open and (" +
+        " upper(coalesce(ft.code, t.code)) = :office" +
+        " or (upper(fr.code) = :office and (o.forwardStage in :senderStages" +
+        " or (o.forwardStage is null and o.status in :senderStatuses)))" +
+        " ) and ";
 
     private final OfficeQrScreenRepository screenRepository;
     private final OfficeRepository officeRepository;
@@ -75,14 +96,25 @@ public class OfficeQrScreenService {
 
     public record ScreenLink(String officeCode, String officeName, String displayKey, boolean showing) {}
 
-    public record Pulse(String officeCode, String officeName, int refreshSeconds, String token, Instant expiresAt) {}
+    public record Pulse(
+        String officeCode,
+        String officeName,
+        int refreshSeconds,
+        String token,
+        Instant expiresAt,
+        boolean quiet,
+        String quietUntil
+    ) {}
 
     public record Piece(int seq, String weightKg, String dimensions) {}
 
     public record PickupOrder(
         String orderCode,
         String goodsLabel,
+        String statusLabel,
+        String senderName,
         String senderPhone,
+        String receiverName,
         String receiverPhone,
         String fromOfficeName,
         List<Piece> packages,
@@ -141,8 +173,12 @@ public class OfficeQrScreenService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Màn hình văn phòng này đang mở trên một thiết bị khác");
         }
         int refresh = trackLookupLimitService.getPolicy().getQrRefreshSeconds();
+        boolean quiet = trackLookupLimitService.qrQuietNow();
         String token = null;
-        if (
+        if (quiet) {
+            screen.setTokenHash(null);
+            screen.setTokenExpiresAt(null);
+        } else if (
             !holdingToken ||
             screen.getTokenHash() == null ||
             screen.getTokenExpiresAt() == null ||
@@ -159,11 +195,22 @@ public class OfficeQrScreenService {
             .findOneByCodeIgnoreCase(screen.getOfficeCode())
             .map(Office::getName)
             .orElse(screen.getOfficeCode());
-        return new Pulse(screen.getOfficeCode(), officeName, refresh, token, screen.getTokenExpiresAt());
+        return new Pulse(
+            screen.getOfficeCode(),
+            officeName,
+            refresh,
+            token,
+            screen.getTokenExpiresAt(),
+            quiet,
+            quiet ? trackLookupLimitService.getPolicy().getQrQuietTo() : null
+        );
     }
 
     @Transactional
     public List<PickupOrder> lookup(String token, String query, String deviceId, String clientIp) {
+        if (trackLookupLimitService.qrQuietNow()) {
+            throw new BadRequestAlertException("Ngoài giờ lấy hàng. Quét lại mã trên màn hình khi quầy mở.", "officeQr", "quiet");
+        }
         trackLookupLimitService.consume(deviceId, clientIp);
         String raw = token == null ? "" : token.trim();
         if (raw.isEmpty()) {
@@ -189,7 +236,10 @@ public class OfficeQrScreenService {
                 new PickupOrder(
                     o.getOrderCode(),
                     goodsLabel(o),
+                    CustomerTrackStatus.labelOf(o),
+                    o.getSenderName(),
                     o.getSenderPhone(),
+                    o.getReceiverName(),
                     o.getReceiverPhone(),
                     o.getFromOffice() != null ? o.getFromOffice().getName() : null,
                     pieces(o),
@@ -204,14 +254,13 @@ public class OfficeQrScreenService {
         String code = query.toUpperCase(Locale.ROOT);
         return em
             .createQuery(
-                "select o from ShipmentOrder o left join fetch o.fromOffice left join o.finalToOffice ft left join o.toOffice t" +
-                " where o.status in :open and upper(coalesce(ft.code, t.code)) = :office" +
-                " and (upper(o.orderCode) = :code or upper(coalesce(o.draftCode, '')) = :code)" +
-                " order by o.createdAt desc",
+                LOOKUP_FROM + "(upper(o.orderCode) = :code or upper(coalesce(o.draftCode, '')) = :code)" + " order by o.createdAt desc",
                 ShipmentOrder.class
             )
             .setParameter("open", OPEN)
             .setParameter("office", office)
+            .setParameter("senderStages", SENDER_VISIBLE_STAGES)
+            .setParameter("senderStatuses", SENDER_VISIBLE_IF_NO_STAGE)
             .setParameter("code", code)
             .setMaxResults(8)
             .getResultList();
@@ -226,14 +275,13 @@ public class OfficeQrScreenService {
         String intl = local.startsWith("0") ? "84" + local.substring(1) : local;
         return em
             .createQuery(
-                "select o from ShipmentOrder o left join fetch o.fromOffice left join o.finalToOffice ft left join o.toOffice t" +
-                " where o.status in :open and upper(coalesce(ft.code, t.code)) = :office" +
-                " and function('regexp_replace', o.receiverPhone, '[^0-9]', '') in :phones" +
-                " order by o.createdAt desc",
+                LOOKUP_FROM + "function('regexp_replace', o.receiverPhone, '[^0-9]', '') in :phones" + " order by o.createdAt desc",
                 ShipmentOrder.class
             )
             .setParameter("open", OPEN)
             .setParameter("office", office)
+            .setParameter("senderStages", SENDER_VISIBLE_STAGES)
+            .setParameter("senderStatuses", SENDER_VISIBLE_IF_NO_STAGE)
             .setParameter("phones", List.of(local, intl, digits))
             .setMaxResults(8)
             .getResultList();
@@ -402,6 +450,8 @@ public class OfficeQrScreenService {
         body.put("refreshSeconds", pulse.refreshSeconds());
         body.put("token", pulse.token());
         body.put("expiresAt", pulse.expiresAt());
+        body.put("quiet", pulse.quiet());
+        body.put("quietUntil", pulse.quietUntil());
         return body;
     }
 }

@@ -29,6 +29,19 @@ public class TrackLookupPolicy implements Serializable {
     @Column(name = "qr_refresh_seconds", nullable = false)
     private Integer qrRefreshSeconds = 60;
 
+    /** Tắt mã QR từ giờ này tới giờ hôm sau (giờ VN), rồi màn hình tự phát mã mới. */
+    @NotNull
+    @Column(name = "qr_quiet_enabled", nullable = false)
+    private Boolean qrQuietEnabled = Boolean.TRUE;
+
+    @NotNull
+    @Column(name = "qr_quiet_from", length = 5, nullable = false)
+    private String qrQuietFrom = "21:00";
+
+    @NotNull
+    @Column(name = "qr_quiet_to", length = 5, nullable = false)
+    private String qrQuietTo = "07:00";
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 
@@ -62,6 +75,30 @@ public class TrackLookupPolicy implements Serializable {
 
     public void setQrRefreshSeconds(Integer qrRefreshSeconds) {
         this.qrRefreshSeconds = qrRefreshSeconds;
+    }
+
+    public Boolean getQrQuietEnabled() {
+        return qrQuietEnabled;
+    }
+
+    public void setQrQuietEnabled(Boolean qrQuietEnabled) {
+        this.qrQuietEnabled = qrQuietEnabled;
+    }
+
+    public String getQrQuietFrom() {
+        return qrQuietFrom;
+    }
+
+    public void setQrQuietFrom(String qrQuietFrom) {
+        this.qrQuietFrom = qrQuietFrom;
+    }
+
+    public String getQrQuietTo() {
+        return qrQuietTo;
+    }
+
+    public void setQrQuietTo(String qrQuietTo) {
+        this.qrQuietTo = qrQuietTo;
     }
 
     public Instant getUpdatedAt() {

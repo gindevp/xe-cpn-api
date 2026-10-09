@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261008233000-qr-quiet-hours" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="track_lookup_policy" columnName="qr_quiet_enabled"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="track_lookup_policy">
+            <column name="qr_quiet_enabled" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="qr_quiet_from" type="varchar(5)" defaultValue="21:00">
+                <constraints nullable="false"/>
+            </column>
+            <column name="qr_quiet_to" type="varchar(5)" defaultValue="07:00">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

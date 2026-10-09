@@ -9,6 +9,9 @@ public class TrackLookupPolicyDTO implements Serializable {
     private boolean enabled = true;
     private int dailyLimit = 30;
     private int qrRefreshSeconds = 60;
+    private boolean qrQuietEnabled = true;
+    private String qrQuietFrom = "21:00";
+    private String qrQuietTo = "07:00";
 
     public boolean isEnabled() {
         return enabled;
@@ -32,5 +35,29 @@ public class TrackLookupPolicyDTO implements Serializable {
 
     public void setQrRefreshSeconds(int qrRefreshSeconds) {
         this.qrRefreshSeconds = qrRefreshSeconds;
+    }
+
+    public boolean isQrQuietEnabled() {
+        return qrQuietEnabled;
+    }
+
+    public void setQrQuietEnabled(boolean qrQuietEnabled) {
+        this.qrQuietEnabled = qrQuietEnabled;
+    }
+
+    public String getQrQuietFrom() {
+        return qrQuietFrom;
+    }
+
+    public void setQrQuietFrom(String qrQuietFrom) {
+        this.qrQuietFrom = qrQuietFrom;
+    }
+
+    public String getQrQuietTo() {
+        return qrQuietTo;
+    }
+
+    public void setQrQuietTo(String qrQuietTo) {
+        this.qrQuietTo = qrQuietTo;
     }
 }
