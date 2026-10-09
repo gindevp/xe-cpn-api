@@ -186,7 +186,12 @@ public class VehicleBoardService {
      */
     @Transactional(readOnly = true)
     public List<VehicleBoardDtos.ItineraryOption> officeItineraries() {
-        Office office = homeOffice();
+        return officeItineraries(null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<VehicleBoardDtos.ItineraryOption> officeItineraries(String officeCode) {
+        Office office = markOffice(officeCode);
         if (officePoints(office).isEmpty()) {
             throw new BadRequestAlertException(
                 "Văn phòng " + office.getName() + " chưa cấu hình điểm lộ trình",
@@ -387,13 +392,17 @@ public class VehicleBoardService {
             .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy văn phòng", ENTITY, "officeNotFound"));
     }
 
-    /** Mọi xe CRM của lộ trình xuất bến hôm nay (giờ VN), kèm giờ đã báo đến/rời tại VP gốc của NV. */
-    @Transactional(readOnly = true)
     public VehicleBoardDtos.DayBoard dayTrips(String itineraryCodeOrName) {
+        return dayTrips(itineraryCodeOrName, null);
+    }
+
+    /** Mọi xe CRM của lộ trình xuất bến hôm nay (giờ VN), kèm giờ đã báo đến/rời tại VP đang chấm. */
+    @Transactional(readOnly = true)
+    public VehicleBoardDtos.DayBoard dayTrips(String itineraryCodeOrName, String officeCode) {
         if (trimToNull(itineraryCodeOrName) == null) {
             throw new BadRequestAlertException("Chưa chọn lộ trình", ENTITY, "itineraryRequired");
         }
-        Office office = homeOffice();
+        Office office = markOffice(officeCode);
         Itinerary itinerary = availableTripSearchService.resolveItinerary(itineraryCodeOrName.trim());
         Set<String> points = officePoints(office);
         String[] ends = itineraryEnds(itinerary.getCode());
@@ -446,10 +455,14 @@ public class VehicleBoardService {
     }
 
     public VehicleBoardDtos.Item report(VehicleBoardDtos.ReportRequest req) {
+        return report(req, null);
+    }
+
+    public VehicleBoardDtos.Item report(VehicleBoardDtos.ReportRequest req, String officeCode) {
         if (req == null) {
             throw new BadRequestAlertException("Thiếu dữ liệu", ENTITY, "bodyRequired");
         }
-        Office office = homeOffice();
+        Office office = markOffice(officeCode);
         EventType type = parse(EventType.class, req.eventType(), "eventTypeInvalid");
         Source source = parse(Source.class, req.source(), "sourceInvalid");
 
@@ -728,6 +741,31 @@ public class VehicleBoardService {
             throw new BadRequestAlertException("Tài khoản chưa gắn văn phòng", ENTITY, "officeMissing");
         }
         return p.getOffice();
+    }
+
+    /**
+     * VP đang chấm. App không gửi mã thì lấy VP hồ sơ. Admin xem toàn hệ thống được chọn VP trên web;
+     * nhân viên thường chỉ chấm đúng VP của mình.
+     */
+    private Office markOffice(String officeCode) {
+        String code = trimToNull(officeCode);
+        if (code == null || "ALL".equalsIgnoreCase(code)) {
+            return homeOffice();
+        }
+        Office home = homeOffice();
+        if (home.getCode() != null && home.getCode().equalsIgnoreCase(code)) {
+            return home;
+        }
+        StaffProfile profile = staffAccessService
+            .current()
+            .orElseThrow(() -> new BadRequestAlertException("Tài khoản chưa có hồ sơ nhân viên", ENTITY, "staffMissing"));
+        boolean canChoose = staffAccessService.isSystemAdmin() || Boolean.TRUE.equals(profile.getScopeAllOffices());
+        if (!canChoose) {
+            throw new BadRequestAlertException("Chỉ chấm xe tại văn phòng của bạn", ENTITY, "officeNotAllowed");
+        }
+        return officeRepository
+            .findOneByCode(code.toUpperCase())
+            .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy văn phòng " + code, ENTITY, "officeNotFound"));
     }
 
     static boolean departsFrom(Trip trip, Office office) {
