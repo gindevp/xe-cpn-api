@@ -22,8 +22,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,7 +38,7 @@ public class DatabaseCutoverService {
     private static final Logger LOG = LoggerFactory.getLogger(DatabaseCutoverService.class);
 
     private final AppDatabaseSlotRepository repository;
-    private final LiveDataSource live;
+    private final DataSourceProperties dataSourceProperties;
     private final StaffAccessService staffAccessService;
     private final ExecutorService jobs = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "db-cutover");
@@ -51,9 +50,13 @@ public class DatabaseCutoverService {
     private volatile String status = "IDLE";
     private volatile String message = "";
 
-    public DatabaseCutoverService(AppDatabaseSlotRepository repository, LiveDataSource live, StaffAccessService staffAccessService) {
+    public DatabaseCutoverService(
+        AppDatabaseSlotRepository repository,
+        DataSourceProperties dataSourceProperties,
+        StaffAccessService staffAccessService
+    ) {
         this.repository = repository;
-        this.live = live;
+        this.dataSourceProperties = dataSourceProperties;
         this.staffAccessService = staffAccessService;
     }
 
@@ -61,35 +64,11 @@ public class DatabaseCutoverService {
         return cuttingOver;
     }
 
-    @EventListener(ApplicationReadyEvent.class)
-    public void applySavedChoice() {
-        try {
-            AppDatabaseSlot active = repository
-                .findAll()
-                .stream()
-                .filter(s -> Boolean.TRUE.equals(s.getActive()) && notBlank(s.getJdbcUrl()) && notBlank(s.getDbUsername()))
-                .findFirst()
-                .orElse(null);
-            if (active == null) {
-                return;
-            }
-            Endpoint saved = DatabaseJdbc.parse(active.getJdbcUrl());
-            Endpoint current = DatabaseJdbc.parse(live.jdbcUrl());
-            if (saved.key().equals(current.key())) {
-                return;
-            }
-            live.use(withTimeouts(active.getJdbcUrl()), active.getDbUsername(), active.getDbPassword());
-            LOG.info("Database đang dùng theo cấu hình slot {}", active.getSlot());
-        } catch (RuntimeException e) {
-            LOG.warn("Giữ database môi trường vì chưa chuyển được sang slot đã lưu: {}", e.getMessage());
-        }
-    }
-
     @Transactional(readOnly = true)
     public Map<String, Object> board() {
         staffAccessService.requireScreenRead(ScreenKey.TICH_HOP);
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("runtimeUrl", publicUrl(live.jdbcUrl()));
+        body.put("runtimeUrl", publicUrl(dataSourceProperties.getUrl()));
         body.put("cuttingOver", cuttingOver);
         body.put("switchStatus", status);
         body.put("switchMessage", message);
@@ -166,30 +145,10 @@ public class DatabaseCutoverService {
         if (from.getSlot().equals(to.getSlot())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Database này đang được dùng");
         }
-        Creds source = creds(from);
-        Creds dest = creds(to);
-        if (source.endpoint.key().equals(dest.endpoint.key())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hai ô đang trỏ cùng một database");
-        }
-        String sourceProbe = probe(source);
-        String destProbe = probe(dest);
-        markTest(from, sourceProbe == null);
-        markTest(to, destProbe == null);
-        if (sourceProbe != null || destProbe != null) {
-            throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "Chưa kết nối được. " +
-                (sourceProbe != null ? from.getLabel() + ": " + sourceProbe + " " : "") +
-                (destProbe != null ? to.getLabel() + ": " + destProbe : "")
-            );
-        }
-        cuttingOver = true;
-        status = "RUNNING";
-        message = "Đang ngừng ghi và copy dữ liệu từ " + from.getLabel() + " sang " + to.getLabel();
-        String fromSlot = from.getSlot();
-        String toSlot = to.getSlot();
-        jobs.execute(() -> runSwitch(source, dest, fromSlot, toSlot));
-        return statusBody();
+        throw new ResponseStatusException(
+            HttpStatus.BAD_REQUEST,
+            "Chưa chuyển. API vẫn dùng database hiện tại. Cổng database mới chưa mở thì chỉ cần lưu cấu hình và bấm Test."
+        );
     }
 
     public Map<String, Object> statusBody() {
@@ -207,7 +166,6 @@ public class DatabaseCutoverService {
             copy(source, dest);
             stamp(dest, toSlot);
             stamp(source, toSlot);
-            live.use(withTimeouts(dest.endpoint.jdbcUrl()), dest.username, dest.password);
             status = "DONE";
             message = "Đã đồng bộ và chuyển sang database " + toSlot + ". Ảnh vẫn ở MinIO.";
             LOG.info("Đã chuyển database sang slot {}", toSlot);
@@ -308,9 +266,9 @@ public class DatabaseCutoverService {
     }
 
     private Creds creds(AppDatabaseSlot slot) {
-        String url = notBlank(slot.getJdbcUrl()) ? slot.getJdbcUrl().trim() : live.jdbcUrl();
-        String user = notBlank(slot.getDbUsername()) ? slot.getDbUsername().trim() : live.username();
-        String pass = slot.getDbPassword() != null ? slot.getDbPassword() : live.password();
+        String url = notBlank(slot.getJdbcUrl()) ? slot.getJdbcUrl().trim() : dataSourceProperties.getUrl();
+        String user = notBlank(slot.getDbUsername()) ? slot.getDbUsername().trim() : dataSourceProperties.getUsername();
+        String pass = slot.getDbPassword() != null ? slot.getDbPassword() : dataSourceProperties.getPassword();
         if (!notBlank(url) || !notBlank(user)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, slot.getLabel() + " chưa có đủ địa chỉ và user");
         }
@@ -366,7 +324,7 @@ public class DatabaseCutoverService {
         row.put("label", slot.getLabel());
         row.put("jdbcUrl", env ? "" : slot.getJdbcUrl());
         row.put("username", slot.getDbUsername() == null ? "" : slot.getDbUsername());
-        row.put("passwordConfigured", notBlank(slot.getDbPassword()) || (env && notBlank(live.password())));
+        row.put("passwordConfigured", notBlank(slot.getDbPassword()) || (env && notBlank(dataSourceProperties.getPassword())));
         row.put("usesEnvironment", env);
         row.put("active", Boolean.TRUE.equals(slot.getActive()));
         row.put("lastTestOk", slot.getLastTestOk());
