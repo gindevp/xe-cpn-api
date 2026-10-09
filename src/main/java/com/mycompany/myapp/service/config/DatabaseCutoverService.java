@@ -334,12 +334,20 @@ public class DatabaseCutoverService {
 
     private Map<String, Object> view(AppDatabaseSlot slot) {
         boolean env = !notBlank(slot.getJdbcUrl());
+        boolean showEnv = env && Boolean.TRUE.equals(slot.getActive());
+        String username = notBlank(slot.getDbUsername())
+            ? slot.getDbUsername()
+            : showEnv ? blankToEmpty(dataSourceProperties.getUsername()) : "";
+        String password = notBlank(slot.getDbPassword())
+            ? slot.getDbPassword()
+            : showEnv ? blankToEmpty(dataSourceProperties.getPassword()) : "";
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("slot", slot.getSlot());
         row.put("label", slot.getLabel());
-        row.put("jdbcUrl", env ? "" : slot.getJdbcUrl());
-        row.put("username", slot.getDbUsername() == null ? "" : slot.getDbUsername());
-        row.put("passwordConfigured", notBlank(slot.getDbPassword()) || (env && notBlank(dataSourceProperties.getPassword())));
+        row.put("jdbcUrl", showEnv ? blankToEmpty(dataSourceProperties.getUrl()) : env ? "" : slot.getJdbcUrl());
+        row.put("username", username);
+        row.put("password", password);
+        row.put("passwordConfigured", notBlank(password));
         row.put("usesEnvironment", env);
         row.put("active", Boolean.TRUE.equals(slot.getActive()));
         row.put("lastTestOk", slot.getLastTestOk());
@@ -421,6 +429,10 @@ public class DatabaseCutoverService {
 
     private static boolean notBlank(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private static String blankToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private record Creds(Endpoint endpoint, String username, String password) {}
