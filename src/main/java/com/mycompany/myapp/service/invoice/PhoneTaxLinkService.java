@@ -75,7 +75,7 @@ public class PhoneTaxLinkService {
             return List.of(entryOf(rows));
         }
         if (query != null && !query.isBlank()) {
-            return List.of();
+            return directoryByCompany(query);
         }
         Map<String, List<PhoneTaxLink>> grouped = new LinkedHashMap<>();
         for (PhoneTaxLink row : linkRepository.findAllByOrderByUpdatedAtDesc(PageRequest.of(0, DIRECTORY_PHONES * MAX_PER_PHONE))) {
@@ -94,6 +94,63 @@ public class PhoneTaxLinkService {
             out.add(entryOf(rows));
         }
         return out;
+    }
+
+    /** Số có MST khớp tên công ty. Mỗi số trả đủ MST đang gắn, không chỉ dòng khớp. */
+    private List<BuyerDirectoryEntry> directoryByCompany(String query) {
+        String needle = likeNeedle(query);
+        if (needle.isEmpty()) {
+            return List.of();
+        }
+        List<PhoneTaxLink> hits = linkRepository.searchByCompanyName(needle, PageRequest.of(0, DIRECTORY_PHONES * MAX_PER_PHONE));
+        java.util.LinkedHashSet<String> phones = new java.util.LinkedHashSet<>();
+        for (PhoneTaxLink hit : hits) {
+            if (hit.getPhone() == null || hit.getPhone().isBlank()) {
+                continue;
+            }
+            phones.add(hit.getPhone());
+            if (phones.size() >= DIRECTORY_PHONES) {
+                break;
+            }
+        }
+        if (phones.isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<PhoneTaxLink>> grouped = new LinkedHashMap<>();
+        for (String phone : phones) {
+            grouped.put(phone, new ArrayList<>());
+        }
+        for (PhoneTaxLink row : linkRepository.findByPhoneIn(phones)) {
+            List<PhoneTaxLink> bucket = grouped.get(row.getPhone());
+            if (bucket != null) {
+                bucket.add(row);
+            }
+        }
+        List<BuyerDirectoryEntry> out = new ArrayList<>();
+        for (List<PhoneTaxLink> rows : grouped.values()) {
+            if (rows.isEmpty()) {
+                continue;
+            }
+            rows.sort((a, b) -> {
+                Instant left = a.getUpdatedAt();
+                Instant right = b.getUpdatedAt();
+                if (left == null && right == null) return Long.compare(
+                    b.getId() == null ? 0 : b.getId(),
+                    a.getId() == null ? 0 : a.getId()
+                );
+                if (left == null) return 1;
+                if (right == null) return -1;
+                int byTime = right.compareTo(left);
+                if (byTime != 0) return byTime;
+                return Long.compare(b.getId() == null ? 0 : b.getId(), a.getId() == null ? 0 : a.getId());
+            });
+            out.add(entryOf(rows));
+        }
+        return out;
+    }
+
+    private static String likeNeedle(String raw) {
+        return raw.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     @Transactional

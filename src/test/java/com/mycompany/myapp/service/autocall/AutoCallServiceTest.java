@@ -925,6 +925,21 @@ class AutoCallServiceTest {
     }
 
     @Test
+    void homeDelivery_doesNotAutoCallOrCatchUp() {
+        java.time.Instant now = vn("2026-10-07T02:00:00");
+        ShipmentOrder order = atDest(1L, "A1", "0912345671", "VP_A");
+        order.setHomeDelivery(true);
+        order.setUpdatedAt(now.minusSeconds(3600));
+        assertThat(AutoCallService.autoCallStopReason(order, now)).isEqualTo("Đơn giao tận nơi");
+
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(config(true, KEY)));
+        when(shipmentOrderRepository.findWithOfficesByOrderCodeIn(any())).thenReturn(List.of(order));
+        AutoCallService.CatchUpResult r = service.catchUp(List.of("A1"), null, true, "dh1");
+        assertThat(r.eligible()).isEmpty();
+        assertThat(r.skipped()).extracting(AutoCallService.CatchUpSkip::reason).containsExactly("Đơn giao tận nơi");
+    }
+
+    @Test
     void catchUp_openException_isSkipped() {
         when(integrationConfigRepository.findAll()).thenReturn(List.of(config(true, KEY)));
         ShipmentOrder order = atDest(1L, "A1", "0912345671", "VP_A");

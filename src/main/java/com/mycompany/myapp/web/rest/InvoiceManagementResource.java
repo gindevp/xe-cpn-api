@@ -123,7 +123,7 @@ public class InvoiceManagementResource {
         return out;
     }
 
-    /** SĐT và các MST đang gắn. Có {@code q} thì lọc một số. */
+    /** SĐT và các MST đang gắn. {@code q} là một số, hoặc một phần tên công ty. */
     @GetMapping("/buyer-directory")
     public List<PhoneTaxLinkService.BuyerDirectoryEntry> buyerDirectory(@RequestParam(value = "q", required = false) String query) {
         staffAccessService.requireScreenRead(ScreenKey.CRM_SDT);

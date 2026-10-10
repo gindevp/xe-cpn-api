@@ -155,7 +155,7 @@ public class AutoCallService {
         if (cfg == null || !Boolean.TRUE.equals(cfg.getAutocallEnabled()) || !cfg.isAutocallActiveKeyConfigured()) {
             return;
         }
-        if (openIssueReason(order) != null) {
+        if (openIssueReason(order) != null || Boolean.TRUE.equals(order.getHomeDelivery())) {
             return;
         }
         createGiaoCall(order, cfg, action, "");
@@ -284,6 +284,9 @@ public class AutoCallService {
         }
         if (order.getStatus() != OrderStatus.AT_DEST) {
             return "Đơn không ở nhập kho giao";
+        }
+        if (Boolean.TRUE.equals(order.getHomeDelivery())) {
+            return "Đơn giao tận nơi";
         }
         String issue = openIssueReason(order);
         if (issue != null) {
@@ -867,8 +870,8 @@ public class AutoCallService {
     }
 
     /**
-     * Không gọi tự động khi: đã giao / huỷ / hoàn, không còn ở nhập kho giao, đang có ngoại lệ / thất lạc / hư hỏng /
-     * chờ duyệt huỷ, hoặc nằm nhập kho giao quá 2 ngày (tab Hàng ngoại lệ). Null = vẫn gọi.
+     * Không gọi tự động khi: giao tận nơi, đã giao / huỷ / hoàn, không còn ở nhập kho giao, đang có ngoại lệ /
+     * thất lạc / hư hỏng / chờ duyệt huỷ, hoặc nằm nhập kho giao quá 2 ngày (tab Hàng ngoại lệ). Null = vẫn gọi.
      */
     static String autoCallStopReason(ShipmentOrder order, Instant now) {
         if (order == null) {
@@ -879,6 +882,9 @@ public class AutoCallService {
         }
         if (order.getStatus() != OrderStatus.AT_DEST) {
             return "Đơn không còn ở nhập kho giao";
+        }
+        if (Boolean.TRUE.equals(order.getHomeDelivery())) {
+            return "Đơn giao tận nơi";
         }
         String issue = openIssueReason(order);
         if (issue != null) {

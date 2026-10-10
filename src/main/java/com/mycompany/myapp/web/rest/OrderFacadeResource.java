@@ -135,6 +135,7 @@ public class OrderFacadeResource {
         @RequestParam(defaultValue = "false") boolean searchAllOffices,
         @RequestParam(required = false) String cancelRequests,
         @RequestParam(required = false) Boolean codOnly,
+        @RequestParam(required = false) String phoneEndsWith,
         Pageable pageable
     ) {
         LOG.debug("REST request to get orders facade list");
@@ -165,7 +166,8 @@ public class OrderFacadeResource {
                 homeDelivery,
                 searchAllOffices,
                 cancelMode,
-                codOnly
+                codOnly,
+                phoneEndsWith
             ),
             pageable
         );

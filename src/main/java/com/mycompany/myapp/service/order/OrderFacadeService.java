@@ -214,7 +214,8 @@ public class OrderFacadeService {
         Boolean homeDelivery,
         boolean searchAllOffices,
         CancelRequestMode cancelRequests,
-        Boolean codOnly
+        Boolean codOnly,
+        String phoneEndsWith
     ) {
         public static final OrderListExtra NONE = new OrderListExtra(
             null,
@@ -226,6 +227,7 @@ public class OrderFacadeService {
             null,
             false,
             CancelRequestMode.INCLUDE,
+            null,
             null
         );
     }
@@ -345,6 +347,11 @@ public class OrderFacadeService {
                 )
             );
         }
+        String phoneSuffix = phoneEndsWithDigits(ex.phoneEndsWith());
+        if (phoneSuffix != null) {
+            String ends = "%" + phoneSuffix;
+            spec = spec.and((root, q, cb) -> cb.or(cb.like(root.get("senderPhone"), ends), cb.like(root.get("receiverPhone"), ends)));
+        }
         Instant rangeStart = parseDayStart(createdFrom);
         Instant rangeEndExclusive = parseDayEndExclusive(createdTo);
         if (rangeStart != null) {
@@ -362,14 +369,14 @@ public class OrderFacadeService {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("itineraryLabel"), it));
         }
         CancelRequestMode cancelMode = ex.cancelRequests() == null ? CancelRequestMode.INCLUDE : ex.cancelRequests();
-        boolean lookup = (keyword != null && !keyword.isBlank()) || (codes != null && !codes.isEmpty());
+        boolean lookup = (keyword != null && !keyword.isBlank()) || phoneSuffix != null || (codes != null && !codes.isEmpty());
         if (cancelMode == CancelRequestMode.ONLY) {
             spec = spec.and((root, q, cb) -> pendingCancelRequest(root, q, cb));
         } else if (cancelMode == CancelRequestMode.HIDE && !lookup) {
             spec = spec.and((root, q, cb) -> cb.not(pendingCancelRequest(root, q, cb)));
         }
         String scoped = staffAccessService.scopedOfficeCode().orElse(null);
-        boolean crossOfficeSearch = ex.searchAllOffices() && keyword != null && !keyword.isBlank();
+        boolean crossOfficeSearch = ex.searchAllOffices() && ((keyword != null && !keyword.isBlank()) || phoneSuffix != null);
         if (scoped != null && !crossOfficeSearch) {
             spec = spec.and((root, q, cb) ->
                 cb.or(
@@ -521,6 +528,13 @@ public class OrderFacadeService {
         return digits;
     }
 
+    /** Đúng 5 chữ số cuối SĐT. Giá trị khác → bỏ qua, không nới thành tìm gần đúng. */
+    static String phoneEndsWithDigits(String raw) {
+        if (raw == null) return null;
+        String digits = raw.replaceAll("\\D", "");
+        return digits.matches("\\d{5}") ? digits : null;
+    }
+
     private static Instant parseDayStart(String day) {
         if (day == null || day.isBlank()) {
             return null;
@@ -590,6 +604,9 @@ public class OrderFacadeService {
         if (isBlank(req.getFromOfficeCode())) {
             throw new BadRequestAlertException("fromOfficeCode is required", ENTITY, "fromofficerequired");
         }
+        if (homePickup && isBlank(req.getPickupAddress())) {
+            throw new BadRequestAlertException("Nhập địa chỉ lấy hàng", ENTITY, "pickupaddress");
+        }
 
         String fromCode = req.getFromOfficeCode().trim().toUpperCase();
         Office from = requireOffice(fromCode);
@@ -624,7 +641,7 @@ public class OrderFacadeService {
         order.setPickupAddress(req.getPickupAddress());
         order.setHomePickup(homePickup);
         order.setHomeDelivery(homeDelivery);
-        // Khách mang hàng đến bưu cục / quét QR — không lấy tận nơi.
+        // Khách mang hàng đến bưu cục khi không lấy tận nơi.
         order.setQrDropOff(!homePickup);
         order.setWeightKg(req.getEstimatedWeightKg());
         int qty = req.getQuantity() != null && req.getQuantity() > 0 ? req.getQuantity() : 1;
@@ -637,6 +654,24 @@ public class OrderFacadeService {
             order.setGoodsFareAmount(req.getGoodsFareAmount());
         }
         order.setPickupFeeAmount(req.getPickupFeeAmount() != null ? req.getPickupFeeAmount() : fare.pickupFee());
+        if (homePickup && OrderMoney.nz(order.getPickupFeeAmount()).signum() <= 0) {
+            BigDecimal resolved = BigDecimal.valueOf(50_000);
+            try {
+                BigDecimal km = doorKmEstimator == null ? null : doorKmEstimator.km(from, null, null, req.getPickupAddress(), "lấy");
+                if (km != null && km.signum() > 0) {
+                    BigDecimal fromTable = fareCalculator
+                        .estimate(req.getEstimatedWeightKg(), true, homeDelivery, from, to, km, null)
+                        .pickupFee();
+                    if (fromTable != null && fromTable.signum() > 0) {
+                        resolved = fromTable;
+                    }
+                }
+            } catch (RuntimeException ex) {
+                resolved = BigDecimal.valueOf(50_000);
+            }
+            order.setPickupFeeAmount(resolved);
+            order.setFareAmount(OrderMoney.nz(order.getFareAmount()).add(resolved));
+        }
         order.setDeliveryFeeAmount(req.getDeliveryFeeAmount() != null ? req.getDeliveryFeeAmount() : fare.deliveryFee());
         if (req.getDeclaredFeeAmount() != null) {
             order.setDeclaredFeeAmount(req.getDeclaredFeeAmount());
