@@ -969,6 +969,7 @@ public class OrderFacadeService {
         String endpointsBefore = itineraryEndpointsKey(order);
         java.util.Map<String, String> fieldsBefore = OrderEditDiff.snapshot(order);
         BigDecimal fareBefore = OrderMoney.nz(order.getFareAmount());
+        boolean prepaidFollowsFare = senderPrepaidFollowsFare(order);
         if (req.getSenderName() != null) {
             order.setSenderName(req.getSenderName());
         }
@@ -1001,7 +1002,9 @@ public class OrderFacadeService {
             order.setQuantity(req.getQuantity());
         }
         if (req.getFareAmount() != null) {
-            assertFareNotBelowPaid(req.getFareAmount(), order.getPaidAmount());
+            if (!prepaidFollowsFare) {
+                assertFareNotBelowPaid(req.getFareAmount(), order.getPaidAmount());
+            }
             order.setFareAmount(req.getFareAmount());
         }
         SimpleFareCalculator.FareBreakdown doorFees = null;
@@ -1099,7 +1102,7 @@ public class OrderFacadeService {
             // Phí tận nơi vừa tính lại → tổng cước dựng lại từ các khoản (fareAmount client gửi kèm có thể còn phí cũ).
             BigDecimal recalc = recalcFareAfterDoorChange(order, doorFees);
             BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
-            if (recalc.compareTo(paid) < 0) {
+            if (!prepaidFollowsFare && recalc.compareTo(paid) < 0) {
                 throw new BadRequestAlertException(
                     "Đơn đã thu " +
                     paid.toPlainString() +
@@ -1145,7 +1148,16 @@ public class OrderFacadeService {
         if (OrderMoney.nz(order.getFareAmount()).compareTo(fareBefore) != 0) {
             PartnerAdvance.assertNotPending(order, ENTITY);
         }
+        BigDecimal prepaidDelta = prepaidFollowsFare ? syncSenderPrepaidToFare(order) : BigDecimal.ZERO;
         shipmentOrderRepository.save(order);
+        if (prepaidDelta.signum() != 0) {
+            appendEvent(
+                order,
+                "PAYMENT",
+                NOTE_SENDER_PREPAID_ADJUST + " · " + (prepaidDelta.signum() > 0 ? "+" : "") + prepaidDelta.toPlainString() + "đ",
+                currentActor()
+            );
+        }
         if (!Boolean.TRUE.equals(req.getSkipHistory())) {
             String eventAction = !isBlank(req.getEventAction()) ? req.getEventAction().trim() : "PATCH";
             String eventDetail = !isBlank(req.getEventDetail()) ? req.getEventDetail().trim() : "Cập nhật thông tin đơn";
@@ -1424,6 +1436,7 @@ public class OrderFacadeService {
     }
 
     static final String NOTE_SENDER_PREPAID = "Thu đầu gửi (người gửi thanh toán)";
+    static final String NOTE_SENDER_PREPAID_ADJUST = "Điều chỉnh thu đầu gửi theo cước sửa";
     static final String NOTE_PAYMENT_TERM_REVERSAL = "Đảo khoản thu do đổi hình thức thanh toán";
 
     private com.mycompany.myapp.repository.ReceiptOrderLineRepository receiptOrderLineRepository;
@@ -1801,6 +1814,61 @@ public class OrderFacadeService {
         order.setPaidAmount(OrderMoney.nz(order.getPaidAmount()).add(due));
         shipmentOrderRepository.save(order);
         appendEvent(order, "PAYMENT", NOTE_SENDER_PREPAID + " · " + due.toPlainString() + "đ", actor);
+    }
+
+    /**
+     * Người gửi trả đủ cước, hàng còn ở kho gửi chưa lên xe: khách trả trực tiếp cho NV tại VP gửi
+     * nên sửa cước thì số đã thu đi theo cước mới (không áp H1 chặn giảm).
+     */
+    static boolean senderPrepaidFollowsFare(ShipmentOrder order) {
+        if (order.getPaymentTerm() != PaymentTerm.GUI_TRA || Boolean.TRUE.equals(order.getOnCredit())) {
+            return false;
+        }
+        if (!atSenderWarehouse(order)) {
+            return false;
+        }
+        BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
+        return paid.signum() > 0 && paid.compareTo(OrderMoney.nz(order.getFareAmount())) >= 0;
+    }
+
+    /**
+     * Ghi khoản thu đầu gửi chênh (dương/âm, người thu = người sửa) để paidAmount = cước mới.
+     * Đã lên phiếu thu thì chỉ cho tăng — giảm phải hoàn tiền / hủy phiếu trước.
+     *
+     * @return số chênh đã ghi (0 nếu không đổi)
+     */
+    BigDecimal syncSenderPrepaidToFare(ShipmentOrder order) {
+        BigDecimal fare = OrderMoney.nz(order.getFareAmount());
+        BigDecimal delta = fare.subtract(OrderMoney.nz(order.getPaidAmount()));
+        if (delta.signum() == 0 || orderPaymentRepository == null) {
+            return BigDecimal.ZERO;
+        }
+        if (
+            delta.signum() < 0 &&
+            receiptOrderLineRepository != null &&
+            order.getId() != null &&
+            receiptOrderLineRepository.existsByOrder_Id(order.getId())
+        ) {
+            throw new BadRequestAlertException(
+                "Đơn đã lập phiếu thu " +
+                OrderMoney.nz(order.getPaidAmount()).toPlainString() +
+                "đ — không giảm cước được. Cần admin hoàn tiền / hủy phiếu thu trước.",
+                ENTITY,
+                "fareBelowReceipted"
+            );
+        }
+        dayClosureGuard.assertCollectionMutable(order);
+        com.mycompany.myapp.domain.OrderPayment payment = new com.mycompany.myapp.domain.OrderPayment();
+        payment.setPaymentAt(Instant.now());
+        payment.setAmount(delta);
+        payment.setMethod(com.mycompany.myapp.domain.enumeration.PaymentMethod.TM);
+        payment.setPaymentKind(com.mycompany.myapp.domain.enumeration.PaymentKind.TRUOC);
+        payment.setNote(NOTE_SENDER_PREPAID_ADJUST);
+        payment.setCollectorUsername(currentActor());
+        payment.setOrder(order);
+        orderPaymentRepository.save(payment);
+        order.setPaidAmount(fare);
+        return delta;
     }
 
     /**

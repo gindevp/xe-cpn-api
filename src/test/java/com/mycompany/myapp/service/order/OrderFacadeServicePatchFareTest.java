@@ -13,13 +13,20 @@ import static org.mockito.Mockito.when;
 
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderEvent;
+import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.Trip;
+import com.mycompany.myapp.domain.enumeration.ForwardStage;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
+import com.mycompany.myapp.domain.enumeration.PaymentKind;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.OrderIssueRepository;
 import com.mycompany.myapp.repository.OrderLegRepository;
+import com.mycompany.myapp.repository.OrderPaymentRepository;
 import com.mycompany.myapp.repository.OrderPodPhotoRepository;
+import com.mycompany.myapp.repository.ReceiptOrderLineRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.day.DayClosureGuard;
@@ -79,6 +86,12 @@ class OrderFacadeServicePatchFareTest {
 
     @Mock
     private DoorKmEstimator doorKmEstimator;
+
+    @Mock
+    private OrderPaymentRepository orderPaymentRepository;
+
+    @Mock
+    private ReceiptOrderLineRepository receiptOrderLineRepository;
 
     private OrderFacadeService service;
     private ShipmentOrder order;
@@ -367,6 +380,109 @@ class OrderFacadeServicePatchFareTest {
             .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
             .isEqualTo("doorKmAddressRequired");
         verify(shipmentOrderRepository, never()).save(any());
+    }
+
+    @Test
+    void senderPrepaidAtWarehouse_fareUp_recordsAdjustmentAndPaidFollows() {
+        stubLoadAndDetail();
+        prepaidAtSenderWarehouse();
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setFareAmount(new BigDecimal("55000"));
+
+        service.patch("XE-H1-001", req);
+
+        ArgumentCaptor<OrderPayment> pay = ArgumentCaptor.forClass(OrderPayment.class);
+        verify(orderPaymentRepository).save(pay.capture());
+        assertThat(pay.getValue().getAmount()).isEqualByComparingTo("15000");
+        assertThat(pay.getValue().getPaymentKind()).isEqualTo(PaymentKind.TRUOC);
+        assertThat(pay.getValue().getNote()).isEqualTo(OrderFacadeService.NOTE_SENDER_PREPAID_ADJUST);
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("55000");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("55000");
+    }
+
+    @Test
+    void senderPrepaidAtWarehouse_fareDown_reversesDifferenceInsteadOfH1() {
+        stubLoadAndDetail();
+        prepaidAtSenderWarehouse();
+        when(receiptOrderLineRepository.existsByOrder_Id(10L)).thenReturn(false);
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setFareAmount(new BigDecimal("25000"));
+
+        service.patch("XE-H1-001", req);
+
+        ArgumentCaptor<OrderPayment> pay = ArgumentCaptor.forClass(OrderPayment.class);
+        verify(orderPaymentRepository).save(pay.capture());
+        assertThat(pay.getValue().getAmount()).isEqualByComparingTo("-15000");
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("25000");
+        verify(dayClosureGuard).assertCollectionMutable(order);
+    }
+
+    @Test
+    void senderPrepaidAtWarehouse_fareDownAfterReceipt_rejected() {
+        when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("XE-H1-001")).thenReturn(Optional.of(order));
+        prepaidAtSenderWarehouse();
+        when(receiptOrderLineRepository.existsByOrder_Id(10L)).thenReturn(true);
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setFareAmount(new BigDecimal("25000"));
+
+        assertThatThrownBy(() -> service.patch("XE-H1-001", req))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("fareBelowReceipted");
+        verify(orderPaymentRepository, never()).save(any());
+        verify(shipmentOrderRepository, never()).save(any());
+    }
+
+    @Test
+    void senderPrepaidAtWarehouse_fareUp_allowedEvenIfReceipted() {
+        stubLoadAndDetail();
+        prepaidAtSenderWarehouse();
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setFareAmount(new BigDecimal("50000"));
+
+        service.patch("XE-H1-001", req);
+
+        verify(receiptOrderLineRepository, never()).existsByOrder_Id(any());
+        verify(orderPaymentRepository).save(any(OrderPayment.class));
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("50000");
+    }
+
+    @Test
+    void senderPrepaidOnTruck_fareDown_stillH1() {
+        when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("XE-H1-001")).thenReturn(Optional.of(order));
+        prepaidAtSenderWarehouse();
+        order.setCurrentTrip(new Trip());
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setFareAmount(new BigDecimal("25000"));
+
+        assertThatThrownBy(() -> service.patch("XE-H1-001", req))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("fareBelowPaid");
+        verify(orderPaymentRepository, never()).save(any());
+    }
+
+    @Test
+    void receiverPays_fareUp_paidUnchanged() {
+        stubLoadAndDetail();
+        prepaidAtSenderWarehouse();
+        order.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setFareAmount(new BigDecimal("50000"));
+
+        service.patch("XE-H1-001", req);
+
+        verify(orderPaymentRepository, never()).save(any());
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("40000");
+    }
+
+    private void prepaidAtSenderWarehouse() {
+        service.setOrderPaymentRepository(orderPaymentRepository);
+        service.setReceiptOrderLineRepository(receiptOrderLineRepository);
+        order.setPaymentTerm(PaymentTerm.GUI_TRA);
+        order.setForwardStage(ForwardStage.WH_IN);
+        order.setFareAmount(new BigDecimal("40000"));
+        order.setPaidAmount(new BigDecimal("40000"));
     }
 
     private void stubLoadAndDetail() {
