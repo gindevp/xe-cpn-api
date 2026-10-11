@@ -71,8 +71,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class AutoCallService {
 
     public static final String TYPE_GIAO = "giao";
-    /** Quét nhập VP nhận · chặng cuối đến · giao thất bại quay về kho. Không gồm hoàn / hoàn tác. */
-    public static final Set<String> GIAO_TRIGGERS = Set.of("SCAN_IN", "LEG_ARRIVE_DEST", "FAIL_MAX", "FAIL_48H");
+    /** Quét nhập VP nhận · chặng cuối đến · giao thất bại quay về kho / nhập kho giao lại. Không gồm hoàn / hoàn tác. */
+    public static final Set<String> GIAO_TRIGGERS = Set.of("SCAN_IN", "LEG_ARRIVE_DEST", "FAIL_MAX", "FAIL_48H", "REDELIVER_IN");
     static final Set<String> FINAL_STATUSES = Set.of("COMPLETED", "FAILED", "CANCELLED");
     static final long WEBHOOK_MAX_SKEW_SECONDS = 300;
     /** Đơn ở các trạng thái này không gọi lại nữa. */

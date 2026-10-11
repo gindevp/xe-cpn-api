@@ -738,6 +738,13 @@ public class OrderFacadeService {
         if (to == OrderStatus.FAILED_DELIVERY) {
             AhamoveDispatchService.assertNoActivePartner(order);
         }
+        if (from == OrderStatus.FAILED_DELIVERY && to == OrderStatus.DELIVERED && isBlank(req.getDetail())) {
+            throw new BadRequestAlertException(
+                "Đơn giao thất bại — nhập lý do chuyển sang giao thành công",
+                ENTITY,
+                "podFailedReasonRequired"
+            );
+        }
         if (to == OrderStatus.CANCELLED && !isBlank(req.getDetail())) {
             order.setCancelReason(req.getDetail());
         }

@@ -26,7 +26,11 @@ public final class OrderStatusTransitions {
             Set.of(OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED, OrderStatus.FAILED_DELIVERY, OrderStatus.RETURNING)
         );
         ALLOWED.put(OrderStatus.OUT_FOR_DELIVERY, Set.of(OrderStatus.DELIVERED, OrderStatus.FAILED_DELIVERY, OrderStatus.RETURNING));
-        ALLOWED.put(OrderStatus.FAILED_DELIVERY, Set.of(OrderStatus.OUT_FOR_DELIVERY, OrderStatus.AT_DEST, OrderStatus.RETURNING));
+        // FAILED_DELIVERY → DELIVERED chỉ qua POD có lý do (OrderFacadeService.transition chặn khi thiếu detail)
+        ALLOWED.put(
+            OrderStatus.FAILED_DELIVERY,
+            Set.of(OrderStatus.OUT_FOR_DELIVERY, OrderStatus.AT_DEST, OrderStatus.DELIVERED, OrderStatus.RETURNING)
+        );
         ALLOWED.put(OrderStatus.DELIVERED, Set.of(OrderStatus.RETURNING));
         ALLOWED.put(OrderStatus.CANCELLED, Set.of());
         ALLOWED.put(

@@ -35,6 +35,18 @@ public class PodRequest {
 
     private PaymentMethod paymentMethod = PaymentMethod.TM;
 
+    /** Bắt buộc khi đơn đang giao thất bại: lý do chuyển sang giao thành công. */
+    @Size(max = 200)
+    private String failedReason;
+
+    public String getFailedReason() {
+        return failedReason;
+    }
+
+    public void setFailedReason(String failedReason) {
+        this.failedReason = failedReason;
+    }
+
     public String getChannel() {
         return channel;
     }

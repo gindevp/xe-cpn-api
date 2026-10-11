@@ -178,6 +178,20 @@ class AutoCallServiceTest {
     }
 
     @Test
+    void arrivedAtDest_redeliverIn_callsCustomerAgain() {
+        when(integrationConfigRepository.findAll()).thenReturn(List.of(config(true, KEY)));
+        when(autoCallRepository.countByOrder_IdAndCallType(10L, "giao")).thenReturn(1L);
+        stubSaveAssignsId();
+
+        service.onArrivedAtDest(order("0912345678"), "REDELIVER_IN");
+
+        ArgumentCaptor<AutoCall> captor = ArgumentCaptor.forClass(AutoCall.class);
+        verify(autoCallRepository).save(captor.capture());
+        assertThat(captor.getValue().getRefId()).startsWith("CPN-GIAO-HN260930-0001-2-");
+        assertThat(captor.getValue().getTriggerAction()).isEqualTo("REDELIVER_IN");
+    }
+
+    @Test
     void arrivedAtDest_invalidPhone_isSkipped_noDispatch() {
         when(integrationConfigRepository.findAll()).thenReturn(List.of(config(true, KEY)));
         when(autoCallRepository.countByOrder_IdAndCallType(10L, "giao")).thenReturn(0L);

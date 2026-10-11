@@ -84,6 +84,7 @@ public class DeliveryFacadeService {
         }
         assertPartnerPodAllowed(order, SecurityUtils.hasCurrentUserThisAuthority(AuthoritiesConstants.ADMIN));
         assertArrivedForPod(order);
+        String failedReason = failedPodReason(order, req.getFailedReason());
         if (req.getPhotos() == null || req.getPhotos().isEmpty()) {
             throw new BadRequestAlertException("At least 1 POD photo required", ENTITY, "podPhotoRequired");
         }
@@ -127,7 +128,14 @@ public class DeliveryFacadeService {
         shipmentOrderRepository.save(order);
 
         String action = "HOME".equals(channel) ? "POD" : "POD_QUAY";
-        ensureStatusThenDeliver(order, action, req.getActualRecipientName());
+        String detail = req.getActualRecipientName();
+        if (failedReason != null) {
+            detail = (detail + " · Giao thất bại → thành công: " + failedReason).trim();
+            if (detail.length() > 255) {
+                detail = detail.substring(0, 255);
+            }
+        }
+        ensureStatusThenDeliver(order, action, detail);
 
         order = requireOrder(order.getOrderCode());
         PodResponse res = new PodResponse();
@@ -374,6 +382,27 @@ public class DeliveryFacadeService {
         }
     }
 
+    /**
+     * Giao thất bại → giao thành công: bắt lý do; tiền ứng Ahamove chưa trả lại tài xế thì chặn.
+     *
+     * @return lý do đã trim, {@code null} nếu đơn không ở giao thất bại
+     */
+    static String failedPodReason(ShipmentOrder order, String reason) {
+        if (order.getStatus() != OrderStatus.FAILED_DELIVERY) {
+            return null;
+        }
+        String why = reason == null ? "" : reason.trim();
+        if (why.isEmpty()) {
+            throw new BadRequestAlertException(
+                "Đơn giao thất bại — nhập lý do chuyển sang giao thành công",
+                ENTITY,
+                "podFailedReasonRequired"
+            );
+        }
+        PartnerAdvance.assertNoRefundDue(order, ENTITY);
+        return why;
+    }
+
     /** CONFIRMED/WAITING = hàng còn ở VP gửi: chỉ giao tại chỗ khi VP gửi cũng là VP nhận. */
     static void assertArrivedForPod(ShipmentOrder order) {
         OrderStatus status = order.getStatus();
@@ -418,10 +447,11 @@ public class DeliveryFacadeService {
             deliveryAttemptRepository.save(attempt);
             return;
         }
-        // FE / app: AT_DEST, OUT_FOR_DELIVERY, CONFIRMED, WAITING → DELIVERED
+        // FE / app: AT_DEST, OUT_FOR_DELIVERY, CONFIRMED, WAITING, FAILED_DELIVERY (có lý do) → DELIVERED
         if (
             status != OrderStatus.AT_DEST &&
             status != OrderStatus.OUT_FOR_DELIVERY &&
+            status != OrderStatus.FAILED_DELIVERY &&
             status != OrderStatus.CONFIRMED &&
             status != OrderStatus.WAITING
         ) {

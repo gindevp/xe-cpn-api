@@ -1,5 +1,6 @@
 package com.mycompany.myapp.service.order;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -93,6 +94,38 @@ class DeliveryFacadeServicePodGuardTest {
         assertThatCode(() -> DeliveryFacadeService.assertPartnerPodAllowed(ahamove("CANCELLED"), false)).doesNotThrowAnyException();
         assertThatCode(() -> DeliveryFacadeService.assertPartnerPodAllowed(order(OrderStatus.OUT_FOR_DELIVERY, 1, 2, null), false)
         ).doesNotThrowAnyException();
+    }
+
+    @Test
+    void failedDeliveryPodRequiresReason() {
+        ShipmentOrder o = order(OrderStatus.FAILED_DELIVERY, 1, 2, null);
+        assertThatThrownBy(() -> DeliveryFacadeService.failedPodReason(o, "  "))
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("podFailedReasonRequired");
+        assertThatThrownBy(() -> DeliveryFacadeService.failedPodReason(o, null)).isInstanceOf(BadRequestAlertException.class);
+        assertThat(DeliveryFacadeService.failedPodReason(o, "  Khách đến bưu cục nhận ")).isEqualTo("Khách đến bưu cục nhận");
+    }
+
+    @Test
+    void nonFailedPodIgnoresReason() {
+        assertThat(DeliveryFacadeService.failedPodReason(order(OrderStatus.AT_DEST, 1, 2, null), null)).isNull();
+        assertThat(DeliveryFacadeService.failedPodReason(order(OrderStatus.OUT_FOR_DELIVERY, 1, 2, null), "x")).isNull();
+    }
+
+    @Test
+    void failedDeliveryPodBlockedWhileAhamoveAdvanceNotRefunded() {
+        ShipmentOrder o = order(OrderStatus.FAILED_DELIVERY, 1, 2, null);
+        o.setPartnerCodAmount(new BigDecimal("50000"));
+        o.setPartnerCodCollectedAt(java.time.Instant.now());
+        assertThatThrownBy(() -> DeliveryFacadeService.failedPodReason(o, "Khách đến nhận"))
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("partnerAdvanceRefundDue");
+    }
+
+    @Test
+    void failedDeliveryCanTransitionToDeliveredOrBackToDest() {
+        assertThat(OrderStatusTransitions.canTransition(OrderStatus.FAILED_DELIVERY, OrderStatus.DELIVERED)).isTrue();
+        assertThat(OrderStatusTransitions.canTransition(OrderStatus.FAILED_DELIVERY, OrderStatus.AT_DEST)).isTrue();
     }
 
     @Test
