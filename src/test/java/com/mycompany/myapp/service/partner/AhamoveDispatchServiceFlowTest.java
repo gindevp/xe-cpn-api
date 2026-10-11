@@ -388,7 +388,7 @@ class AhamoveDispatchServiceFlowTest {
     }
 
     @Test
-    void dispatch_ok_savesPartnerFeeAndPushesShip_withoutTouchingFare() {
+    void dispatch_ok_staysAtDestUntilDriverPicksUp() {
         when(client.createOrder(any(), any(), eq("BALANCE"), any())).thenReturn(
             new AhamoveOrderClient.CreatedOrder("AHA1", "ASSIGNING", "https://aha/s/AHA1", new BigDecimal("28000"), "HAN-BIKE")
         );
@@ -396,13 +396,13 @@ class AhamoveDispatchServiceFlowTest {
 
         assertThat(order.getPartnerCode()).isEqualTo("AHAMOVE");
         assertThat(order.getPartnerOrderId()).isEqualTo("AHA1");
+        assertThat(order.getPartnerStatus()).isEqualTo("ASSIGNING");
         assertThat(order.getPartnerFeeAmount()).isEqualByComparingTo("28000");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.AT_DEST);
         assertThat(order.getFareAmount()).isEqualByComparingTo("50000");
         assertThat(order.getPaidAmount()).isEqualByComparingTo("50000");
-        ArgumentCaptor<OrderTransitionRequest> tr = ArgumentCaptor.forClass(OrderTransitionRequest.class);
-        verify(orders).transition(eq("GP-0001"), tr.capture());
-        assertThat(tr.getValue().getToStatus()).isEqualTo(OrderStatus.OUT_FOR_DELIVERY);
-        assertThat(tr.getValue().getAction()).isEqualTo("PUSH_SHIP");
+        verify(orders, never()).transition(anyString(), any());
+        verify(orders).recordEvent(eq(order), eq("AHAMOVE_BOOK"), anyString(), anyString());
     }
 
     @Test
@@ -410,9 +410,33 @@ class AhamoveDispatchServiceFlowTest {
         when(client.createOrder(any(), any(), any(), any())).thenReturn(
             new AhamoveOrderClient.CreatedOrder("AHA2", "ASSIGNING", null, null, null)
         );
-        when(orders.transition(anyString(), any())).thenThrow(new BadRequestAlertException("Day closed", "order", "dayClosed"));
+        when(orderRepo.save(any())).thenThrow(new BadRequestAlertException("Day closed", "order", "dayClosed"));
         assertThatThrownBy(() -> service.dispatch("GP-0001", pin())).isInstanceOf(BadRequestAlertException.class);
         verify(client).cancelOrder(eq("AHA2"), anyString());
+    }
+
+    @Test
+    void webhook_inProcess_movesAtDestToOutForDelivery() throws Exception {
+        order.setPartnerCode("AHAMOVE");
+        order.setPartnerOrderId("AHA1");
+        when(orderRepo.findFirstByPartnerOrderId("AHA1")).thenReturn(Optional.of(order));
+        service.applyWebhook(om.readTree("{\"_id\":\"AHA1\",\"status\":\"IN PROCESS\",\"path\":[{},{\"status\":\"ACCEPTED\"}]}"));
+        ArgumentCaptor<OrderTransitionRequest> tr = ArgumentCaptor.forClass(OrderTransitionRequest.class);
+        verify(orders).transition(eq("GP-0001"), tr.capture());
+        assertThat(tr.getValue().getToStatus()).isEqualTo(OrderStatus.OUT_FOR_DELIVERY);
+        assertThat(tr.getValue().getAction()).isEqualTo("AHAMOVE_PICKUP");
+        verify(delivery, never()).pod(anyString(), any());
+    }
+
+    @Test
+    void webhook_accepted_doesNotStartDelivery() throws Exception {
+        order.setPartnerCode("AHAMOVE");
+        order.setPartnerOrderId("AHA1");
+        when(orderRepo.findFirstByPartnerOrderId("AHA1")).thenReturn(Optional.of(order));
+        service.applyWebhook(om.readTree("{\"_id\":\"AHA1\",\"status\":\"ACCEPTED\",\"path\":[{},{}]}"));
+        verify(orders, never()).transition(anyString(), any());
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.AT_DEST);
+        assertThat(order.getPartnerStatus()).isEqualTo("ACCEPTED");
     }
 
     private void outForDelivery() {

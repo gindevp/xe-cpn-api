@@ -195,7 +195,7 @@ public class AhamoveDispatchService {
         }
     }
 
-    /** Gọi Ahamove giao đơn: AT_DEST / FAILED_DELIVERY → OUT_FOR_DELIVERY. */
+    /** Gọi Ahamove giao đơn. Đơn ở nguyên kho giao / giao thất bại cho tới khi tài xế lấy hàng (IN PROCESS). */
     public OrderDetailDTO dispatch(String orderCode, DispatchRequest request) {
         final DispatchRequest req = request != null ? request : new DispatchRequest();
         if ((req.getLat() == null) != (req.getLng() == null)) {
@@ -260,16 +260,20 @@ public class AhamoveDispatchService {
         return orderFacadeService.getByCode(order.getOrderCode());
     }
 
-    /** Hủy đơn Ahamove khi tài xế chưa lấy hàng: OUT_FOR_DELIVERY → FAILED_DELIVERY (không tính lần giao thất bại). */
+    /**
+     * Hủy đơn Ahamove khi tài xế chưa lấy hàng.
+     * Chưa sang Đang giao thì đơn ở lại tab cũ. Đã lấy hàng thì về giao thất bại.
+     */
     public OrderDetailDTO cancel(String orderCode, String reason) {
         ShipmentOrder order = requireOrder(orderCode);
         dayClosureGuard.assertOrderMutable(order);
         if (!PARTNER_CODE.equals(order.getPartnerCode()) || !notBlank(order.getPartnerOrderId())) {
             throw new BadRequestAlertException("Đơn không giao qua Ahamove", ENTITY, "ahamoveNotDispatched");
         }
-        boolean lateCancel = order.getStatus() == OrderStatus.FAILED_DELIVERY && partnerActive(order);
-        if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY && !lateCancel) {
-            throw new BadRequestAlertException("Chỉ hủy khi đơn đang giao", ENTITY, "ahamoveCancelStatus");
+        OrderStatus st = order.getStatus();
+        boolean waitingPickup = st == OrderStatus.AT_DEST || st == OrderStatus.FAILED_DELIVERY;
+        if (st != OrderStatus.OUT_FOR_DELIVERY && !waitingPickup) {
+            throw new BadRequestAlertException("Chỉ hủy khi tài xế chưa lấy hàng hoặc đơn đang giao", ENTITY, "ahamoveCancelStatus");
         }
         String comment = notBlank(reason) ? reason.trim() : "CPN hủy giao";
         ahamoveOrderClient.cancelOrder(order.getPartnerOrderId(), comment);
@@ -299,6 +303,7 @@ public class AhamoveDispatchService {
 
         ShipmentOrder order = requireOrder(code);
         savePickupPhotos(order, u);
+        startDeliveryIfPickedUp(order);
         if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY) {
             if (order.getStatus() == OrderStatus.DELIVERED && !u.podUrls().isEmpty()) {
                 try {
@@ -652,8 +657,16 @@ public class AhamoveDispatchService {
         String actor = currentActor();
         tx.executeWithoutResult(status -> {
             ShipmentOrder order = requireOrder(orderCode);
-            if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY) {
-                throw new BadRequestAlertException("Chỉ xác nhận giao ship khi đơn đang giao", ENTITY, "ahamoveHandoverStatus");
+            if (
+                order.getStatus() != OrderStatus.AT_DEST &&
+                order.getStatus() != OrderStatus.FAILED_DELIVERY &&
+                order.getStatus() != OrderStatus.OUT_FOR_DELIVERY
+            ) {
+                throw new BadRequestAlertException(
+                    "Chỉ xác nhận giao ship khi hàng ở kho giao hoặc đang giao",
+                    ENTITY,
+                    "ahamoveHandoverStatus"
+                );
             }
             assertAhamoveOrder(order);
             assertAllPackages(order, req.getPackageSeqs());
@@ -680,9 +693,14 @@ public class AhamoveDispatchService {
     void applyShipDebtClaim(ShipmentOrder order, String actor) {
         assertAhamoveOrder(order);
         OrderStatus st = order.getStatus();
-        if (st != OrderStatus.OUT_FOR_DELIVERY && st != OrderStatus.DELIVERED && st != OrderStatus.FAILED_DELIVERY) {
+        if (
+            st != OrderStatus.AT_DEST &&
+            st != OrderStatus.OUT_FOR_DELIVERY &&
+            st != OrderStatus.DELIVERED &&
+            st != OrderStatus.FAILED_DELIVERY
+        ) {
             throw new BadRequestAlertException(
-                "Chỉ xác nhận nợ ở đơn đang giao, giao thành công hoặc giao thất bại",
+                "Chỉ xác nhận nợ ở đơn kho giao, đang giao, giao thành công hoặc giao thất bại",
                 ENTITY,
                 "ahamoveClaimStatus"
             );
@@ -837,17 +855,41 @@ public class AhamoveDispatchService {
             );
         }
 
-        OrderTransitionRequest tr = new OrderTransitionRequest();
-        tr.setToStatus(OrderStatus.OUT_FOR_DELIVERY);
-        tr.setAction("PUSH_SHIP");
-        tr.setDetail(
-            "AHAMOVE · " +
+        orderFacadeService.recordEvent(
+            order,
+            "AHAMOVE_BOOK",
+            "Book Ahamove " +
             created.orderId() +
+            " · " +
+            (created.status() != null ? created.status() : "ASSIGNING") +
+            " · chờ tài xế lấy hàng" +
             (created.totalPay() != null ? " · phí " + created.totalPay() : "") +
             (advance.signum() > 0 ? " · tài xế ứng " + PartnerAdvance.money(advance) : "") +
-            (pinned ? "" : " · không ghim GPS, Ahamove tự dò địa chỉ")
+            (pinned ? "" : " · không ghim GPS, Ahamove tự dò địa chỉ"),
+            actor
         );
-        orderFacadeService.transition(code, tr);
+    }
+
+    /** Tài xế đã bấm lấy hàng (IN PROCESS / giao xong / thất bại) thì đơn mới sang Đang giao. */
+    private void startDeliveryIfPickedUp(ShipmentOrder order) {
+        OrderStatus st = order.getStatus();
+        if (st != OrderStatus.AT_DEST && st != OrderStatus.FAILED_DELIVERY) {
+            return;
+        }
+        String partnerStatus = order.getPartnerStatus();
+        if (partnerStatus == null || !PARTNER_PICKED_UP.contains(partnerStatus.trim().toUpperCase())) {
+            return;
+        }
+        try {
+            OrderTransitionRequest tr = new OrderTransitionRequest();
+            tr.setToStatus(OrderStatus.OUT_FOR_DELIVERY);
+            tr.setAction("AHAMOVE_PICKUP");
+            tr.setDetail("Tài xế Ahamove đã lấy hàng · " + partnerStatus);
+            orderFacadeService.transition(order.getOrderCode(), tr);
+            order.setStatus(OrderStatus.OUT_FOR_DELIVERY);
+        } catch (RuntimeException e) {
+            LOG.warn("Ahamove {}: chưa chuyển {} sang đang giao — {}", order.getPartnerOrderId(), order.getOrderCode(), e.getMessage());
+        }
     }
 
     private void markCancelled(String code, String reason, String actor) {
