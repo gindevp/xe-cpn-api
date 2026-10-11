@@ -136,6 +136,14 @@ public class FinanceFacadeService {
     }
 
     /**
+     * Phiếu thu tự động sau nửa đêm: khoản nhận tiền trước {@code cutoff}, bỏ khoản người giao chưa xác nhận bù.
+     */
+    @Transactional(readOnly = true)
+    public List<CreateReceiptRequest> overnightReceiptRequests(Instant cutoff) {
+        return ReceiptNightlyPlan.requests(candidates(null, null), cutoff);
+    }
+
+    /**
      * Tiền NV đang giữ ở mọi VP (NV đổi VP vẫn thấy tiền VP cũ). Chỉ quét đơn NV có dính vào — người giữ tiền luôn
      * suy ra từ actor sự kiện / người thu / NV lấy hàng; lọc đúng chủ nợ do bên gọi làm.
      */
