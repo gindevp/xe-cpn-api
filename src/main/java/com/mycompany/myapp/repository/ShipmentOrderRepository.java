@@ -110,7 +110,7 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
         and o.pickedUpAt >= :from and o.pickedUpAt <= :to
         and o.status in (com.mycompany.myapp.domain.enumeration.OrderStatus.DELIVERED, com.mycompany.myapp.domain.enumeration.OrderStatus.RETURNED)
         and o.status not in :excluded
-        and (o.invoiceStatus is null or o.invoiceStatus = 'SKIPPED')
+        and (o.invoiceStatus is null or o.invoiceStatus = 'SKIPPED' or (o.invoiceStatus = 'FAILED' and (o.invoiceRetryCount is null or o.invoiceRetryCount < 3)))
         and (o.onCredit is null or o.onCredit = false)
         and coalesce(o.fareAmount, 0) <= coalesce(o.paidAmount, 0)
         order by o.pickedUpAt asc

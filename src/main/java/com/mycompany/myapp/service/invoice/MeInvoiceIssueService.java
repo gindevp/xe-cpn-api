@@ -16,11 +16,14 @@ import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.IssueInvoiceRequest;
 import com.mycompany.myapp.service.order.OrderMoney;
+import com.mycompany.myapp.service.realtime.ServerEventService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +35,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
@@ -40,7 +45,8 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li>Công tắc tự xuất tắt (mặc định): giữ cách cũ — đơn có yêu cầu HĐ công ty tự xuất ngay khi giao thành công.</li>
  *   <li>Công tắc bật: {@link InvoiceAutoIssueService} xuất sau mốc thanh toán + 3 tiếng (DN nếu có yêu cầu, còn lại cá nhân).</li>
  * </ul>
- * Lỗi MISA → status=FAILED, không tự thử lại; kế toán xuất lại bằng tay / xuất bù.
+ * Lỗi gửi MISA được job thử lại tối đa 3 lần. Lần thứ 3 vẫn lỗi thì FAILED và báo admin.
+ * Thiếu dữ liệu HĐ (MST, tên, địa chỉ) thì FAILED ngay, không gọi lại.
  */
 @Service
 public class MeInvoiceIssueService {
@@ -56,6 +62,8 @@ public class MeInvoiceIssueService {
     public static final String STATUS_SKIPPED = "SKIPPED";
     /** Kế toán tích "đã xuất cá nhân" (xuất ngoài hệ thống) — hệ thống không gửi MISA cho đơn này nữa. */
     public static final String STATUS_MANUAL = "MANUAL";
+    /** Số lần gửi MISA (kể cả lần đầu). Hết mức thì FAILED và báo admin. */
+    public static final int MAX_MISA_ATTEMPTS = 3;
 
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
@@ -67,6 +75,12 @@ public class MeInvoiceIssueService {
     private final ObjectMapper objectMapper;
     private final boolean issueOnlyWhenRequested;
     private PhoneTaxLinkService phoneTaxLinks;
+    private ServerEventService serverEventService;
+
+    @Autowired
+    void setServerEventService(ServerEventService serverEventService) {
+        this.serverEventService = serverEventService;
+    }
 
     /**
      * Đơn chưa khai đủ HĐ công ty thì lấy MST đã lưu của người gửi hoặc người nhận.
@@ -237,6 +251,9 @@ public class MeInvoiceIssueService {
         if (!paymentReached(order)) {
             return "NOT_PAID_YET";
         }
+        if (!InvoicePolicy.isDone(order)) {
+            return "NOT_DONE";
+        }
         if (OrderMoney.hasUnpaidResidue(order) && !Boolean.TRUE.equals(order.getOnCredit())) {
             return "UNPAID_RESIDUE";
         }
@@ -289,8 +306,11 @@ public class MeInvoiceIssueService {
             return "NOT_FOUND";
         }
         String st = order.getInvoiceStatus();
-        if (st != null && !STATUS_SKIPPED.equals(st)) {
+        if (st != null && !STATUS_SKIPPED.equals(st) && !retryableMisaFailure(order)) {
             return "ALREADY";
+        }
+        if (retryableMisaFailure(order) && misaAttempts(order) < 1) {
+            order.setInvoiceRetryCount(1);
         }
         if (Boolean.TRUE.equals(order.getOnCredit())) {
             return "ON_CREDIT";
@@ -422,15 +442,15 @@ public class MeInvoiceIssueService {
         if (InvoicePolicy.TYPE_COMPANY.equals(type)) {
             String buyerTax = blankToEmpty(order.getInvoiceTaxCode());
             if (buyerTax.isBlank()) {
-                markFailed(order, amounts, "Thiếu MST người mua — không gửi MISA");
+                failWithoutRetry(order, amounts, "Thiếu MST người mua — không gửi MISA");
                 return;
             }
             if (!VietnamTaxCode.isValid(buyerTax)) {
-                markFailed(order, amounts, "MST người mua không hợp lệ — không gửi MISA");
+                failWithoutRetry(order, amounts, "MST người mua không hợp lệ — không gửi MISA");
                 return;
             }
             if (blankToEmpty(order.getInvoiceCompanyName()).isBlank() || blankToEmpty(order.getInvoiceCompanyAddress()).isBlank()) {
-                markFailed(order, amounts, "HĐ công ty cần Tên công ty + Địa chỉ");
+                failWithoutRetry(order, amounts, "HĐ công ty cần Tên công ty + Địa chỉ");
                 return;
             }
             order.setInvoiceTaxCode(VietnamTaxCode.normalize(buyerTax));
@@ -455,7 +475,7 @@ public class MeInvoiceIssueService {
             }
             applyPublishSuccess(order, result, type, false);
         } catch (Exception e) {
-            markFailed(order, amounts, e.getMessage());
+            noteMisaFailure(order, amounts, e.getMessage());
             LOG.warn("MISA issue failed order={}: {}", order.getOrderCode(), e.getMessage());
         }
     }
@@ -586,6 +606,7 @@ public class MeInvoiceIssueService {
         }
         order.setInvoiceIssuedAt(Instant.now());
         order.setInvoiceError(null);
+        order.setInvoiceRetryCount(0);
         shipmentOrderRepository.save(order);
         rememberBuyerTax(order);
         LOG.info(
@@ -812,6 +833,66 @@ public class MeInvoiceIssueService {
         order.setInvoiceVatAmount(amounts.vat());
         order.setInvoiceError(truncate(message));
         shipmentOrderRepository.save(order);
+    }
+
+    /** Thiếu dữ liệu HĐ: không gửi lại. Hết lượt để job không nhặt. */
+    private void failWithoutRetry(ShipmentOrder order, MeInvoiceAmounts.Breakdown amounts, String message) {
+        order.setInvoiceRetryCount(MAX_MISA_ATTEMPTS);
+        markFailed(order, amounts, message);
+        alertInvoiceError(order, message);
+    }
+
+    /**
+     * Lỗi gửi MISA. Chưa đủ {@link #MAX_MISA_ATTEMPTS} thì bỏ FAILED để job nhặt lại ở nhịp sau.
+     * Lần chót giữ FAILED và báo admin.
+     */
+    private void noteMisaFailure(ShipmentOrder order, MeInvoiceAmounts.Breakdown amounts, String message) {
+        int next = misaAttempts(order) + 1;
+        order.setInvoiceRetryCount(next);
+        if (next >= MAX_MISA_ATTEMPTS) {
+            markFailed(order, amounts, message);
+            alertInvoiceError(order, message);
+            return;
+        }
+        order.setInvoiceStatus(null);
+        order.setInvoiceGrossAmount(amounts.gross());
+        order.setInvoiceNetAmount(amounts.net());
+        order.setInvoiceVatAmount(amounts.vat());
+        order.setInvoiceError(truncate(message));
+        shipmentOrderRepository.save(order);
+    }
+
+    static boolean retryableMisaFailure(ShipmentOrder order) {
+        return order != null && STATUS_FAILED.equals(order.getInvoiceStatus()) && misaAttempts(order) < MAX_MISA_ATTEMPTS;
+    }
+
+    private static int misaAttempts(ShipmentOrder order) {
+        Integer n = order.getInvoiceRetryCount();
+        return n == null ? 0 : n;
+    }
+
+    private void alertInvoiceError(ShipmentOrder order, String message) {
+        ServerEventService events = serverEventService;
+        if (events == null) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("orderCode", order.getOrderCode());
+        payload.put("message", truncate(message));
+        payload.put("attempts", misaAttempts(order));
+        payload.put("at", Instant.now().toString());
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        events.invoiceError(payload);
+                    }
+                }
+            );
+        } else {
+            events.invoiceError(payload);
+        }
     }
 
     /** Đơn huỷ (đã trả tiền khách) hoặc đang có ngoại lệ mở: không tự xuất, không xuất bù. Null = được xuất. */

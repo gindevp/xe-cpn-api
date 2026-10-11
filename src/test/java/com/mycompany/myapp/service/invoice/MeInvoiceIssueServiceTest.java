@@ -25,6 +25,7 @@ import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.IssueInvoiceRequest;
+import com.mycompany.myapp.service.realtime.ServerEventService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -158,7 +159,8 @@ class MeInvoiceIssueServiceTest {
 
         ShipmentOrder out = service.issueManual("VT0001ABCD", validReq(), "dieuphoi1");
 
-        assertThat(out.getInvoiceStatus()).isEqualTo(MeInvoiceIssueService.STATUS_FAILED);
+        assertThat(out.getInvoiceStatus()).isNull();
+        assertThat(out.getInvoiceRetryCount()).isEqualTo(1);
         assertThat(out.getInvoiceError()).contains("MISA 500");
         ArgumentCaptor<OrderEvent> ev = ArgumentCaptor.forClass(OrderEvent.class);
         verify(eventRepo).save(ev.capture());
@@ -431,8 +433,17 @@ class MeInvoiceIssueServiceTest {
     }
 
     @Test
-    void backfill_returningPaid_noOpenIssue_issues() {
+    void backfill_notDone_skipped() {
+        paidSenderOrder(OrderStatus.AT_DEST);
+        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("NOT_DONE");
         paidSenderOrder(OrderStatus.RETURNING);
+        assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo("NOT_DONE");
+        verify(client, never()).publish(any());
+    }
+
+    @Test
+    void backfill_returningPaid_noOpenIssue_issues() {
+        paidSenderOrder(OrderStatus.RETURNED);
         order.setIssue(issue(IssueType.EXCEPTION, IssueStatus.RESOLVED));
         publishOk();
         assertThat(service.backfillOne("VT0001ABCD", "k")).isEqualTo(MeInvoiceIssueService.STATUS_ISSUED);
@@ -517,9 +528,53 @@ class MeInvoiceIssueServiceTest {
     }
 
     @Test
-    void autoIssue_failedNotRetried() {
+    void autoIssue_failedCountsAsFirstAttempt_thenRetries() {
         order.setId(7L);
         order.setInvoiceStatus(MeInvoiceIssueService.STATUS_FAILED);
+        order.setInvoiceRetryCount(0);
+        when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
+        when(client.publish(any(ObjectNode.class))).thenThrow(new IllegalStateException("timeout"));
+
+        assertThat(service.autoIssueOne(7L)).isNull();
+        assertThat(order.getInvoiceRetryCount()).isEqualTo(2);
+        assertThat(order.getInvoiceStatus()).isNull();
+        verify(client).publish(any(ObjectNode.class));
+    }
+
+    @Test
+    void autoIssue_thirdMisaFailure_marksFailedAndAlertsAdmin() {
+        order.setId(7L);
+        order.setInvoiceRetryCount(2);
+        when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
+        when(client.publish(any(ObjectNode.class))).thenThrow(new IllegalStateException("timeout"));
+        ServerEventService events = mock(ServerEventService.class);
+        service.setServerEventService(events);
+
+        assertThat(service.autoIssueOne(7L)).isEqualTo(MeInvoiceIssueService.STATUS_FAILED);
+        assertThat(order.getInvoiceRetryCount()).isEqualTo(3);
+        verify(events).invoiceError(any());
+    }
+
+    @Test
+    void autoIssue_missingCompanyData_failsOnceAndAlerts() {
+        order.setId(7L);
+        order.setInvoiceRequested(true);
+        order.setInvoiceTaxCode("abc");
+        when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
+        ServerEventService events = mock(ServerEventService.class);
+        service.setServerEventService(events);
+
+        assertThat(service.autoIssueOne(7L)).isEqualTo(MeInvoiceIssueService.STATUS_FAILED);
+        assertThat(order.getInvoiceRetryCount()).isEqualTo(MeInvoiceIssueService.MAX_MISA_ATTEMPTS);
+        verify(client, never()).publish(any());
+        verify(events).invoiceError(any());
+    }
+
+    @Test
+    void autoIssue_failedExhausted_notRetried() {
+        order.setId(7L);
+        order.setInvoiceStatus(MeInvoiceIssueService.STATUS_FAILED);
+        order.setInvoiceRetryCount(MeInvoiceIssueService.MAX_MISA_ATTEMPTS);
         when(orderRepo.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
         assertThat(service.autoIssueOne(7L)).isEqualTo("ALREADY");
         verify(client, never()).publish(any());

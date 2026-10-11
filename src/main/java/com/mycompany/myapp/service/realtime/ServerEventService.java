@@ -156,6 +156,11 @@ public class ServerEventService {
         integrationAlert("tax-lookup-error", payload);
     }
 
+    /** Event "invoice-error" — MISA hết 3 lần gửi hoặc thiếu dữ liệu HĐ. Cùng nhóm người nhận với Auto Call. */
+    public void invoiceError(Map<String, Object> payload) {
+        integrationAlert("invoice-error", payload);
+    }
+
     private void integrationAlert(String event, Map<String, Object> payload) {
         if (executor == null || subscribers.stream().noneMatch(Subscriber::integrationAlerts)) {
             return;

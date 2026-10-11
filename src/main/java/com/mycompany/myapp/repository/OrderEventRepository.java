@@ -72,7 +72,7 @@ public interface OrderEventRepository extends JpaRepository<OrderEvent, Long> {
         and e.order.status = com.mycompany.myapp.domain.enumeration.OrderStatus.DELIVERED
         and e.order.paymentTerm is not null
         and e.order.paymentTerm <> com.mycompany.myapp.domain.enumeration.PaymentTerm.GUI_TRA
-        and (e.order.invoiceStatus is null or e.order.invoiceStatus = 'SKIPPED')
+        and (e.order.invoiceStatus is null or e.order.invoiceStatus = 'SKIPPED' or (e.order.invoiceStatus = 'FAILED' and (e.order.invoiceRetryCount is null or e.order.invoiceRetryCount < 3)))
         and (e.order.onCredit is null or e.order.onCredit = false)
         and coalesce(e.order.fareAmount, 0) <= coalesce(e.order.paidAmount, 0)
         """
