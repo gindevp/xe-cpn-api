@@ -55,7 +55,7 @@ jobs:
           key: ${{ secrets.CPN_API_SSH_KEY }}
           port: ${{ secrets.CPN_API_SSH_PORT }}
           command_timeout: 20m
-          script_stop: true
+          script_stop: false
           envs: SPRING_DATASOURCE_PASSWORD,JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET
           script: |
             set -eu
@@ -63,19 +63,18 @@ jobs:
             test -f /opt/cpn-api/cpn-0.0.1-SNAPSHOT.jar
             docker rm -f cpn-api >/dev/null 2>&1 || true
             mv -f /opt/cpn-api/cpn-0.0.1-SNAPSHOT.jar /opt/cpn-api/app.jar
-            if [ ! -f /etc/nginx/conf.d/cpn-api.conf ]; then
-              cat > /etc/nginx/conf.d/cpn-api.conf << 'EOF'
-            server {
-                listen 80;
-                server_name api.cpn.xevietnam.com;
-                location / {
-                    proxy_pass http://127.0.0.1:7080;
-                    proxy_set_header Host $host;
-                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto $scheme;
-                }
-            }
-            EOF
+            if [ ! -f /etc/nginx/conf.d/cpn-api.conf ] || grep -q DRONE_SSH /etc/nginx/conf.d/cpn-api.conf; then
+              printf '%s\n' \
+                'server {' \
+                '    listen 80;' \
+                '    server_name api.cpn.xevietnam.com;' \
+                '    location / {' \
+                '        proxy_pass http://127.0.0.1:7080;' \
+                '        proxy_set_header Host $host;' \
+                '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' \
+                '        proxy_set_header X-Forwarded-Proto $scheme;' \
+                '    }' \
+                '}' > /etc/nginx/conf.d/cpn-api.conf
               nginx -t
               systemctl reload nginx
             fi
