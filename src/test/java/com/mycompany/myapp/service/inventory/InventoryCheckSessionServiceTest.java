@@ -12,10 +12,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mycompany.myapp.domain.InventoryCheck;
 import com.mycompany.myapp.domain.InventoryCheckScan;
 import com.mycompany.myapp.domain.InventoryCheckStatus;
+import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.repository.InventoryCheckPhotoRepository;
 import com.mycompany.myapp.repository.InventoryCheckRepository;
 import com.mycompany.myapp.repository.InventoryCheckScanRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
+import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.dto.inventory.InventoryCheckDTO;
@@ -46,6 +48,9 @@ class InventoryCheckSessionServiceTest {
     private InventoryCheckScanRepository scanRepository;
 
     @Mock
+    private ShipmentOrderRepository orderRepository;
+
+    @Mock
     private InventoryCheckPhotoRepository photoRepository;
 
     @Mock
@@ -74,6 +79,7 @@ class InventoryCheckSessionServiceTest {
         service = new InventoryCheckSessionService(
             checkRepository,
             scanRepository,
+            orderRepository,
             checkService,
             staffAccessService,
             staffProfileRepository,
@@ -230,6 +236,25 @@ class InventoryCheckSessionServiceTest {
         assertThat(c.getMissingCount()).isEqualTo(1);
         assertThat(dto.getMissingCodes()).containsExactly("HD2");
         assertThat(dto.getScannedCodes()).containsExactly("HD1", "HD3");
+    }
+
+    @Test
+    void complete_dropsOrdersCreatedAfterSessionOpened() {
+        Instant opened = Instant.parse("2026-10-11T13:00:00Z");
+        InventoryCheck c = open(1L, opened);
+        when(checkRepository.findForUpdate(1L)).thenReturn(Optional.of(c));
+        when(scanRepository.findByCheckIdOrderByIdAsc(1L)).thenReturn(List.of(scan(1, "HD1", 1, "nam")));
+        ShipmentOrder late = new ShipmentOrder();
+        late.setOrderCode("HD2");
+        late.setCreatedAt(opened.plusSeconds(60));
+        when(orderRepository.findWithOfficesByOrderCodeIn(any())).thenReturn(List.of(late));
+
+        service.complete(1L, new CompleteRequest(List.of(new ExpectedOrder("HD1", List.of(1)), new ExpectedOrder("HD2", List.of(1)))));
+
+        assertThat(c.getSystemCount()).isEqualTo(1);
+        assertThat(c.getSystemPkgCount()).isEqualTo(1);
+        assertThat(c.getMissingCount()).isZero();
+        assertThat(c.getMissingCodesJson()).doesNotContain("HD2");
     }
 
     @Test

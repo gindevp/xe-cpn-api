@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mycompany.myapp.domain.InventoryCheck;
 import com.mycompany.myapp.domain.InventoryCheckScan;
 import com.mycompany.myapp.domain.InventoryCheckStatus;
+import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.repository.InventoryCheckRepository;
 import com.mycompany.myapp.repository.InventoryCheckScanRepository;
+import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
@@ -43,6 +45,7 @@ public class InventoryCheckSessionService {
 
     private final InventoryCheckRepository checkRepository;
     private final InventoryCheckScanRepository scanRepository;
+    private final ShipmentOrderRepository orderRepository;
     private final InventoryCheckService checkService;
     private final StaffAccessService staffAccessService;
     private final StaffProfileRepository staffProfileRepository;
@@ -51,6 +54,7 @@ public class InventoryCheckSessionService {
     public InventoryCheckSessionService(
         InventoryCheckRepository checkRepository,
         InventoryCheckScanRepository scanRepository,
+        ShipmentOrderRepository orderRepository,
         InventoryCheckService checkService,
         StaffAccessService staffAccessService,
         StaffProfileRepository staffProfileRepository,
@@ -58,6 +62,7 @@ public class InventoryCheckSessionService {
     ) {
         this.checkRepository = checkRepository;
         this.scanRepository = scanRepository;
+        this.orderRepository = orderRepository;
         this.checkService = checkService;
         this.staffAccessService = staffAccessService;
         this.staffProfileRepository = staffProfileRepository;
@@ -75,7 +80,10 @@ public class InventoryCheckSessionService {
 
     public record ExpectedOrder(String orderCode, List<Integer> packageSeqs) {}
 
-    /** Máy bấm Hoàn tất gửi tồn kho mới nhất (đơn → các kiện phải có trong kho). */
+    /**
+     * Máy bấm Hoàn tất gửi tồn kho (đơn → các kiện phải có trong kho).
+     * Máy chủ bỏ đơn tạo sau giờ mở phiên: kiểm lúc 20:00 không tính đơn phát sinh từ 20:01.
+     */
     public record CompleteRequest(List<ExpectedOrder> expected) {}
 
     /** Phiên đang mở của VP (đã tự đóng nếu mở từ hôm trước). */
@@ -174,6 +182,7 @@ public class InventoryCheckSessionService {
                 expected.computeIfAbsent(e.orderCode().trim().toUpperCase(Locale.ROOT), k -> new HashSet<>()).addAll(seqs);
             }
         }
+        dropOrdersCreatedAfterOpen(expected, check.getOpenedAt());
         Map<String, Set<Integer>> scanned = new LinkedHashMap<>();
         for (InventoryCheckScan s : scanRepository.findByCheckIdOrderByIdAsc(checkId)) {
             scanned.computeIfAbsent(s.getOrderCode().toUpperCase(Locale.ROOT), k -> new HashSet<>()).add(s.getPackageSeq());
@@ -197,6 +206,25 @@ public class InventoryCheckSessionService {
         check.setScannedCodesJson(toJson(new ArrayList<>(scanned.keySet())));
         check.setMissingCodesJson(toJson(t.missingCodes()));
         return checkService.toDto(checkRepository.save(check));
+    }
+
+    /** Đơn tạo sau giờ mở phiên không thuộc mốc kiểm kho đó. */
+    private void dropOrdersCreatedAfterOpen(Map<String, Set<Integer>> expected, Instant openedAt) {
+        if (openedAt == null || expected.isEmpty()) {
+            return;
+        }
+        List<ShipmentOrder> orders = orderRepository.findWithOfficesByOrderCodeIn(expected.keySet());
+        if (orders == null) {
+            return;
+        }
+        for (ShipmentOrder order : orders) {
+            if (order.getOrderCode() == null || order.getCreatedAt() == null) {
+                continue;
+            }
+            if (order.getCreatedAt().isAfter(openedAt)) {
+                expected.remove(order.getOrderCode().trim().toUpperCase(Locale.ROOT));
+            }
+        }
     }
 
     record Tally(int systemPkg, int checkedPkg, int extraPkg, List<String> missingCodes) {}
