@@ -63,6 +63,14 @@ public class AhamoveDispatchService {
     public static final String CAPTION_DROP = "Shipper giao";
     private static final java.util.Set<String> PARTNER_DONE = java.util.Set.of("CANCELLED", "COMPLETED", "FAILED");
 
+    private static boolean isPickedUpStatus(String status) {
+        if (status == null) {
+            return false;
+        }
+        String key = status.trim().toUpperCase();
+        return "IN PROCESS".equals(key) || "IN_PROCESS".equals(key) || "COMPLETED".equals(key) || "FAILED".equals(key);
+    }
+
     /** Nhãn tiếng Việt cho status / sub_status Ahamove. Mã lạ giữ nguyên. */
     static String viStatus(String code) {
         if (code == null || code.isBlank()) {
@@ -1000,6 +1008,10 @@ public class AhamoveDispatchService {
             : u.status();
         String sub = upper(u.subStatus());
         if (sub != null && sub.isBlank()) {
+            sub = null;
+        }
+        String shownStatus = newStatus != null ? newStatus : before;
+        if (isPickedUpStatus(shownStatus) && ("BOARDED".equals(sub) || "ARRIVED".equals(sub))) {
             sub = null;
         }
         if (newStatus != null) {
