@@ -393,6 +393,9 @@ public class OrderFacadeService {
         java.util.Set<Long> withGoodsPhoto = goodsPhotoRepository == null || pageIds.isEmpty()
             ? java.util.Set.of()
             : new java.util.HashSet<>(goodsPhotoRepository.findOrderIdsIn(pageIds));
+        java.util.Set<Long> withPodPhoto = orderPodPhotoRepository == null || pageIds.isEmpty()
+            ? java.util.Set.of()
+            : new java.util.HashSet<>(orderPodPhotoRepository.findOrderIdsIn(pageIds));
         java.util.Map<String, String> codProcessorNames = staffNamesByLogin(
             page.getContent().stream().map(ShipmentOrder::getCodExportedBy).toList()
         );
@@ -404,6 +407,7 @@ public class OrderFacadeService {
             applyCreator(dto, creators.get(o.getId()), creatorProfiles);
             applyStageTimes(dto, stageTimes.getOrDefault(o.getId(), java.util.Map.of()));
             dto.setHasGoodsPhoto(withGoodsPhoto.contains(o.getId()));
+            dto.setHasPodPhoto(withPodPhoto.contains(o.getId()) || !isBlank(o.getPartnerPodUrl()));
             if (o.getCodExportedBy() != null) {
                 dto.setCodExportedByName(codProcessorNames.get(o.getCodExportedBy().trim().toLowerCase()));
             }
@@ -2114,6 +2118,9 @@ public class OrderFacadeService {
         if (o.getId() != null) {
             applyStageTimes(dto, stageEventTimes(List.of(o.getId())).getOrDefault(o.getId(), java.util.Map.of()));
             dto.setHasGoodsPhoto(goodsPhotoRepository != null && goodsPhotoRepository.existsByOrderId(o.getId()));
+            dto.setHasPodPhoto(
+                (orderPodPhotoRepository != null && orderPodPhotoRepository.existsByOrder_Id(o.getId())) || !isBlank(o.getPartnerPodUrl())
+            );
         }
     }
 

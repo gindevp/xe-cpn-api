@@ -79,6 +79,8 @@ public class OrderSummaryDTO {
     private List<String> podPhotoCaptions = new ArrayList<>();
     /** Khách gửi ảnh đơn hàng khi tạo đơn — ảnh lấy qua GET /api/orders/{code}/goods-photo. */
     private boolean hasGoodsPhoto;
+    /** Có ít nhất một ảnh POD (nhận / giao / điều phối giao ship). */
+    private boolean hasPodPhoto;
     /** Người thực nhận — gắn khi DELIVERED. */
     private String receiverActualName;
     private String receiverActualPhone;
@@ -603,6 +605,14 @@ public class OrderSummaryDTO {
 
     public void setHasGoodsPhoto(boolean hasGoodsPhoto) {
         this.hasGoodsPhoto = hasGoodsPhoto;
+    }
+
+    public boolean isHasPodPhoto() {
+        return hasPodPhoto;
+    }
+
+    public void setHasPodPhoto(boolean hasPodPhoto) {
+        this.hasPodPhoto = hasPodPhoto;
     }
 
     public List<String> getPodPhotos() {

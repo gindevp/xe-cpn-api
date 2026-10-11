@@ -1,6 +1,7 @@
 package com.mycompany.myapp.repository;
 
 import com.mycompany.myapp.domain.OrderPodPhoto;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -41,4 +42,10 @@ public interface OrderPodPhotoRepository extends JpaRepository<OrderPodPhoto, Lo
     List<OrderPodPhoto> findByOrder_IdOrderBySequenceNoAsc(Long orderId);
 
     long countByOrder_Id(Long orderId);
+
+    boolean existsByOrder_Id(Long orderId);
+
+    /** Đơn nào trong lô có ảnh POD — không đọc nội dung ảnh. */
+    @Query("select distinct p.order.id from OrderPodPhoto p where p.order.id in :orderIds")
+    List<Long> findOrderIdsIn(@Param("orderIds") Collection<Long> orderIds);
 }
