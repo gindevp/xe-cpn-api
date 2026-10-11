@@ -2159,6 +2159,7 @@ public class OrderFacadeService {
         dto.setPartnerFeeAmount(o.getPartnerFeeAmount());
         dto.setPartnerOrderId(o.getPartnerOrderId());
         dto.setPartnerStatus(o.getPartnerStatus());
+        dto.setPartnerSubStatus(o.getPartnerSubStatus());
         dto.setPartnerTrackingUrl(o.getPartnerTrackingUrl());
         dto.setPartnerDriverName(o.getPartnerDriverName());
         dto.setPartnerDriverPhone(o.getPartnerDriverPhone());

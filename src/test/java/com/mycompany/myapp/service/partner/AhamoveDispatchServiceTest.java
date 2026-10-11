@@ -13,6 +13,12 @@ class AhamoveDispatchServiceTest {
     private final ObjectMapper om = new ObjectMapper();
 
     @Test
+    void viFailReason_translatesRecipientDoesNotShowUp() {
+        assertThat(AhamoveDispatchService.viFailReason("Recipient does not show up")).isEqualTo("Người nhận không có mặt");
+        assertThat(AhamoveDispatchService.viFailReason("Không nghe máy")).isEqualTo("Không nghe máy");
+    }
+
+    @Test
     void stripStopSuffix_removesStopIndexOnly() {
         assertThat(AhamoveDispatchService.stripStopSuffix("24AB7XQ9-1")).isEqualTo("24AB7XQ9");
         assertThat(AhamoveDispatchService.stripStopSuffix("24AB7XQ9")).isEqualTo("24AB7XQ9");

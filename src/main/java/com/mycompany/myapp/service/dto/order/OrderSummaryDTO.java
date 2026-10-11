@@ -53,6 +53,7 @@ public class OrderSummaryDTO {
     private BigDecimal partnerFeeAmount;
     private String partnerOrderId;
     private String partnerStatus;
+    private String partnerSubStatus;
     private String partnerTrackingUrl;
     private String partnerDriverName;
     private String partnerDriverPhone;
@@ -458,6 +459,14 @@ public class OrderSummaryDTO {
 
     public void setPartnerStatus(String partnerStatus) {
         this.partnerStatus = partnerStatus;
+    }
+
+    public String getPartnerSubStatus() {
+        return partnerSubStatus;
+    }
+
+    public void setPartnerSubStatus(String partnerSubStatus) {
+        this.partnerSubStatus = partnerSubStatus;
     }
 
     public String getPartnerTrackingUrl() {

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261011133000-partner-sub-status" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="shipment_order" columnName="partner_sub_status"/>
+            </not>
+        </preConditions>
+        <comment>Trạng thái phụ Ahamove (BOARDED, ARRIVED, COMPLETING, IN_RETURN, RETURNED).</comment>
+        <addColumn tableName="shipment_order">
+            <column name="partner_sub_status" type="varchar(40)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

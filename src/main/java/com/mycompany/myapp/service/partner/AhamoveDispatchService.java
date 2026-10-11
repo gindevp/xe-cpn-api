@@ -62,6 +62,77 @@ public class AhamoveDispatchService {
     public static final String CAPTION_PICKUP = "Shipper nhận";
     public static final String CAPTION_DROP = "Shipper giao";
     private static final java.util.Set<String> PARTNER_DONE = java.util.Set.of("CANCELLED", "COMPLETED", "FAILED");
+
+    /** Nhãn tiếng Việt cho status / sub_status Ahamove. Mã lạ giữ nguyên. */
+    static String viStatus(String code) {
+        if (code == null || code.isBlank()) {
+            return "";
+        }
+        return switch (code.trim().toUpperCase()) {
+            case "IDLE" -> "đơn hẹn giờ";
+            case "ASSIGNING" -> "đang tìm tài xế";
+            case "ACCEPTED" -> "tài xế đã nhận";
+            case "CONFIRMING" -> "đang xác nhận";
+            case "PAYING" -> "đang thanh toán";
+            case "IN PROCESS", "IN_PROCESS" -> "tài xế đã lấy hàng";
+            case "COMPLETED" -> "hoàn tất";
+            case "FAILED" -> "giao thất bại";
+            case "CANCELLED" -> "đã hủy";
+            case "BOARDED" -> "sắp tới điểm lấy";
+            case "ARRIVED" -> "đã tới điểm lấy";
+            case "COMPLETING" -> "sắp tới điểm giao";
+            case "IN_RETURN" -> "đang hoàn hàng";
+            case "RETURNED" -> "đã hoàn về người gửi";
+            default -> code.trim();
+        };
+    }
+
+    /** fail_comment / cancel_comment tiếng Anh của Ahamove. Câu không khớp giữ nguyên. */
+    static String viFailReason(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return raw;
+        }
+        String body = raw.trim().replaceFirst("(?i)^ahamove:\\s*", "");
+        String key = body.toLowerCase(java.util.Locale.ROOT);
+        if (key.contains("recipient does not show up")) {
+            return "Người nhận không có mặt";
+        }
+        if (key.contains("cannot contact") || key.contains("could not contact") || key.contains("unable to contact")) {
+            return "Không liên lạc được người nhận";
+        }
+        if (key.contains("does not pick up") || key.contains("does not answer") || key.contains("not answering")) {
+            return "Người nhận không nghe máy";
+        }
+        if (key.contains("reschedul")) {
+            return "Người nhận hẹn giao lại";
+        }
+        if (key.contains("wrong address") || key.contains("incorrect address") || (key.contains("change") && key.contains("address"))) {
+            return "Sai hoặc đổi địa chỉ giao";
+        }
+        if (key.contains("refus")) {
+            return "Người nhận từ chối nhận hàng";
+        }
+        if (key.contains("wrong phone") || key.contains("incorrect phone") || key.contains("invalid phone")) {
+            return "Sai số điện thoại người nhận";
+        }
+        if (key.contains("return to sender") || key.contains("asked to return")) {
+            return "Người gửi yêu cầu hoàn hàng";
+        }
+        if (key.contains("auto cancel, no driver accepted")) {
+            return "Tự hủy vì không có tài xế nhận";
+        }
+        if (key.contains("asked") && key.contains("cancel")) {
+            return "Tài xế yêu cầu hủy";
+        }
+        if (key.contains("waited too long")) {
+            return "Chờ quá lâu";
+        }
+        if (key.contains("too far")) {
+            return "Tài xế quá xa";
+        }
+        return raw.trim();
+    }
+
     /** Tài xế đã lấy hàng — phí Ahamove phát sinh (huỷ trước lúc này thì không mất phí). */
     static final java.util.Set<String> PARTNER_PICKED_UP = java.util.Set.of("IN PROCESS", "IN_PROCESS", "COMPLETED", "FAILED");
 
@@ -328,7 +399,7 @@ public class AhamoveDispatchService {
                 }
             } else if ("FAILED".equals(u.dropStatus())) {
                 FailDeliveryRequest fail = new FailDeliveryRequest();
-                String reason = "Ahamove: " + (notBlank(u.failReason()) ? u.failReason() : "giao thất bại");
+                String reason = "Ahamove: " + (notBlank(u.failReason()) ? viFailReason(u.failReason()) : "giao thất bại");
                 fail.setReason(reason.length() > 255 ? reason.substring(0, 255) : reason);
                 deliveryFacadeService.failDelivery(code, fail);
             } else if ("CANCELLED".equals(u.status())) {
@@ -820,6 +891,7 @@ public class AhamoveDispatchService {
         order.setPartnerCode(PARTNER_CODE);
         order.setPartnerOrderId(created.orderId());
         order.setPartnerStatus(created.status());
+        order.setPartnerSubStatus(null);
         order.setPartnerTrackingUrl(truncate(created.sharedLink(), 500));
         order.setPartnerFeeAmount(created.totalPay());
         order.setPartnerDriverName(null);
@@ -861,7 +933,7 @@ public class AhamoveDispatchService {
             "Book Ahamove " +
             created.orderId() +
             " · " +
-            (created.status() != null ? created.status() : "ASSIGNING") +
+            viStatus(created.status() != null ? created.status() : "ASSIGNING") +
             " · chờ tài xế lấy hàng" +
             (created.totalPay() != null ? " · phí " + created.totalPay() : "") +
             (advance.signum() > 0 ? " · tài xế ứng " + PartnerAdvance.money(advance) : "") +
@@ -895,6 +967,7 @@ public class AhamoveDispatchService {
     private void markCancelled(String code, String reason, String actor) {
         ShipmentOrder order = requireOrder(code);
         order.setPartnerStatus("CANCELLED");
+        order.setPartnerSubStatus(null);
         order.setPartnerFailReason(truncate(reason, 500));
         order.setPartnerUpdatedAt(Instant.now());
         shipmentOrderRepository.save(order);
@@ -921,12 +994,18 @@ public class AhamoveDispatchService {
     private void savePartnerInfo(String code, WebhookUpdate u) {
         ShipmentOrder order = requireOrder(code);
         String before = order.getPartnerStatus();
+        String beforeSub = order.getPartnerSubStatus();
         String newStatus = u.dropStatus() != null && ("COMPLETED".equals(u.dropStatus()) || "FAILED".equals(u.dropStatus()))
             ? u.dropStatus()
             : u.status();
+        String sub = upper(u.subStatus());
+        if (sub != null && sub.isBlank()) {
+            sub = null;
+        }
         if (newStatus != null) {
             order.setPartnerStatus(truncate(newStatus, 40));
         }
+        order.setPartnerSubStatus(truncate(sub, 40));
         if (notBlank(u.driverName())) {
             order.setPartnerDriverName(truncate(u.driverName(), 100));
         }
@@ -943,18 +1022,23 @@ public class AhamoveDispatchService {
             order.setPartnerPodUrl(truncate(u.podUrls().get(0), 1000));
         }
         if (notBlank(u.failReason())) {
-            order.setPartnerFailReason(truncate(u.failReason(), 500));
+            order.setPartnerFailReason(truncate(viFailReason(u.failReason()), 500));
         }
         order.setPartnerUpdatedAt(Instant.now());
         shipmentOrderRepository.save(order);
 
-        if (newStatus != null && !newStatus.equals(before)) {
+        boolean statusChanged = newStatus != null && !newStatus.equals(before);
+        boolean subChanged = sub != null ? !sub.equals(beforeSub) : beforeSub != null;
+        if (statusChanged || subChanged) {
+            String label = viStatus(newStatus != null ? newStatus : before);
+            String subLabel = viStatus(sub);
             String detail =
                 "Ahamove " +
-                newStatus +
+                label +
+                (subLabel.isEmpty() ? "" : " · " + subLabel) +
                 (notBlank(u.driverName()) ? " · tài xế " + u.driverName() : "") +
                 (notBlank(u.driverPhone()) ? " " + u.driverPhone() : "") +
-                (notBlank(u.failReason()) ? " · " + u.failReason() : "");
+                (notBlank(u.failReason()) ? " · " + viFailReason(u.failReason()) : "");
             orderFacadeService.recordEvent(order, "AHAMOVE_STATUS", detail, "ahamove");
         }
         recordCashFeeIfPickedUp(order, newStatus);

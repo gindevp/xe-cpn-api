@@ -346,6 +346,11 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "partner_status", length = 40)
     private String partnerStatus;
 
+    /** sub_status Ahamove: BOARDED, ARRIVED, COMPLETING, IN_RETURN, RETURNED. */
+    @Size(max = 40)
+    @Column(name = "partner_sub_status", length = 40)
+    private String partnerSubStatus;
+
     @Size(max = 500)
     @Column(name = "partner_tracking_url", length = 500)
     private String partnerTrackingUrl;
@@ -1269,6 +1274,14 @@ public class ShipmentOrder implements Serializable {
 
     public void setPartnerStatus(String partnerStatus) {
         this.partnerStatus = partnerStatus;
+    }
+
+    public String getPartnerSubStatus() {
+        return partnerSubStatus;
+    }
+
+    public void setPartnerSubStatus(String partnerSubStatus) {
+        this.partnerSubStatus = partnerSubStatus;
     }
 
     public String getPartnerTrackingUrl() {
