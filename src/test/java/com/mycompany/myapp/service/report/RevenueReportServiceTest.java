@@ -67,6 +67,22 @@ class RevenueReportServiceTest {
     }
 
     @Test
+    void ahamoveOrderShowsPartnerFeeNotInternalDelivery() {
+        ShipmentOrder o = order();
+        o.setPartnerCode("AHAMOVE");
+        o.setPartnerFeeAmount(d(35_000));
+        assertThat(RevenueReportService.ahamoveFee(o)).isEqualByComparingTo("35000");
+        assertThat(RevenueReportService.internalDeliveryFee(o)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void internalDeliveryShowsDoorFeeWhenNotAhamove() {
+        ShipmentOrder o = order();
+        assertThat(RevenueReportService.ahamoveFee(o)).isEqualByComparingTo("0");
+        assertThat(RevenueReportService.internalDeliveryFee(o)).isEqualByComparingTo("20000");
+    }
+
+    @Test
     void legacyOrderWithoutGoodsFareDerivesIt() {
         ShipmentOrder o = order();
         o.setGoodsFareAmount(null);

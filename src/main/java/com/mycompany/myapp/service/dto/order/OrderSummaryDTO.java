@@ -51,6 +51,7 @@ public class OrderSummaryDTO {
     private String pickupStaffUsername;
     private String partnerCode;
     private BigDecimal partnerFeeAmount;
+    private String partnerPayMethod;
     private String partnerOrderId;
     private String partnerStatus;
     private String partnerSubStatus;
@@ -445,6 +446,14 @@ public class OrderSummaryDTO {
 
     public void setPartnerFeeAmount(BigDecimal partnerFeeAmount) {
         this.partnerFeeAmount = partnerFeeAmount;
+    }
+
+    public String getPartnerPayMethod() {
+        return partnerPayMethod;
+    }
+
+    public void setPartnerPayMethod(String partnerPayMethod) {
+        this.partnerPayMethod = partnerPayMethod;
     }
 
     public String getPartnerOrderId() {

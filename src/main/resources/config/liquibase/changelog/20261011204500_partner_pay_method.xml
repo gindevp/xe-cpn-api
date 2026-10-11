@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261011204500-partner-pay-method" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="shipment_order" columnName="partner_pay_method"/>
+            </not>
+        </preConditions>
+        <comment>Hình thức trả phí Ahamove lúc book: BALANCE (ví) hoặc CASH (tiền mặt).</comment>
+        <addColumn tableName="shipment_order">
+            <column name="partner_pay_method" type="varchar(20)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

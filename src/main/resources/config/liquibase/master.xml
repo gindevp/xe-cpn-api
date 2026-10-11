@@ -142,6 +142,7 @@
     <include file="config/liquibase/changelog/20261010001500_vehicle_depart_photo.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261010013000_app_database_slot.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261011133000_partner_sub_status.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261011204500_partner_pay_method.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
 

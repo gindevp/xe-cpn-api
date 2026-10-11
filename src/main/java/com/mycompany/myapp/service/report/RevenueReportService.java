@@ -60,7 +60,11 @@ public class RevenueReportService {
         BigDecimal codFee,
         BigDecimal declaredFee,
         BigDecimal discount,
-        BigDecimal total
+        BigDecimal total,
+        /** Phí trả Ahamove (lấy hoặc giao). Đã trừ một lần khỏi tổng doanh thu. */
+        BigDecimal ahamoveFee,
+        /** Phí giao tận nơi khi giao nội bộ. 0 nếu đơn book Ahamove. Không nằm trong tổng doanh thu. */
+        BigDecimal internalDeliveryFee
     ) {}
 
     public record Totals(
@@ -190,7 +194,9 @@ public class RevenueReportService {
                 s.codFee(),
                 s.declared(),
                 s.discount(),
-                s.total()
+                s.total(),
+                ahamoveFee(o),
+                internalDeliveryFee(o)
             )
         );
     }
@@ -206,6 +212,22 @@ public class RevenueReportService {
             }
         }
         return out;
+    }
+
+    /** Chi phí Ahamove đã lưu trên đơn. Không chia theo phiếu thu; tổng doanh thu đã trừ khoản này một lần. */
+    static BigDecimal ahamoveFee(ShipmentOrder o) {
+        if (o == null) {
+            return BigDecimal.ZERO;
+        }
+        return RevenueLedger.ahamoveCost(o.getPartnerCode(), o.getPartnerStatus(), o.getPartnerFeeAmount());
+    }
+
+    /** Phí giao tận nơi của đơn giao nội bộ. Đơn Ahamove để 0, phí đối tác nằm ở {@link #ahamoveFee}. */
+    static BigDecimal internalDeliveryFee(ShipmentOrder o) {
+        if (o == null || (o.getPartnerCode() != null && "AHAMOVE".equalsIgnoreCase(o.getPartnerCode().trim()))) {
+            return BigDecimal.ZERO;
+        }
+        return OrderMoney.nz(o.getDeliveryFeeAmount());
     }
 
     static Fees feesOf(ShipmentOrder o) {

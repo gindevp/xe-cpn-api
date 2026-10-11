@@ -2171,6 +2171,7 @@ public class OrderFacadeService {
         dto.setPickupStaffUsername(o.getPickupStaffUsername());
         dto.setPartnerCode(o.getPartnerCode());
         dto.setPartnerFeeAmount(o.getPartnerFeeAmount());
+        dto.setPartnerPayMethod(o.getPartnerPayMethod());
         dto.setPartnerOrderId(o.getPartnerOrderId());
         dto.setPartnerStatus(o.getPartnerStatus());
         dto.setPartnerSubStatus(o.getPartnerSubStatus());

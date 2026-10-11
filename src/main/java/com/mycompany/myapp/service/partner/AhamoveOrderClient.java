@@ -471,18 +471,28 @@ public class AhamoveOrderClient {
         if (link == null && order != null) {
             link = text(order, "shared_link");
         }
+        Double price = order != null ? number(order, "total_price") : null;
         Double pay = order != null ? number(order, "total_pay") : null;
-        if (pay == null && order != null) {
-            pay = number(order, "total_price");
-        }
         String serviceId = order != null ? text(order, "service_id") : null;
-        return new CreatedOrder(
-            orderId,
-            status,
-            link,
-            pay == null ? null : BigDecimal.valueOf(pay).setScale(0, RoundingMode.HALF_UP),
-            serviceId
-        );
+        return new CreatedOrder(orderId, status, link, billableFee(price, pay), serviceId);
+    }
+
+    /**
+     * Tiền phải trả Ahamove. Ví (BALANCE) thường trả {@code total_pay = 0} vì trừ trong ví;
+     * phí dịch vụ nằm ở {@code total_price}. Tiền mặt không có {@code total_price} thì dùng {@code total_pay}.
+     */
+    static BigDecimal billableFee(Double totalPrice, Double totalPay) {
+        Double chosen = null;
+        if (totalPrice != null && totalPrice > 0) {
+            chosen = totalPrice;
+        } else if (totalPay != null && totalPay > 0) {
+            chosen = totalPay;
+        } else if (totalPrice != null) {
+            chosen = totalPrice;
+        } else {
+            chosen = totalPay;
+        }
+        return chosen == null ? null : BigDecimal.valueOf(chosen).setScale(0, RoundingMode.HALF_UP);
     }
 
     static BigDecimal extractTotalPrice(JsonNode item) {

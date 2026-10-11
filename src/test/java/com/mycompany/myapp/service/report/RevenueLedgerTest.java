@@ -41,6 +41,23 @@ class RevenueLedgerTest {
     }
 
     @Test
+    void ahamoveFeeComesOffFareOnceAndCannotGoNegative() {
+        assertThat(RevenueLedger.ahamoveCost("AHAMOVE", "IN PROCESS", BigDecimal.valueOf(35_000))).isEqualByComparingTo("35000");
+        assertThat(RevenueLedger.ahamoveCost("ahamove", null, BigDecimal.valueOf(35_000))).isEqualByComparingTo("35000");
+        assertThat(RevenueLedger.ahamoveCost(null, null, BigDecimal.valueOf(35_000))).isEqualByComparingTo("0");
+        assertThat(RevenueLedger.ahamoveCost("AHAMOVE", "CANCELLED", BigDecimal.valueOf(35_000))).isEqualByComparingTo("0");
+        assertThat(
+            RevenueLedger.netFare(BigDecimal.valueOf(100_000), "AHAMOVE", "ASSIGNING", BigDecimal.valueOf(20_000))
+        ).isEqualByComparingTo("80000");
+        assertThat(
+            RevenueLedger.netFare(BigDecimal.valueOf(10_000), "AHAMOVE", "COMPLETED", BigDecimal.valueOf(35_000))
+        ).isEqualByComparingTo("0");
+        assertThat(RevenueLedger.netFare(BigDecimal.valueOf(100_000), null, null, BigDecimal.valueOf(20_000))).isEqualByComparingTo(
+            "100000"
+        );
+    }
+
+    @Test
     void missingFareMeansNoRevenue() {
         Map<Long, BigDecimal> s = RevenueLedger.allocateFare(null, List.of(line(1, 10, 20_000)));
         assertThat(s.get(1L)).isEqualByComparingTo("0");

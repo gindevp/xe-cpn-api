@@ -326,7 +326,7 @@ public class AhamoveDispatchService {
 
         String actor = currentActor();
         try {
-            tx.executeWithoutResult(status -> saveDispatched(order.getOrderCode(), created, req, advance, actor));
+            tx.executeWithoutResult(status -> saveDispatched(order.getOrderCode(), created, req, advance, actor, paymentMethod));
         } catch (RuntimeException e) {
             LOG.warn("Ahamove dispatch: lưu DB lỗi sau khi tạo đơn {} — hủy đơn Ahamove: {}", created.orderId(), e.getMessage());
             try {
@@ -431,7 +431,8 @@ public class AhamoveDispatchService {
         BigDecimal totalPay,
         List<String> podUrls,
         String failReason,
-        List<String> pickupPodUrls
+        List<String> pickupPodUrls,
+        String paymentMethod
     ) {}
 
     static WebhookUpdate parseWebhook(JsonNode body) {
@@ -468,7 +469,6 @@ public class AhamoveDispatchService {
         if (fail == null) {
             fail = text(body, "comment");
         }
-        Double pay = number(body, "total_pay");
         return new WebhookUpdate(
             id,
             upper(text(body, "status")),
@@ -477,10 +477,11 @@ public class AhamoveDispatchService {
             text(body, "supplier_name"),
             text(body, "supplier_id"),
             text(body, "shared_link"),
-            pay == null ? null : BigDecimal.valueOf(pay).setScale(0, java.math.RoundingMode.HALF_UP),
+            AhamoveOrderClient.billableFee(number(body, "total_price"), number(body, "total_pay")),
             pods,
             fail,
-            pickupPods
+            pickupPods,
+            payMethod(text(body, "payment_method"))
         );
     }
 
@@ -881,7 +882,8 @@ public class AhamoveDispatchService {
         AhamoveOrderClient.CreatedOrder created,
         DispatchRequest req,
         BigDecimal advanceSent,
-        String actor
+        String actor,
+        String paymentMethod
     ) {
         ShipmentOrder order = requireOrder(code);
         BigDecimal advance = assertDispatchable(order).advance();
@@ -902,6 +904,7 @@ public class AhamoveDispatchService {
         order.setPartnerSubStatus(null);
         order.setPartnerTrackingUrl(truncate(created.sharedLink(), 500));
         order.setPartnerFeeAmount(created.totalPay());
+        order.setPartnerPayMethod(payMethod(paymentMethod));
         order.setPartnerDriverName(null);
         order.setPartnerDriverPhone(null);
         order.setPartnerPodUrl(null);
@@ -943,7 +946,7 @@ public class AhamoveDispatchService {
             " · " +
             viStatus(created.status() != null ? created.status() : "ASSIGNING") +
             " · chờ tài xế lấy hàng" +
-            (created.totalPay() != null ? " · phí " + created.totalPay() : "") +
+            (created.totalPay() != null ? " · phí " + created.totalPay() + " (" + payMethodLabel(paymentMethod) + ")" : "") +
             (advance.signum() > 0 ? " · tài xế ứng " + PartnerAdvance.money(advance) : "") +
             (pinned ? "" : " · không ghim GPS, Ahamove tự dò địa chỉ"),
             actor
@@ -1031,6 +1034,9 @@ public class AhamoveDispatchService {
         }
         if (u.totalPay() != null && u.totalPay().signum() > 0) {
             order.setPartnerFeeAmount(u.totalPay());
+        }
+        if (u.paymentMethod() != null) {
+            order.setPartnerPayMethod(u.paymentMethod());
         }
         if (!u.podUrls().isEmpty()) {
             order.setPartnerPodUrl(truncate(u.podUrls().get(0), 1000));
@@ -1121,6 +1127,29 @@ public class AhamoveDispatchService {
 
     private static boolean notBlank(String s) {
         return s != null && !s.isBlank();
+    }
+
+    /** BALANCE = ví Ahamove, CASH = trả tài xế bằng tiền mặt. Giá trị khác bỏ qua. */
+    static String payMethod(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String v = raw.trim().toUpperCase();
+        if ("CASH".equals(v) || "BALANCE".equals(v)) {
+            return v;
+        }
+        return null;
+    }
+
+    static String payMethodLabel(String raw) {
+        String v = payMethod(raw);
+        if ("CASH".equals(v)) {
+            return "tiền mặt";
+        }
+        if ("BALANCE".equals(v)) {
+            return "ví";
+        }
+        return "chưa rõ";
     }
 
     private static String truncate(String s, int max) {

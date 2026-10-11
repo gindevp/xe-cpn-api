@@ -27,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
  *       ăn cước trước (khớp thứ tự trừ của phiếu thu: VP gửi → cước phía giao → COD).</li>
  *   <li>Đơn tồn: tạo trong khoảng, chưa kết thúc (giao / huỷ / hoàn xong) tại cuối khoảng, tính cho VP gửi;
  *       doanh thu = cước còn lại sau khi trừ phần cước đã lên phiếu thu của kỳ (không cộng 2 lần).</li>
+ *   <li>Cước dùng làm doanh thu = cước khách trả − phí Ahamove đã lưu trên đơn (không âm). Phí chỉ trừ một lần,
+ *       kể cả đơn có nhiều phiếu thu.</li>
  * </ul>
  */
 @Component
@@ -115,7 +117,7 @@ public class RevenueLedger {
         List<BacklogOrder> out = new ArrayList<>(rows.size());
         for (Object[] r : rows) {
             ShipmentOrder o = (ShipmentOrder) r[0];
-            BigDecimal remaining = OrderMoney.nz(o.getFareAmount())
+            BigDecimal remaining = netFare(o.getFareAmount(), o.getPartnerCode(), o.getPartnerStatus(), o.getPartnerFeeAmount())
                 .subtract(receipted.getOrDefault(o.getId(), BigDecimal.ZERO))
                 .max(BigDecimal.ZERO);
             out.add(new BacklogOrder(o, key(r[1]), remaining));
@@ -130,10 +132,13 @@ public class RevenueLedger {
         for (int i = 0; i < orderIds.size(); i += ID_CHUNK) {
             List<Long> chunk = orderIds.subList(i, Math.min(orderIds.size(), i + ID_CHUNK));
             for (Object[] r : em
-                .createQuery("select o.id, o.fareAmount from ShipmentOrder o where o.id in :ids", Object[].class)
+                .createQuery(
+                    "select o.id, o.fareAmount, o.partnerCode, o.partnerStatus, o.partnerFeeAmount from ShipmentOrder o where o.id in :ids",
+                    Object[].class
+                )
                 .setParameter("ids", chunk)
                 .getResultList()) {
-                fares.put((Long) r[0], OrderMoney.nz((BigDecimal) r[1]));
+                fares.put((Long) r[0], netFare((BigDecimal) r[1], (String) r[2], (String) r[3], (BigDecimal) r[4]));
             }
             for (Object[] r : em
                 .createQuery(
@@ -152,6 +157,22 @@ public class RevenueLedger {
             out.putAll(allocateFare(fares.getOrDefault(e.getKey(), BigDecimal.ZERO), e.getValue()));
         }
         return out;
+    }
+
+    /** Phí Ahamove còn phải trừ. Đơn không book Ahamove, hoặc đã hủy, thì bằng 0. */
+    static BigDecimal ahamoveCost(String partnerCode, String partnerStatus, BigDecimal partnerFee) {
+        if (partnerCode == null || !"AHAMOVE".equalsIgnoreCase(partnerCode.trim())) {
+            return BigDecimal.ZERO;
+        }
+        if (partnerStatus != null && "CANCELLED".equalsIgnoreCase(partnerStatus.trim())) {
+            return BigDecimal.ZERO;
+        }
+        return OrderMoney.nz(partnerFee);
+    }
+
+    /** Cước tính doanh thu: cước khách trả trừ phí Ahamove còn hiệu lực, không âm. */
+    static BigDecimal netFare(BigDecimal fare, String partnerCode, String partnerStatus, BigDecimal partnerFee) {
+        return OrderMoney.nz(fare).subtract(ahamoveCost(partnerCode, partnerStatus, partnerFee)).max(BigDecimal.ZERO);
     }
 
     /** Chia cước cho các dòng phiếu theo thứ tự lập phiếu; phần vượt cước là COD. */

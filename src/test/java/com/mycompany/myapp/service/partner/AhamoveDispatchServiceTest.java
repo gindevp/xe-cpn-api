@@ -122,6 +122,28 @@ class AhamoveDispatchServiceTest {
     }
 
     @Test
+    void parseCreated_walletPayZeroUsesTotalPrice() throws Exception {
+        String json =
+            """
+            {"order_id":"24AB7XQ9","status":"ASSIGNING",
+             "order":{"_id":"24AB7XQ9","total_pay":0,"total_price":32000}}
+            """;
+        AhamoveOrderClient.CreatedOrder c = AhamoveOrderClient.parseCreated(om.readTree(json));
+        assertThat(c.totalPay()).isEqualByComparingTo("32000");
+    }
+
+    @Test
+    void parseWebhook_walletFeeAndPaymentMethod() throws Exception {
+        String json =
+            """
+            {"_id":"24AB7XQ9","status":"ASSIGNING","payment_method":"BALANCE","total_pay":0,"total_price":27500}
+            """;
+        AhamoveDispatchService.WebhookUpdate u = AhamoveDispatchService.parseWebhook(om.readTree(json));
+        assertThat(u.totalPay()).isEqualByComparingTo("27500");
+        assertThat(u.paymentMethod()).isEqualTo("BALANCE");
+    }
+
+    @Test
     void parseCreated_missingId_throws() throws Exception {
         assertThatThrownBy(() -> AhamoveOrderClient.parseCreated(om.readTree("{\"status\":\"IDLE\"}"))).isInstanceOf(
             BadRequestAlertException.class

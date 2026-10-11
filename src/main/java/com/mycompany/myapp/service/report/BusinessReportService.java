@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Đơn giao thành công = đơn DELIVERED có lần POD cuối trong khoảng, theo VP giao (VP nhận);</li>
  *   <li>Đơn tồn = đơn tạo trong khoảng, chưa kết thúc (giao / huỷ / hoàn xong) tại cuối khoảng, theo VP gửi;
  *       DT đơn tồn = cước còn lại chưa lên phiếu thu của kỳ (xem {@link RevenueLedger});</li>
- *   <li>Tổng DT = DT phiếu thu + DT đơn tồn; Tổng số đơn = giao thành công + đơn tồn.</li>
+ *   <li>Tổng DT = DT phiếu thu + DT đơn tồn, đã trừ phí Ahamove; Tổng số đơn = giao thành công + đơn tồn.</li>
  * </ul>
  * Kỳ so sánh = cùng khoảng ngày lùi 1 tháng.
  */
@@ -74,7 +74,7 @@ public class BusinessReportService {
 
     public record OfficeRow(String officeCode, String officeName, long delivered, long backlog) {}
 
-    /** Một ngày trên biểu đồ: đơn gửi (tạo trong ngày), đơn nhận (giao trong ngày), doanh thu = tổng cước đơn gửi. */
+    /** Một ngày trên biểu đồ: đơn gửi (tạo trong ngày), đơn nhận (giao trong ngày), doanh thu = cước đơn gửi đã trừ phí Ahamove. */
     public record DayRow(LocalDate date, long sent, long received, BigDecimal revenue) {}
 
     public record Report(
@@ -247,7 +247,7 @@ public class BusinessReportService {
         String officeKey = office == null ? "" : office;
         List<Object[]> created = em
             .createQuery(
-                "select o.createdAt, o.fareAmount from ShipmentOrder o left join o.fromOffice fr" +
+                "select o.createdAt, o.fareAmount, o.partnerCode, o.partnerStatus, o.partnerFeeAmount from ShipmentOrder o left join o.fromOffice fr" +
                 " where o.createdAt >= :start and o.createdAt < :end" +
                 " and (:office = '' or upper(fr.code) = :office)",
                 Object[].class
@@ -262,7 +262,12 @@ public class BusinessReportService {
             }
             LocalDate day = ((Instant) r[0]).atZone(VN).toLocalDate();
             sent.computeIfAbsent(day, d -> new long[] { 0 })[0]++;
-            BigDecimal fare = r[1] instanceof BigDecimal b ? b : BigDecimal.ZERO;
+            BigDecimal fare = RevenueLedger.netFare(
+                r[1] instanceof BigDecimal b ? b : BigDecimal.ZERO,
+                r[2] instanceof String code ? code : null,
+                r[3] instanceof String status ? status : null,
+                r[4] instanceof BigDecimal fee ? fee : BigDecimal.ZERO
+            );
             revenue.merge(day, fare, BigDecimal::add);
         }
 

@@ -174,6 +174,11 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "partner_fee_amount", precision = 21, scale = 2)
     private BigDecimal partnerFeeAmount;
 
+    /** BALANCE = ví Ahamove, CASH = tiền mặt lúc book. */
+    @Size(max = 20)
+    @Column(name = "partner_pay_method", length = 20)
+    private String partnerPayMethod;
+
     /** Tiền thu hộ COD (không gồm phí thu hộ). */
     @DecimalMin(value = "0")
     @Column(name = "cod_amount", precision = 21, scale = 2)
@@ -906,6 +911,14 @@ public class ShipmentOrder implements Serializable {
 
     public void setPartnerFeeAmount(BigDecimal partnerFeeAmount) {
         this.partnerFeeAmount = partnerFeeAmount;
+    }
+
+    public String getPartnerPayMethod() {
+        return partnerPayMethod;
+    }
+
+    public void setPartnerPayMethod(String partnerPayMethod) {
+        this.partnerPayMethod = partnerPayMethod;
     }
 
     public BigDecimal getCodAmount() {
