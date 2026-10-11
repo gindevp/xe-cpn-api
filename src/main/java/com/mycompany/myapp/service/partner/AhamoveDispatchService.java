@@ -1011,7 +1011,9 @@ public class AhamoveDispatchService {
             sub = null;
         }
         String shownStatus = newStatus != null ? newStatus : before;
-        if (isPickedUpStatus(shownStatus) && ("BOARDED".equals(sub) || "ARRIVED".equals(sub))) {
+        if ("CANCELLED".equals(shownStatus)) {
+            sub = null;
+        } else if (isPickedUpStatus(shownStatus) && ("BOARDED".equals(sub) || "ARRIVED".equals(sub))) {
             sub = null;
         }
         if (newStatus != null) {
