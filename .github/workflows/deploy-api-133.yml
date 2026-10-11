@@ -49,6 +49,8 @@ jobs:
         env:
           SPRING_DATASOURCE_PASSWORD: ${{ secrets.CPN_DB_PASSWORD }}
           JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET: ${{ secrets.CPN_JWT_SECRET }}
+          CPN_VTHK_PASSWORD: ${{ secrets.CPN_VTHK_PASSWORD }}
+          CPN_MISA_PASSWORD: ${{ secrets.CPN_MISA_PASSWORD }}
         with:
           host: ${{ secrets.CPN_API_SSH_HOST }}
           username: root
@@ -56,7 +58,7 @@ jobs:
           port: ${{ secrets.CPN_API_SSH_PORT }}
           command_timeout: 20m
           script_stop: false
-          envs: SPRING_DATASOURCE_PASSWORD,JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET
+          envs: SPRING_DATASOURCE_PASSWORD,JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET,CPN_VTHK_PASSWORD,CPN_MISA_PASSWORD
           script: |
             set -eu
             mkdir -p /opt/cpn-api
@@ -87,8 +89,14 @@ jobs:
               -e SPRING_DATASOURCE_USERNAME=root \
               -e SPRING_DATASOURCE_PASSWORD \
               -e JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET \
-              -e JHIPSTER_CORS_ALLOWED_ORIGINS=https://cpn.xevietnam.com \
-              -e JHIPSTER_MAIL_BASE_URL=https://api.cpn.xevietnam.com \
+              -e JHIPSTER_CORS_ALLOWED_ORIGINS=https://cpn.xevietnam.com,https://xe-cpn-web.vercel.app \
+              -e JHIPSTER_CORS_ALLOWED_ORIGIN_PATTERNS='https://*.vercel.app,https://*.xevietnam.com' \
+              -e JHIPSTER_MAIL_BASE_URL=https://cpn.xevietnam.com \
+              -e CPN_VTHK_MOBILE=19001515_crm \
+              -e CPN_VTHK_PASSWORD \
+              -e CPN_MISA_ENABLED=true \
+              -e CPN_MISA_CERTIFICATE_SN=54010C25687C47344477BDD160AB2EFF \
+              -e CPN_MISA_PASSWORD \
               -v /opt/cpn-api/app.jar:/app/app.jar:ro \
               eclipse-temurin:17-jre-jammy \
               sh -c 'java -Xms512m -Xmx1536m -Xss512k -XX:MaxMetaspaceSize=256m -XX:ReservedCodeCacheSize=96m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:G1PeriodicGCInterval=60000 -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=30 -XX:+UseStringDeduplication -XX:+UseContainerSupport -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom -jar /app/app.jar'
