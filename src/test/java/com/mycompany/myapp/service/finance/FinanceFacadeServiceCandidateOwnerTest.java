@@ -215,6 +215,23 @@ class FinanceFacadeServiceCandidateOwnerTest {
     }
 
     @Test
+    void adminCatchUpPod_codOwnerIsAssignedStaffNotAdmin() {
+        order.setStatus(OrderStatus.DELIVERED);
+        order.setForwardStage(null);
+        order.setPaidAmount(new BigDecimal("30000"));
+        order.setCodAmount(new BigDecimal("200000"));
+        when(orderEventRepository.findByOrder_IdOrderByEventAtAsc(7L)).thenReturn(
+            List.of(event("CREATE", "vietnc"), event("POD_QUAY", "admin"), event("POD_OWNER", "shipa"))
+        );
+
+        List<CandidateDTO> rows = service.candidates(null, null);
+        assertThat(rows).anySatisfy(r -> {
+            assertThat(r.portion()).isEqualTo(ReceiptSettlement.DELIVERY);
+            assertThat(r.debtOwnerUsername()).isEqualTo("shipa");
+        });
+    }
+
+    @Test
     void openPartnerFee_listedAsNegativeRowOfPayer_andFilteredByInvolvedLogin() {
         when(orderEventRepository.findByOrder_IdOrderByEventAtAsc(7L)).thenReturn(List.of(event("CREATE", "vietnc")));
         Office to = new Office();

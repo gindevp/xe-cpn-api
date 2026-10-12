@@ -32,6 +32,7 @@ import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.audit.AuditRecorder;
 import com.mycompany.myapp.service.day.DayClosureGuard;
+import com.mycompany.myapp.service.order.DeliveryFacadeService;
 import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.service.order.OrderStatusTransitions;
 import com.mycompany.myapp.service.order.PartnerAdvance;
@@ -1662,7 +1663,11 @@ public class FinanceFacadeService {
             }
             if (
                 podStaff == null &&
-                ("POD".equals(action) || "POD_QUAY".equals(action) || "POD_HOME".equals(action) || "DELIVERED".equals(action))
+                ("POD".equals(action) ||
+                    "POD_QUAY".equals(action) ||
+                    "POD_HOME".equals(action) ||
+                    "DELIVERED".equals(action) ||
+                    DeliveryFacadeService.POD_OWNER_ACTION.equals(action))
             ) {
                 podStaff = actor;
             }

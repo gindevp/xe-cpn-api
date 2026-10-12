@@ -3,7 +3,6 @@ package com.mycompany.myapp.service.dto.order;
 import com.mycompany.myapp.domain.enumeration.DeliveryPartner;
 import com.mycompany.myapp.domain.enumeration.PaymentMethod;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
@@ -23,7 +22,7 @@ public class PodRequest {
     @Size(max = 20)
     private String actualRecipientPhone;
 
-    @NotEmpty
+    /** Bắt buộc ≥1, trừ Admin giao bù có {@link #catchUpReason}. */
     @Size(max = 3)
     private List<@NotBlank @Size(max = 2_000_000) String> photos = new ArrayList<>();
 
@@ -38,6 +37,30 @@ public class PodRequest {
     /** Bắt buộc khi đơn đang giao thất bại: lý do chuyển sang giao thành công. */
     @Size(max = 200)
     private String failedReason;
+
+    /** Admin: login nhân viên đang giữ tiền khách (chịu nợ phần giao). */
+    @Size(max = 50)
+    private String debtOwnerUsername;
+
+    /** Admin giao thành công bù (quên quét giao / Ahamove mất callback): lý do, cho phép không ảnh. */
+    @Size(max = 200)
+    private String catchUpReason;
+
+    public String getDebtOwnerUsername() {
+        return debtOwnerUsername;
+    }
+
+    public void setDebtOwnerUsername(String debtOwnerUsername) {
+        this.debtOwnerUsername = debtOwnerUsername;
+    }
+
+    public String getCatchUpReason() {
+        return catchUpReason;
+    }
+
+    public void setCatchUpReason(String catchUpReason) {
+        this.catchUpReason = catchUpReason;
+    }
 
     public String getFailedReason() {
         return failedReason;

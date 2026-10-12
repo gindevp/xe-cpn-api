@@ -6,6 +6,7 @@ import com.mycompany.myapp.domain.OrderPayment;
 import com.mycompany.myapp.domain.OrderPodPhoto;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.Shipper;
+import com.mycompany.myapp.domain.StaffProfile;
 import com.mycompany.myapp.domain.enumeration.DeliveryAttemptResult;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentKind;
@@ -16,6 +17,7 @@ import com.mycompany.myapp.repository.OrderPaymentRepository;
 import com.mycompany.myapp.repository.OrderPodPhotoRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.repository.ShipperRepository;
+import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.security.AuthoritiesConstants;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.day.DayClosureGuard;
@@ -38,6 +40,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +52,8 @@ public class DeliveryFacadeService {
 
     private static final String ENTITY = "order";
     private static final int MAX_FAILS = 3;
+    /** Actor = nhân viên Admin gán giữ tiền khi giao bù; FinanceFacadeService coi như người giao. */
+    public static final String POD_OWNER_ACTION = "POD_OWNER";
 
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final OrderPodPhotoRepository podPhotoRepository;
@@ -82,16 +87,37 @@ public class DeliveryFacadeService {
         if (order.getStatus() == OrderStatus.DELIVERED) {
             throw new BadRequestAlertException("Already delivered (E-POD-057)", ENTITY, "alreadyDelivered");
         }
-        assertPartnerPodAllowed(order, SecurityUtils.hasCurrentUserThisAuthority(AuthoritiesConstants.ADMIN));
+        boolean admin = SecurityUtils.hasCurrentUserThisAuthority(AuthoritiesConstants.ADMIN);
+        assertPartnerPodAllowed(order, admin);
         assertArrivedForPod(order);
         String failedReason = failedPodReason(order, req.getFailedReason());
-        if (req.getPhotos() == null || req.getPhotos().isEmpty()) {
+        String catchUp = trimToNull(req.getCatchUpReason());
+        String owner = trimToNull(req.getDebtOwnerUsername());
+        if (!admin && (catchUp != null || owner != null)) {
+            throw new BadRequestAlertException("Chỉ Admin được giao thành công bù / chọn người giữ tiền", ENTITY, "podCatchUpAdminOnly");
+        }
+        List<String> photos = req.getPhotos() == null
+            ? List.of()
+            : req.getPhotos().stream().filter(p -> p != null && !p.isBlank()).toList();
+        if (photos.isEmpty() && catchUp == null) {
             throw new BadRequestAlertException("At least 1 POD photo required", ENTITY, "podPhotoRequired");
         }
-        if (req.getPhotos().size() > 3) {
+        if (photos.size() > 3) {
             throw new BadRequestAlertException("Max 3 POD photos", ENTITY, "podPhotoMax");
         }
         BigDecimal collected = req.getCollectedAmount() == null ? BigDecimal.ZERO : req.getCollectedAmount();
+        if (owner != null) {
+            owner = requireStaffLogin(owner);
+            if (collected.signum() == 0 && order.getPaymentTerm() != PaymentTerm.GUI_TRA) {
+                collected = OrderMoney.collectDue(order);
+            }
+        } else if (admin && collected.signum() == 0 && receiverOwes(order)) {
+            throw new BadRequestAlertException(
+                "Đơn " + order.getOrderCode() + " còn tiền phải thu người nhận — chọn nhân viên đang giữ tiền",
+                ENTITY,
+                "podDebtOwnerRequired"
+            );
+        }
         assertReceiverCollectAllowed(order, collected);
 
         String channel = req.getChannel() == null ? "COUNTER" : req.getChannel().trim().toUpperCase();
@@ -106,7 +132,7 @@ public class DeliveryFacadeService {
         List<String> savedUrls = new ArrayList<>();
         int seq = (int) podPhotoRepository.countByOrder_Id(order.getId()) + 1;
         String caption = captionOf(req.getCaption());
-        for (String photo : req.getPhotos()) {
+        for (String photo : photos) {
             String url = storeMedia(truncateUrl(photo), "pod");
             OrderPodPhoto row = new OrderPodPhoto();
             row.setPhotoUrl(url);
@@ -122,7 +148,7 @@ public class DeliveryFacadeService {
 
         if (collected.compareTo(BigDecimal.ZERO) > 0) {
             PaymentMethod method = req.getPaymentMethod() != null ? req.getPaymentMethod() : PaymentMethod.TM;
-            addPaymentInternal(order, collected, method, PaymentKind.SAU, "POD " + channel, actor);
+            addPaymentInternal(order, collected, method, PaymentKind.SAU, "POD " + channel, owner != null ? owner : actor);
         }
 
         shipmentOrderRepository.save(order);
@@ -130,12 +156,23 @@ public class DeliveryFacadeService {
         String action = "HOME".equals(channel) ? "POD" : "POD_QUAY";
         String detail = req.getActualRecipientName();
         if (failedReason != null) {
-            detail = (detail + " · Giao thất bại → thành công: " + failedReason).trim();
-            if (detail.length() > 255) {
-                detail = detail.substring(0, 255);
-            }
+            detail = detail + " · Giao thất bại → thành công: " + failedReason;
         }
-        ensureStatusThenDeliver(order, action, detail);
+        if (catchUp != null) {
+            detail = detail + " · Giao bù: " + catchUp;
+        }
+        ensureStatusThenDeliver(order, action, truncate(detail.trim(), 255));
+        if (owner != null) {
+            orderFacadeService.recordEvent(
+                order,
+                POD_OWNER_ACTION,
+                truncate("Nhân viên giữ tiền: " + owner + " · Admin " + actor + " gán", 255),
+                owner
+            );
+        }
+        if (ahamoveDispatchService != null && AhamoveDispatchService.partnerActive(order)) {
+            ahamoveDispatchService.recordCashFeeIfPickedUp(order, "COMPLETED");
+        }
 
         order = requireOrder(order.getOrderCode());
         PodResponse res = new PodResponse();
@@ -571,5 +608,49 @@ public class DeliveryFacadeService {
 
     private static String currentActor() {
         return SecurityUtils.getCurrentUserLogin().orElse("system");
+    }
+
+    private AhamoveDispatchService ahamoveDispatchService;
+    private StaffProfileRepository staffProfileRepository;
+
+    @Autowired(required = false)
+    void setAhamoveDispatchService(@Lazy AhamoveDispatchService ahamoveDispatchService) {
+        this.ahamoveDispatchService = ahamoveDispatchService;
+    }
+
+    @Autowired(required = false)
+    void setStaffProfileRepository(StaffProfileRepository staffProfileRepository) {
+        this.staffProfileRepository = staffProfileRepository;
+    }
+
+    /** Người nhận còn phải trả: cước còn nợ (trừ đơn người gửi trả / công nợ) hoặc COD thu hộ. Đơn hoàn không tính. */
+    static boolean receiverOwes(ShipmentOrder order) {
+        if (order.getStatus() == OrderStatus.RETURNING) {
+            return false;
+        }
+        boolean fareDue = order.getPaymentTerm() != PaymentTerm.GUI_TRA && OrderMoney.collectDue(order).signum() > 0;
+        return fareDue || OrderMoney.nz(order.getCodAmount()).signum() > 0;
+    }
+
+    /** Login nhân viên đang hoạt động; trả về login chuẩn trong hồ sơ. */
+    String requireStaffLogin(String login) {
+        if (staffProfileRepository == null) {
+            return login;
+        }
+        StaffProfile profile = staffProfileRepository
+            .findOneByUserLoginIgnoreCase(login)
+            .filter(p -> !Boolean.FALSE.equals(p.getActive()))
+            .orElseThrow(() ->
+                new BadRequestAlertException("Không tìm thấy nhân viên đang hoạt động: " + login, ENTITY, "podDebtOwnerInvalid")
+            );
+        return profile.getUserLogin();
+    }
+
+    private static String trimToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    private static String truncate(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max);
     }
 }

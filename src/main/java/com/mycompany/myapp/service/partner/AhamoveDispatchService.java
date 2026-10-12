@@ -1068,7 +1068,7 @@ public class AhamoveDispatchService {
      * Thanh toán Ahamove tiền mặt: tài xế lấy hàng thì người bàn giao trả phí (báo giá lúc tạo đơn) — ghi 1 khoản/đơn Ahamove,
      * trừ vào phiếu thu tiếp theo của người đó.
      */
-    void recordCashFeeIfPickedUp(ShipmentOrder order, String partnerStatus) {
+    public void recordCashFeeIfPickedUp(ShipmentOrder order, String partnerStatus) {
         String partnerOrderId = order.getPartnerOrderId();
         BigDecimal fee = OrderMoney.nz(order.getPartnerFeeAmount());
         if (
