@@ -2,9 +2,11 @@ package com.mycompany.myapp.service.geo;
 
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -20,6 +22,9 @@ public class GoogleMapsLinkService {
     private static final String ENTITY = "geo";
     private static final Pattern PLACE = Pattern.compile("!3d(-?\\d+(?:\\.\\d+)?)!4d(-?\\d+(?:\\.\\d+)?)");
     private static final Pattern VIEW = Pattern.compile("@(-?\\d+(?:\\.\\d+)?),\\s*(-?\\d+(?:\\.\\d+)?)");
+    private static final Pattern PLACE_NAME = Pattern.compile("/(?:place|search)/([^/@?#]+)");
+    private static final Pattern QUERY_NAME = Pattern.compile("[?&](?:q|query|destination)=([^&]+)");
+    private static final Pattern COORDS_ONLY = Pattern.compile("^(-?\\d+(?:\\.\\d+)?)\\s*,\\s*(-?\\d+(?:\\.\\d+)?)$");
     private static final int MAX_HOPS = 5;
 
     private final HttpClient http = HttpClient.newBuilder()
@@ -77,11 +82,37 @@ public class GoogleMapsLinkService {
             last = pin(place.group(1), place.group(2));
         }
         if (last != null) {
-            return last;
+            return last.withAddress(addressOf(text));
         }
         Matcher view = VIEW.matcher(text);
         if (view.find()) {
-            return pin(view.group(1), view.group(2));
+            Pin center = pin(view.group(1), view.group(2));
+            return center == null ? null : center.withAddress(addressOf(text));
+        }
+        return null;
+    }
+
+    /** Tên địa điểm trên link. Bỏ qua khi tham số chỉ là tọa độ. */
+    public static String addressOf(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String decoded = text;
+        try {
+            decoded = URLDecoder.decode(text, StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+            /* giữ nguyên */
+        }
+        Matcher place = PLACE_NAME.matcher(decoded);
+        if (place.find()) {
+            String name = cleanName(place.group(1));
+            if (name != null) {
+                return name;
+            }
+        }
+        Matcher query = QUERY_NAME.matcher(decoded);
+        if (query.find()) {
+            return cleanName(query.group(1));
         }
         return null;
     }
@@ -136,11 +167,26 @@ public class GoogleMapsLinkService {
             if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
                 return null;
             }
-            return new Pin(lat, lng);
+            return new Pin(lat, lng, null);
         } catch (NumberFormatException e) {
             return null;
         }
     }
 
-    public record Pin(double lat, double lng) {}
+    private static String cleanName(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String text = raw.replace('+', ' ').replaceAll("\\s+", " ").trim();
+        if (text.isEmpty() || COORDS_ONLY.matcher(text).matches() || text.toLowerCase().startsWith("loc:")) {
+            return null;
+        }
+        return text;
+    }
+
+    public record Pin(double lat, double lng, String address) {
+        Pin withAddress(String next) {
+            return new Pin(lat, lng, next);
+        }
+    }
 }

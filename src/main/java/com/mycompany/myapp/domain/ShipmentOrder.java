@@ -189,6 +189,16 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "cod_fee_amount", precision = 21, scale = 2)
     private BigDecimal codFeeAmount;
 
+    /** Phí tồn kho tại kho giao (đã cộng vào fare_amount). */
+    @DecimalMin(value = "0")
+    @Column(name = "storage_fee_amount", precision = 21, scale = 2)
+    private BigDecimal storageFeeAmount;
+
+    /** Phí hoàn đơn (đã cộng vào fare_amount). */
+    @DecimalMin(value = "0")
+    @Column(name = "return_fee_amount", precision = 21, scale = 2)
+    private BigDecimal returnFeeAmount;
+
     @Size(max = 120)
     @Column(name = "bank_name", length = 120)
     private String bankName;
@@ -935,6 +945,22 @@ public class ShipmentOrder implements Serializable {
 
     public void setCodFeeAmount(BigDecimal codFeeAmount) {
         this.codFeeAmount = codFeeAmount;
+    }
+
+    public BigDecimal getStorageFeeAmount() {
+        return this.storageFeeAmount;
+    }
+
+    public void setStorageFeeAmount(BigDecimal storageFeeAmount) {
+        this.storageFeeAmount = storageFeeAmount;
+    }
+
+    public BigDecimal getReturnFeeAmount() {
+        return this.returnFeeAmount;
+    }
+
+    public void setReturnFeeAmount(BigDecimal returnFeeAmount) {
+        this.returnFeeAmount = returnFeeAmount;
     }
 
     public String getBankName() {

@@ -62,6 +62,12 @@ public class DeliveryFacadeService {
     private final OrderFacadeService orderFacadeService;
     private final DayClosureGuard dayClosureGuard;
     private final ShipperRepository shipperRepository;
+    private SurchargeFeeService surchargeFeeService;
+
+    @Autowired(required = false)
+    void setSurchargeFeeService(SurchargeFeeService surchargeFeeService) {
+        this.surchargeFeeService = surchargeFeeService;
+    }
 
     public DeliveryFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -83,6 +89,10 @@ public class DeliveryFacadeService {
 
     public PodResponse pod(String orderCode, PodRequest req) {
         ShipmentOrder order = requireOrder(orderCode);
+        if (surchargeFeeService != null) {
+            surchargeFeeService.refreshStorageFee(order);
+            order = requireOrder(orderCode);
+        }
         dayClosureGuard.assertCollectionMutable(order);
         if (order.getStatus() == OrderStatus.DELIVERED) {
             throw new BadRequestAlertException("Already delivered (E-POD-057)", ENTITY, "alreadyDelivered");
@@ -314,6 +324,9 @@ public class DeliveryFacadeService {
             throw new BadRequestAlertException("Assign shipper from AT_DEST or FAILED_DELIVERY", ENTITY, "assignShipperStatus");
         }
         PartnerAdvance.assertNoRefundDue(order, ENTITY);
+        if (surchargeFeeService != null) {
+            surchargeFeeService.refreshStorageFee(order);
+        }
 
         String mode = req.getMode() == null ? "INTERNAL" : req.getMode().trim().toUpperCase();
         String action;

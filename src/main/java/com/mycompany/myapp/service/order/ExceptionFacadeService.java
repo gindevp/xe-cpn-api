@@ -80,10 +80,16 @@ public class ExceptionFacadeService {
     private final StaffAccessService staffAccessService;
     private final PermissionService permissionService;
     private AutoCallService autoCallService;
+    private SurchargeFeeService surchargeFeeService;
 
     @Autowired(required = false)
     void setAutoCallService(AutoCallService autoCallService) {
         this.autoCallService = autoCallService;
+    }
+
+    @Autowired(required = false)
+    void setSurchargeFeeService(SurchargeFeeService surchargeFeeService) {
+        this.surchargeFeeService = surchargeFeeService;
     }
 
     public ExceptionFacadeService(
@@ -152,7 +158,11 @@ public class ExceptionFacadeService {
         req = orderReturnRequestRepository.save(req);
         order.setReturnRequest(req);
         order.setReturnStage(ReturnStage.RETURN_PENDING);
-        // COD + phí thu hộ COD = 0; cước giữ nguyên.
+        if (surchargeFeeService != null) {
+            surchargeFeeService.refreshStorageFee(order);
+            surchargeFeeService.applyReturnFee(order);
+        }
+        // COD + phí thu hộ COD = 0; cước giữ nguyên rồi cộng phí hoàn nếu cấu hình đang bật.
         order.setCodAmount(java.math.BigDecimal.ZERO);
         order.setCodFeeAmount(java.math.BigDecimal.ZERO);
         order.setForwardStage(nextForward);
@@ -245,6 +255,9 @@ public class ExceptionFacadeService {
         }
         if (prior.codFee() != null) {
             order.setCodFeeAmount(prior.codFee());
+        }
+        if (surchargeFeeService != null) {
+            surchargeFeeService.revertReturnFee(order);
         }
         order.setForwardStage(prior.forward());
         shipmentOrderRepository.save(order);

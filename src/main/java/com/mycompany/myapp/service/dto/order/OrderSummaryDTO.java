@@ -88,6 +88,8 @@ public class OrderSummaryDTO {
 
     private BigDecimal codAmount;
     private BigDecimal codFeeAmount;
+    private BigDecimal storageFeeAmount;
+    private BigDecimal returnFeeAmount;
     /** Thành phần của fareAmount (đơn cũ = null) — fareAmount vẫn là tổng phải thu. */
     private BigDecimal goodsFareAmount;
     private BigDecimal declaredFeeAmount;
@@ -670,6 +672,22 @@ public class OrderSummaryDTO {
 
     public void setCodFeeAmount(BigDecimal codFeeAmount) {
         this.codFeeAmount = codFeeAmount;
+    }
+
+    public BigDecimal getStorageFeeAmount() {
+        return storageFeeAmount;
+    }
+
+    public void setStorageFeeAmount(BigDecimal storageFeeAmount) {
+        this.storageFeeAmount = storageFeeAmount;
+    }
+
+    public BigDecimal getReturnFeeAmount() {
+        return returnFeeAmount;
+    }
+
+    public void setReturnFeeAmount(BigDecimal returnFeeAmount) {
+        this.returnFeeAmount = returnFeeAmount;
     }
 
     public BigDecimal getGoodsFareAmount() {

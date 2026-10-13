@@ -35,6 +35,11 @@ public class AhamoveDispatchResource {
         return ahamoveDispatchService.dispatch(orderCode, request);
     }
 
+    @PostMapping("/api/orders/{orderCode}/ahamove/dispatch-pickup")
+    public OrderDetailDTO dispatchPickup(@PathVariable String orderCode, @RequestBody AhamoveDispatchService.DispatchRequest request) {
+        return ahamoveDispatchService.dispatchPickup(orderCode, request);
+    }
+
     @PostMapping("/api/orders/{orderCode}/ahamove/cancel")
     public OrderDetailDTO cancel(@PathVariable String orderCode, @RequestBody(required = false) Map<String, String> body) {
         return ahamoveDispatchService.cancel(orderCode, body != null ? body.get("reason") : null);

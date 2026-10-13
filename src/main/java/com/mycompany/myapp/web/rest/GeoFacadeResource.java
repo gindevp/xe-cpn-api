@@ -45,6 +45,9 @@ public class GeoFacadeResource {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("lat", pin.lat());
         out.put("lng", pin.lng());
+        if (pin.address() != null && !pin.address().isBlank()) {
+            out.put("address", pin.address());
+        }
         return out;
     }
 

@@ -205,4 +205,23 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
         """
     )
     List<ShipmentOrder> findAhamoveAdvanceUncollected();
+
+    /** Đơn đang nằm kho giao — job phí tồn kho cập nhật mỗi đêm. */
+    @Query(
+        """
+        select o.id from ShipmentOrder o
+        where o.forwardStage in (
+            com.mycompany.myapp.domain.enumeration.ForwardStage.DEST_WH_IN,
+            com.mycompany.myapp.domain.enumeration.ForwardStage.FAILED,
+            com.mycompany.myapp.domain.enumeration.ForwardStage.REDELIVER_WAIT
+        )
+        and o.status not in (
+            com.mycompany.myapp.domain.enumeration.OrderStatus.RETURNING,
+            com.mycompany.myapp.domain.enumeration.OrderStatus.DELIVERED,
+            com.mycompany.myapp.domain.enumeration.OrderStatus.CANCELLED,
+            com.mycompany.myapp.domain.enumeration.OrderStatus.RETURNED
+        )
+        """
+    )
+    List<Long> findIdsAccruingStorageFee();
 }

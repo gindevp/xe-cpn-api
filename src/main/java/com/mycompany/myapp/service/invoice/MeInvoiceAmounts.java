@@ -126,6 +126,8 @@ public final class MeInvoiceAmounts {
         BigDecimal delivery = OrderMoney.nz(order.getDeliveryFeeAmount()).setScale(0, RoundingMode.HALF_UP);
         BigDecimal codFee = OrderMoney.nz(order.getCodFeeAmount()).setScale(0, RoundingMode.HALF_UP);
         BigDecimal declared = OrderMoney.nz(order.getDeclaredFeeAmount()).setScale(0, RoundingMode.HALF_UP);
+        BigDecimal storage = OrderMoney.nz(order.getStorageFeeAmount()).setScale(0, RoundingMode.HALF_UP);
+        BigDecimal returnFee = OrderMoney.nz(order.getReturnFeeAmount()).setScale(0, RoundingMode.HALF_UP);
 
         BigDecimal goods;
         if (order.getGoodsFareAmount() != null) {
@@ -134,7 +136,14 @@ public final class MeInvoiceAmounts {
             // Đơn cũ chưa tách thành phần: suy cước hàng từ tổng phải thu.
             BigDecimal fare = OrderMoney.nz(order.getFareAmount());
             BigDecimal discount = OrderMoney.nz(order.getDiscountAmount());
-            goods = fare.subtract(pickup).subtract(delivery).subtract(codFee).subtract(declared).add(discount);
+            goods = fare
+                .subtract(pickup)
+                .subtract(delivery)
+                .subtract(codFee)
+                .subtract(declared)
+                .subtract(storage)
+                .subtract(returnFee)
+                .add(discount);
             if (goods.compareTo(BigDecimal.ZERO) < 0) {
                 goods = BigDecimal.ZERO;
             }
@@ -142,7 +151,7 @@ public final class MeInvoiceAmounts {
         }
 
         BigDecimal shipping = goods.add(pickup).add(delivery);
-        BigDecimal gross = shipping.add(codFee).add(declared);
+        BigDecimal gross = shipping.add(codFee).add(declared).add(storage).add(returnFee);
         Split split = splitGross(gross);
         return new Breakdown(shipping, goods, pickup, delivery, codFee, declared, split.gross(), split.net(), split.vat());
     }

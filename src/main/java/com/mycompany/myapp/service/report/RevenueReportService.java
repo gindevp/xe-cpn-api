@@ -237,9 +237,21 @@ public class RevenueReportService {
         BigDecimal codFee = OrderMoney.nz(o.getCodFeeAmount());
         BigDecimal declared = OrderMoney.nz(o.getDeclaredFeeAmount());
         BigDecimal discount = OrderMoney.nz(o.getDiscountAmount());
+        BigDecimal storage = OrderMoney.nz(o.getStorageFeeAmount());
+        BigDecimal returnFee = OrderMoney.nz(o.getReturnFeeAmount());
         BigDecimal goods = o.getGoodsFareAmount() != null
             ? o.getGoodsFareAmount()
-            : fare.subtract(delivery).subtract(pickup).subtract(codFee).subtract(declared).add(discount).max(BigDecimal.ZERO);
+            : fare
+                .subtract(delivery)
+                .subtract(pickup)
+                .subtract(codFee)
+                .subtract(declared)
+                .subtract(storage)
+                .subtract(returnFee)
+                .add(discount)
+                .max(BigDecimal.ZERO);
+        // Phí tồn kho và phí hoàn đi cùng cước hàng trên báo cáo để các cột vẫn cộng đủ tổng đã thu.
+        goods = goods.add(storage).add(returnFee);
         return new Fees(fare, goods, delivery, pickup, codFee, declared, discount);
     }
 

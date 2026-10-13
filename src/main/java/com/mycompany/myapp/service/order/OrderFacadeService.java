@@ -611,6 +611,9 @@ public class OrderFacadeService {
         if (homePickup && isBlank(req.getPickupAddress())) {
             throw new BadRequestAlertException("Nhập địa chỉ lấy hàng", ENTITY, "pickupaddress");
         }
+        if (homePickup && req.getPaymentTerm() != PaymentTerm.NHAN_TRA) {
+            throw new BadRequestAlertException("Đơn lấy tận nơi chỉ chọn người nhận thanh toán", ENTITY, "pickupReceiverPays");
+        }
 
         String fromCode = req.getFromOfficeCode().trim().toUpperCase();
         Office from = requireOffice(fromCode);
@@ -915,6 +918,9 @@ public class OrderFacadeService {
     private OrderSummaryDTO createNewConfirmed(CreateOrderRequest req) {
         boolean homeDelivery = Boolean.TRUE.equals(req.getHomeDelivery());
         boolean homePickup = Boolean.TRUE.equals(req.getHomePickup());
+        if (homePickup && req.getPaymentTerm() != PaymentTerm.NHAN_TRA) {
+            throw new BadRequestAlertException("Đơn lấy tận nơi chỉ chọn người nhận thanh toán", ENTITY, "pickupReceiverPays");
+        }
         Office from = requireOffice(req.getFromOfficeCode());
         Office to = requireOffice(req.getToOfficeCode());
 
@@ -1440,9 +1446,19 @@ public class OrderFacadeService {
         this.autoCallService = autoCallService;
     }
 
+    private SurchargeFeeService surchargeFeeService;
+
+    @Autowired(required = false)
+    void setSurchargeFeeService(SurchargeFeeService surchargeFeeService) {
+        this.surchargeFeeService = surchargeFeeService;
+    }
+
     private void onArrivedAtDest(ShipmentOrder order, String action) {
         if (autoCallService != null) {
             autoCallService.onArrivedAtDest(order, action);
+        }
+        if (surchargeFeeService != null) {
+            surchargeFeeService.refreshStorageFee(order);
         }
     }
 
@@ -2193,6 +2209,8 @@ public class OrderFacadeService {
         }
         dto.setCodAmount(o.getCodAmount());
         dto.setCodFeeAmount(o.getCodFeeAmount());
+        dto.setStorageFeeAmount(o.getStorageFeeAmount());
+        dto.setReturnFeeAmount(o.getReturnFeeAmount());
         dto.setGoodsFareAmount(o.getGoodsFareAmount());
         dto.setDeclaredFeeAmount(o.getDeclaredFeeAmount());
         dto.setDiscountAmount(o.getDiscountAmount());
@@ -2485,6 +2503,8 @@ public class OrderFacadeService {
             .add(OrderMoney.nz(order.getDeliveryFeeAmount()))
             .add(codFee)
             .add(OrderMoney.nz(order.getDeclaredFeeAmount()))
+            .add(OrderMoney.nz(order.getStorageFeeAmount()))
+            .add(OrderMoney.nz(order.getReturnFeeAmount()))
             .subtract(OrderMoney.nz(order.getDiscountAmount()))
             .max(BigDecimal.ZERO);
     }

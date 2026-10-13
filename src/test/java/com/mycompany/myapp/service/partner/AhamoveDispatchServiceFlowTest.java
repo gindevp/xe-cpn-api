@@ -127,7 +127,9 @@ class AhamoveDispatchServiceFlowTest {
         verify(client).createOrder(any(), drop.capture(), any(), any());
         assertThat(drop.getValue().cod()).isEqualTo(30000L);
         assertThat(order.getPartnerCodAmount()).isEqualByComparingTo("30000");
-        verify(delivery).recordPartnerAdvance(eq(order), eq(new BigDecimal("30000")), anyString(), eq("system"));
+        assertThat(order.getPartnerCodCollectedAt()).isNull();
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("20000");
+        verify(delivery, never()).recordPartnerAdvance(any(), any(), any(), any());
     }
 
     @Test
@@ -621,6 +623,23 @@ class AhamoveDispatchServiceFlowTest {
         assertThat(order.getPartnerShipConfirmedBy()).isEqualTo("giaohang");
         assertThat(payment.getCollectorUsername()).isEqualTo("giaohang");
         assertThat(fee.getPayerUsername()).isEqualTo("giaohang");
+    }
+
+    @Test
+    void claim_beforeHandover_recordsAdvanceForScanner() {
+        order.setStatus(OrderStatus.AT_DEST);
+        order.setPartnerCode("AHAMOVE");
+        order.setPartnerOrderId("AHA1");
+        order.setPartnerCodAmount(new BigDecimal("30000"));
+        order.setPaidAmount(new BigDecimal("20000"));
+
+        service.applyShipDebtClaim(order, "giaohang");
+
+        verify(delivery).recordPartnerAdvance(eq(order), eq(new BigDecimal("30000")), anyString(), eq("giaohang"));
+        assertThat(order.getPartnerShipConfirmedBy()).isEqualTo("giaohang");
+        ArgumentCaptor<String> detail = ArgumentCaptor.forClass(String.class);
+        verify(orders).recordEvent(eq(order), eq("AHAMOVE_SHIP_CONFIRM"), detail.capture(), eq("giaohang"));
+        assertThat(detail.getValue()).contains("Đã thanh toán nhận ứng");
     }
 
     @Test
