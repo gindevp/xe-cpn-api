@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261013180000-1" author="cpn">
+        <comment>Cấu hình VP trung chuyển tỉnh đi tỉnh — một dòng.</comment>
+        <createTable tableName="transit_hub_policy">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="group_points" type="varchar(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="group_hub_office_code" type="varchar(50)"/>
+            <column name="default_hub_office_code" type="varchar(50)"/>
+            <column name="updated_at" type="${datetimeType}"/>
+        </createTable>
+        <insert tableName="transit_hub_policy">
+            <column name="group_points" value="NB,ND,TB"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>

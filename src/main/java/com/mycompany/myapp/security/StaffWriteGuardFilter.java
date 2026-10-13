@@ -82,6 +82,7 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         // Master CRUD
         if (
             path.startsWith("/api/offices") ||
+            path.startsWith("/api/transit-hub-policy") ||
             path.startsWith("/api/routes") ||
             path.startsWith("/api/vehicles") ||
             path.startsWith("/api/drivers") ||
