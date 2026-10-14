@@ -419,8 +419,13 @@ public class TripFacadeService {
         return toSummary(trip, true);
     }
 
-    private static Set<String> loadOriginOffices(ShipmentOrder order) {
+    private Set<String> loadOriginOffices(ShipmentOrder order) {
         Set<String> codes = new LinkedHashSet<>();
+        String transit = orderFacadeService.transitLoadOfficeCode(order);
+        if (transit != null) {
+            codes.add(transit.toUpperCase());
+            return codes;
+        }
         if (order.getStatus() == OrderStatus.RETURNING) {
             if (order.getToOffice() != null) codes.add(order.getToOffice().getCode());
             if (order.getFinalToOffice() != null) codes.add(order.getFinalToOffice().getCode());
@@ -508,7 +513,12 @@ public class TripFacadeService {
             tripRepository.save(trip);
         }
 
-        // Không còn HUB_IN / trung chuyển: quét nhập tại VP nhận → AT_DEST.
+        String scanOffice = officeCode != null ? officeCode : staffAccessService.scopedOfficeCode().orElse(null);
+        if (orderFacadeService.arriveAtTransitHub(order.getOrderCode(), scanOffice)) {
+            return trip != null ? toSummary(requireTrip(trip.getTripCode()), true) : toSummaryPlaceholder(requireOrder(req.getOrderCode()));
+        }
+
+        // Quét nhập tại VP nhận → AT_DEST (đơn trung chuyển: tới VP trung chuyển đã xử lý ở trên).
         if (order.getStatus() == OrderStatus.IN_TRANSIT || order.getStatus() == OrderStatus.WAITING) {
             OrderTransitionRequest tr = new OrderTransitionRequest();
             tr.setToStatus(OrderStatus.AT_DEST);

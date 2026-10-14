@@ -24,6 +24,7 @@ import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.OfficeItineraryPoints;
+import com.mycompany.myapp.service.config.TransitHubPolicyService;
 import com.mycompany.myapp.service.day.DayClosureGuard;
 import com.mycompany.myapp.service.dto.order.CreateDraftOrderRequest;
 import com.mycompany.myapp.service.dto.order.CreateDraftOrderResponse;
@@ -215,7 +216,8 @@ public class OrderFacadeService {
         boolean searchAllOffices,
         CancelRequestMode cancelRequests,
         Boolean codOnly,
-        String phoneEndsWith
+        String phoneEndsWith,
+        String hubOfficeCode
     ) {
         public static final OrderListExtra NONE = new OrderListExtra(
             null,
@@ -227,6 +229,7 @@ public class OrderFacadeService {
             null,
             false,
             CancelRequestMode.INCLUDE,
+            null,
             null,
             null
         );
@@ -264,9 +267,14 @@ public class OrderFacadeService {
                 cb.or(
                     cb.equal(root.get("fromOffice").get("code"), any),
                     cb.equal(root.get("toOffice").get("code"), any),
-                    cb.equal(receiverOfficePath(root, cb), any)
+                    cb.equal(receiverOfficePath(root, cb), any),
+                    cb.equal(hubOfficePath(root), any)
                 )
             );
+        }
+        if (ex.hubOfficeCode() != null && !ex.hubOfficeCode().isBlank()) {
+            String hub = ex.hubOfficeCode().trim().toUpperCase();
+            spec = spec.and((root, q, cb) -> cb.equal(hubOfficePath(root), hub));
         }
         if (ex.statuses() != null && !ex.statuses().isEmpty()) {
             List<OrderStatus> wanted = ex.statuses().stream().filter(java.util.Objects::nonNull).distinct().toList();
@@ -382,7 +390,8 @@ public class OrderFacadeService {
                 cb.or(
                     cb.equal(root.get("fromOffice").get("code"), scoped),
                     cb.equal(root.get("toOffice").get("code"), scoped),
-                    cb.equal(receiverOfficePath(root, cb), scoped)
+                    cb.equal(receiverOfficePath(root, cb), scoped),
+                    cb.equal(hubOfficePath(root), scoped)
                 )
             );
         }
@@ -415,7 +424,7 @@ public class OrderFacadeService {
         });
     }
 
-    private static final List<String> WAREHOUSE_IN_ACTIONS = List.of("WAREHOUSE_RECEIVE", "WH_IN", "CONFIRM", "CREATE");
+    private static final List<String> WAREHOUSE_IN_ACTIONS = List.of("WAREHOUSE_RECEIVE", "WH_IN", "CONFIRM", "CREATE", "TRANSIT_HUB_IN");
     private static final List<String> TRIP_ASSIGN_ACTIONS = List.of("ASSIGN_TRIP");
     private static final List<String> DRIVER_SIGN_ACTIONS = List.of("KY_BAN_GIAO_TAI_XE", "SCAN_OUT", "HANDOVER");
     private static final List<String> DEST_WAREHOUSE_IN_ACTIONS = List.of("SCAN_IN", "HUB_IN", "DEST_WH_IN");
@@ -572,6 +581,10 @@ public class OrderFacadeService {
         return cb.exists(sub);
     }
 
+    private static jakarta.persistence.criteria.Expression<String> hubOfficePath(jakarta.persistence.criteria.Root<ShipmentOrder> root) {
+        return root.join("hubOffice", jakarta.persistence.criteria.JoinType.LEFT).get("code");
+    }
+
     /** VP nhận thật: finalToOffice khi có (đơn qua hub), ngược lại toOffice. */
     private static jakarta.persistence.criteria.Expression<String> receiverOfficePath(
         jakarta.persistence.criteria.Root<ShipmentOrder> root,
@@ -702,8 +715,8 @@ public class OrderFacadeService {
         order.setNote(req.getNote());
         order.setFromOffice(from);
         order.setToOffice(to);
-        order.setHubOffice(null);
         order.setFinalToOffice(to);
+        applyProvinceTransit(order);
         order.setPublicTrackingAllowed(true);
         fillItineraryIfMissing(order);
 
@@ -954,10 +967,9 @@ public class OrderFacadeService {
         applyCreateFields(order, req);
         order.setFromOffice(from);
         order.setToOffice(to);
-        // Không còn trung chuyển: bỏ hub; finalTo mặc định = toOffice.
-        order.setHubOffice(null);
         Office dest = !isBlank(req.getFinalToOfficeCode()) ? requireOffice(req.getFinalToOfficeCode()) : to;
         order.setFinalToOffice(dest);
+        applyProvinceTransit(order);
         order.setServiceType(resolveServiceType(homePickup, homeDelivery));
         order.setFareAmount(total);
         if (req.getGoodsFareAmount() != null) {
@@ -986,7 +998,7 @@ public class OrderFacadeService {
         String endpointsBefore = itineraryEndpointsKey(order);
         java.util.Map<String, String> fieldsBefore = OrderEditDiff.snapshot(order);
         BigDecimal fareBefore = OrderMoney.nz(order.getFareAmount());
-        boolean prepaidFollowsFare = senderPrepaidFollowsFare(order);
+        boolean prepaidFollowsFare = senderPrepaidFollowsFare(order) && !passedTransitHub(order);
         if (req.getSenderName() != null) {
             order.setSenderName(req.getSenderName());
         }
@@ -1000,7 +1012,8 @@ public class OrderFacadeService {
             order.setReceiverPhone(req.getReceiverPhone());
         }
         if (req.getNote() != null) {
-            order.setNote(req.getNote());
+            // Hàng đang ở kho VP trung chuyển: kiện quét xuống ở đây không phải nhập kho giao.
+            order.setNote(goodsAtTransitHub(order) ? stripWarehouseIn(req.getNote()) : req.getNote());
         }
         boolean hpBefore = Boolean.TRUE.equals(order.getHomePickup());
         boolean hdBefore = Boolean.TRUE.equals(order.getHomeDelivery());
@@ -1089,7 +1102,8 @@ public class OrderFacadeService {
         if (req.getToOfficeCode() != null) {
             order.setToOffice(requireOffice(req.getToOfficeCode()));
         }
-        if (req.getHubOfficeCode() != null) {
+        // Đơn trung chuyển đã có chặng: VP trung chuyển do máy chủ quản lý (tính lại khi đổi VP gửi/nhận).
+        if (req.getHubOfficeCode() != null && !hasTransitLegs(order)) {
             // Chuỗi rỗng = xóa hub (hết trung chuyển).
             if (isBlank(req.getHubOfficeCode())) {
                 order.setHubOffice(null);
@@ -1159,8 +1173,12 @@ public class OrderFacadeService {
         if (req.getItineraryLabel() != null) {
             order.setItineraryLabel(blankToNull(req.getItineraryLabel()));
         }
-        if (req.getRouteLabel() == null && req.getItineraryLabel() == null && !endpointsBefore.equals(itineraryEndpointsKey(order))) {
+        boolean endpointsChanged = !endpointsBefore.equals(itineraryEndpointsKey(order));
+        if (req.getRouteLabel() == null && req.getItineraryLabel() == null && endpointsChanged) {
             refillItinerary(order);
+        }
+        if (endpointsChanged) {
+            retransitAfterEndpointChange(order);
         }
         if (OrderMoney.nz(order.getFareAmount()).compareTo(fareBefore) != 0) {
             PartnerAdvance.assertNotPending(order, ENTITY);
@@ -1385,6 +1403,13 @@ public class OrderFacadeService {
         this.goodsPhotoRepository = goodsPhotoRepository;
     }
 
+    private TransitHubPolicyService transitHubPolicyService;
+
+    @Autowired(required = false)
+    void setTransitHubPolicyService(TransitHubPolicyService transitHubPolicyService) {
+        this.transitHubPolicyService = transitHubPolicyService;
+    }
+
     private StoredMedia storedMedia;
 
     @Autowired(required = false)
@@ -1454,6 +1479,7 @@ public class OrderFacadeService {
     }
 
     private void onArrivedAtDest(ShipmentOrder order, String action) {
+        closeTransitLegs(order);
         if (autoCallService != null) {
             autoCallService.onArrivedAtDest(order, action);
         }
@@ -1813,6 +1839,10 @@ public class OrderFacadeService {
             return;
         }
         if (order.getStatus() != OrderStatus.CONFIRMED && order.getStatus() != OrderStatus.WAITING) {
+            return;
+        }
+        // Nhập kho ở VP trung chuyển không phải nhận hàng từ người gửi.
+        if (passedTransitHub(order)) {
             return;
         }
         BigDecimal due = OrderMoney.collectDue(order);
@@ -2348,6 +2378,334 @@ public class OrderFacadeService {
 
     private static boolean sameOffice(Office a, Office b) {
         return a != null && b != null && a.getId() != null && a.getId().equals(b.getId());
+    }
+
+    /** Tuyến tỉnh đi tỉnh: gắn VP trung chuyển theo cấu hình và lộ trình chặng đầu (VP gửi → VP trung chuyển). */
+    void applyProvinceTransit(ShipmentOrder order) {
+        order.setHubOffice(null);
+        if (transitHubPolicyService == null) {
+            return;
+        }
+        Office from = order.getFromOffice();
+        Office dest = receiverOf(order);
+        Office hub = transitHubPolicyService.resolveHub(from, dest).orElse(null);
+        if (hub == null) {
+            return;
+        }
+        Itinerary first = requireTransitItinerary(from, hub);
+        requireTransitItinerary(hub, dest);
+        order.setHubOffice(hub);
+        applyItinerary(order, first);
+    }
+
+    private static Office receiverOf(ShipmentOrder order) {
+        return order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
+    }
+
+    private Itinerary requireTransitItinerary(Office from, Office to) {
+        if (itineraryRepository == null) {
+            return null;
+        }
+        return resolveItinerary(from, to).orElseThrow(() ->
+            new BadRequestAlertException(
+                "Chưa có lộ trình " + officeLabel(from) + " → " + officeLabel(to) + " cho đơn trung chuyển",
+                ENTITY,
+                "transitItineraryMissing"
+            )
+        );
+    }
+
+    private static String officeLabel(Office office) {
+        if (office == null) {
+            return "?";
+        }
+        return !isBlank(office.getName()) ? office.getName().trim() : office.getCode();
+    }
+
+    private static void applyItinerary(ShipmentOrder order, Itinerary it) {
+        if (it == null) {
+            return;
+        }
+        order.setItineraryLabel(blankToNull(it.getName()));
+        order.setRouteLabel(it.getBranch() != null ? blankToNull(it.getBranch().getName()) : null);
+    }
+
+    /** Chặng đang chạy của đơn trung chuyển: chặng PENDING/IN_TRANSIT đầu tiên. */
+    OrderLeg activeTransitLeg(ShipmentOrder order) {
+        if (order == null || order.getHubOffice() == null || order.getId() == null) {
+            return null;
+        }
+        return firstOpenLeg(orderLegRepository.findByOrder_IdOrderByLegIndexAsc(order.getId()));
+    }
+
+    private static OrderLeg firstOpenLeg(List<OrderLeg> legs) {
+        return legs
+            .stream()
+            .filter(l -> l.getStatus() == LegStatus.PENDING || l.getStatus() == LegStatus.IN_TRANSIT)
+            .findFirst()
+            .orElse(null);
+    }
+
+    /** Hàng đã tới VP nhận cuối: các chặng còn mở của đơn trung chuyển coi như xong. */
+    private void closeTransitLegs(ShipmentOrder order) {
+        if (order.getHubOffice() == null || order.getId() == null) {
+            return;
+        }
+        Instant now = Instant.now();
+        for (OrderLeg leg : orderLegRepository.findByOrder_IdOrderByLegIndexAsc(order.getId())) {
+            if (leg.getStatus() == LegStatus.PENDING || leg.getStatus() == LegStatus.IN_TRANSIT) {
+                if (leg.getTrip() == null && order.getCurrentTrip() != null) {
+                    leg.setTrip(order.getCurrentTrip());
+                }
+                leg.setStatus(LegStatus.AT_DEST);
+                leg.setArrivedAt(now);
+                orderLegRepository.save(leg);
+            }
+        }
+    }
+
+    /**
+     * Bắt đầu hoàn đơn trung chuyển (trừ khi hàng còn ở kho VP gửi): hàng về VP gửi qua VP trung chuyển.
+     * Hàng ở / đang tới VP trung chuyển → chặng sau đổi thành VP trung chuyển → VP gửi.
+     * Hàng đã đi chặng sau (tới VP nhận) → thêm chặng VP nhận → VP trung chuyển → VP gửi.
+     *
+     * @return mã khôi phục khi huỷ hoàn; null = không đổi chặng (giữ luồng hoàn cũ).
+     */
+    public String prepareTransitReturn(ShipmentOrder order, boolean atOriginWarehouse) {
+        if (order.getHubOffice() == null || order.getId() == null) {
+            return null;
+        }
+        List<OrderLeg> legs = orderLegRepository.findByOrder_IdOrderByLegIndexAsc(order.getId());
+        if (legs.size() != 2) {
+            return null;
+        }
+        OrderLeg first = legs.get(0);
+        OrderLeg second = legs.get(1);
+        OrderLeg open = firstOpenLeg(legs);
+        if (open == first && atOriginWarehouse) {
+            return null;
+        }
+        Office origin = order.getFromOffice();
+        Office hub = order.getHubOffice();
+        ForwardStage stage = order.getForwardStage();
+        boolean secondAtHub = open == second && (stage == null || stage == ForwardStage.WH_IN || stage == ForwardStage.TRANSFER_PENDING);
+        String token;
+        if (open == first || secondAtHub) {
+            token = open == first ? "H0" : "H1";
+            if (open == first) {
+                first.setStatus(LegStatus.AT_HUB);
+                orderLegRepository.save(first);
+            }
+            second.setToOffice(origin);
+            orderLegRepository.save(second);
+        } else {
+            token = "D" + (second.getStatus() == LegStatus.AT_DEST ? "1" : "0");
+            if (second.getStatus() != LegStatus.AT_DEST) {
+                second.setStatus(LegStatus.AT_DEST);
+                orderLegRepository.save(second);
+            }
+            orderLegRepository.save(newLeg(order, 2, receiverOf(order), hub));
+            orderLegRepository.save(newLeg(order, 3, hub, origin));
+        }
+        resolveItineraryIfAny(firstOpenLeg(orderLegRepository.findByOrder_IdOrderByLegIndexAsc(order.getId()))).ifPresent(it ->
+            applyItinerary(order, it)
+        );
+        return token;
+    }
+
+    /** Huỷ hoàn: trả các chặng về như trước khi bấm hoàn (mã từ {@link #prepareTransitReturn}). */
+    public void revertTransitReturn(ShipmentOrder order, String token) {
+        if (token == null || order.getHubOffice() == null || order.getId() == null) {
+            return;
+        }
+        List<OrderLeg> legs = orderLegRepository.findByOrder_IdOrderByLegIndexAsc(order.getId());
+        if (legs.size() < 2) {
+            return;
+        }
+        OrderLeg first = legs.get(0);
+        OrderLeg second = legs.get(1);
+        if (token.startsWith("H")) {
+            if ("H0".equals(token)) {
+                first.setStatus(LegStatus.PENDING);
+                first.setArrivedAt(null);
+                orderLegRepository.save(first);
+            }
+            second.setToOffice(receiverOf(order));
+            orderLegRepository.save(second);
+        } else if (token.startsWith("D")) {
+            List<OrderLeg> extra = legs.stream().filter(l -> l.getLegIndex() != null && l.getLegIndex() >= 2).toList();
+            orderLegRepository.deleteAll(extra);
+            if ("D0".equals(token)) {
+                second.setStatus(LegStatus.PENDING);
+                second.setArrivedAt(null);
+                orderLegRepository.save(second);
+            }
+        }
+        resolveItineraryIfAny(firstOpenLeg(orderLegRepository.findByOrder_IdOrderByLegIndexAsc(order.getId()))).ifPresent(it ->
+            applyItinerary(order, it)
+        );
+        shipmentOrderRepository.save(order);
+    }
+
+    private Optional<Itinerary> resolveItineraryIfAny(OrderLeg leg) {
+        if (leg == null || itineraryRepository == null) {
+            return Optional.empty();
+        }
+        return resolveItinerary(leg.getFromOffice(), leg.getToOffice());
+    }
+
+    private static OrderLeg newLeg(ShipmentOrder order, int index, Office from, Office to) {
+        OrderLeg leg = new OrderLeg();
+        leg.setOrder(order);
+        leg.setLegIndex(index);
+        leg.setStatus(LegStatus.PENDING);
+        leg.setFromOffice(from);
+        leg.setToOffice(to);
+        return leg;
+    }
+
+    private boolean hasTransitLegs(ShipmentOrder order) {
+        return (
+            order.getHubOffice() != null &&
+            order.getId() != null &&
+            !orderLegRepository.findByOrder_IdOrderByLegIndexAsc(order.getId()).isEmpty()
+        );
+    }
+
+    /** Đơn trung chuyển đã xong chặng đầu (hàng đã rời VP gửi tới VP trung chuyển). */
+    boolean passedTransitHub(ShipmentOrder order) {
+        if (order == null || order.getHubOffice() == null || order.getId() == null) {
+            return false;
+        }
+        return orderLegRepository
+            .findByOrder_IdOrderByLegIndexAsc(order.getId())
+            .stream()
+            .anyMatch(l -> l.getStatus() != LegStatus.PENDING && l.getStatus() != LegStatus.IN_TRANSIT);
+    }
+
+    /** Hàng đang nằm trong kho VP trung chuyển, chờ xếp chặng sau. */
+    public boolean goodsAtTransitHub(ShipmentOrder order) {
+        OrderLeg leg = activeTransitLeg(order);
+        if (leg == null || !sameOffice(leg.getFromOffice(), order.getHubOffice())) {
+            return false;
+        }
+        ForwardStage stage = order.getForwardStage();
+        return stage == ForwardStage.WH_IN || stage == ForwardStage.TRANSFER_PENDING;
+    }
+
+    /** VP xếp hàng của chặng đang chạy (đơn trung chuyển); null = theo luồng thường. */
+    public String transitLoadOfficeCode(ShipmentOrder order) {
+        OrderLeg leg = activeTransitLeg(order);
+        if (leg == null || leg.getFromOffice() == null) {
+            return null;
+        }
+        // Hoàn ngay tại kho VP gửi: chặng chưa đổi, giữ luồng hoàn cũ.
+        if (order.getStatus() == OrderStatus.RETURNING && Integer.valueOf(0).equals(leg.getLegIndex())) {
+            return null;
+        }
+        return leg.getFromOffice().getCode();
+    }
+
+    /**
+     * Quét nhập đủ kiện tại VP trung chuyển: xong chặng tới VP trung chuyển, đơn vào nhập kho gửi của VP này cho chặng sau.
+     * Chiều đi về CONFIRMED (không thu cước lần nữa); chiều hoàn giữ RETURNING.
+     *
+     * @return false khi lần quét không phải hàng tới VP trung chuyển.
+     */
+    public boolean arriveAtTransitHub(String orderCode, String officeCode) {
+        if (isBlank(officeCode)) {
+            return false;
+        }
+        ShipmentOrder order = requireByCode(orderCode);
+        OrderLeg leg = activeTransitLeg(order);
+        if (leg == null || !sameOffice(leg.getToOffice(), order.getHubOffice())) {
+            return false;
+        }
+        if (!officeCode.trim().equalsIgnoreCase(order.getHubOffice().getCode())) {
+            return false;
+        }
+        boolean returning = order.getStatus() == OrderStatus.RETURNING;
+        if (!returning && order.getStatus() != OrderStatus.IN_TRANSIT && order.getStatus() != OrderStatus.WAITING) {
+            return false;
+        }
+        dayClosureGuard.assertOrderMutable(order);
+        if (leg.getTrip() == null && order.getCurrentTrip() != null) {
+            leg.setTrip(order.getCurrentTrip());
+        }
+        leg.setStatus(LegStatus.AT_HUB);
+        leg.setArrivedAt(Instant.now());
+        orderLegRepository.save(leg);
+        OrderLeg next = firstOpenLeg(orderLegRepository.findByOrder_IdOrderByLegIndexAsc(order.getId()));
+        if (next != null && itineraryRepository != null) {
+            resolveItinerary(next.getFromOffice(), next.getToOffice()).ifPresent(it -> applyItinerary(order, it));
+        }
+        order.setCurrentTrip(null);
+        order.setForwardStage(ForwardStage.WH_IN);
+        order.setNote(stripScanMarks(order.getNote()));
+        if (!returning) {
+            order.setStatus(OrderStatus.CONFIRMED);
+        }
+        shipmentOrderRepository.save(order);
+        appendEvent(order, TRANSIT_HUB_IN, "Nhập kho trung chuyển · VP " + order.getHubOffice().getCode(), currentActor());
+        return true;
+    }
+
+    static final String TRANSIT_HUB_IN = "TRANSIT_HUB_IN";
+
+    private static final java.util.regex.Pattern WHIN_MARK = java.util.regex.Pattern.compile("\\[WHIN\\][\\d,]*\\[/WHIN\\]\\n?");
+    private static final java.util.regex.Pattern WHOUT_MARK = java.util.regex.Pattern.compile("\\[WHOUT\\][\\d,]*\\[/WHOUT\\]\\n?");
+
+    static String stripWarehouseIn(String note) {
+        if (note == null) {
+            return null;
+        }
+        return WHIN_MARK.matcher(note).replaceAll("").trim();
+    }
+
+    /** Bỏ dấu kiện đã xếp lên xe / đã xuống kho của chặng vừa xong để chặng sau quét lại từ đầu. */
+    static String stripScanMarks(String note) {
+        if (note == null) {
+            return null;
+        }
+        String out = WHOUT_MARK.matcher(WHIN_MARK.matcher(note).replaceAll("")).replaceAll("").trim();
+        return out.isEmpty() ? null : out;
+    }
+
+    /**
+     * Đổi VP gửi / VP nhận cuối của đơn: còn ở chặng đầu thì xét lại trung chuyển từ đầu;
+     * đã qua VP trung chuyển thì chỉ cho đổi VP nhận (chặng sau đi tới VP nhận mới).
+     */
+    private void retransitAfterEndpointChange(ShipmentOrder order) {
+        if (order.getStatus() == OrderStatus.RETURNING || order.getId() == null) {
+            return;
+        }
+        List<OrderLeg> legs = orderLegRepository.findByOrder_IdOrderByLegIndexAsc(order.getId());
+        boolean pastFirstLeg = legs.stream().anyMatch(l -> l.getStatus() != LegStatus.PENDING && l.getStatus() != LegStatus.IN_TRANSIT);
+        if (pastFirstLeg) {
+            OrderLeg first = legs.get(0);
+            if (!sameOffice(first.getFromOffice(), order.getFromOffice())) {
+                throw new BadRequestAlertException("Đơn đã qua VP trung chuyển — không đổi VP gửi được", ENTITY, "transitFromLocked");
+            }
+            OrderLeg open = firstOpenLeg(legs);
+            if (open == null) {
+                return;
+            }
+            Office dest = receiverOf(order);
+            if (sameOffice(open.getFromOffice(), dest)) {
+                throw new BadRequestAlertException("VP nhận mới trùng VP trung chuyển", ENTITY, "transitDestIsHub");
+            }
+            applyItinerary(order, requireTransitItinerary(open.getFromOffice(), dest));
+            open.setToOffice(dest);
+            orderLegRepository.save(open);
+            return;
+        }
+        applyProvinceTransit(order);
+        if (!legs.isEmpty()) {
+            orderLegRepository.deleteAll(legs);
+            orderLegRepository.flush();
+        }
+        shipmentOrderRepository.save(order);
+        ensureLegs(order);
     }
 
     private static Instant parseInstant(String raw) {

@@ -144,6 +144,12 @@ public class ExceptionFacadeService {
         boolean caseAtOriginWh =
             current == ForwardStage.WH_IN ||
             (current == null && order.getStatus() == OrderStatus.CONFIRMED && order.getPickedUpAt() != null);
+        String priorSnapshot = encodePriorSnapshot(order);
+        // Đơn trung chuyển đã rời kho VP gửi: hoàn đi ngược qua VP trung chuyển, bắt đầu ở nhập kho gửi chiều hoàn.
+        String transitToken = orderFacadeService.prepareTransitReturn(order, caseAtOriginWh);
+        if (transitToken != null) {
+            caseAtOriginWh = false;
+        }
         ForwardStage nextForward = caseAtOriginWh ? ForwardStage.DEST_WH_IN : ForwardStage.WH_IN;
 
         OrderReturnRequest req = new OrderReturnRequest();
@@ -153,7 +159,7 @@ public class ExceptionFacadeService {
         req.setStatus(ApprovalStatus.APPROVED);
         req.setDecidedByUsername(actor());
         req.setDecidedAt(Instant.now());
-        req.setDecisionNote(encodePriorSnapshot(order));
+        req.setDecisionNote(transitToken != null ? priorSnapshot + ";" + TRANSIT_TOKEN + transitToken : priorSnapshot);
         req.setOrder(order);
         req = orderReturnRequestRepository.save(req);
         order.setReturnRequest(req);
@@ -236,6 +242,7 @@ public class ExceptionFacadeService {
         if (prior.status() == null) {
             prior = fallbackPriorFromForward(order.getForwardStage());
         }
+        orderFacadeService.revertTransitReturn(order, transitTokenOf(req != null ? req.getDecisionNote() : null));
 
         if (req != null) {
             req.setStatus(ApprovalStatus.REJECTED);
@@ -299,6 +306,21 @@ public class ExceptionFacadeService {
         String fee = order.getCodFeeAmount() != null ? order.getCodFeeAmount().toPlainString() : "";
         String raw = "priorStatus=" + status + ";priorForward=" + forward + ";priorCod=" + cod + ";priorCodFee=" + fee;
         return raw.length() <= 255 ? raw : raw.substring(0, 255);
+    }
+
+    static final String TRANSIT_TOKEN = "transit=";
+
+    static String transitTokenOf(String note) {
+        if (note == null) {
+            return null;
+        }
+        for (String part : note.split("[;|]")) {
+            String p = part.trim();
+            if (p.startsWith(TRANSIT_TOKEN) && p.length() > TRANSIT_TOKEN.length()) {
+                return p.substring(TRANSIT_TOKEN.length()).trim();
+            }
+        }
+        return null;
     }
 
     private static PriorSnapshot decodePriorSnapshot(String note) {
@@ -815,6 +837,10 @@ public class ExceptionFacadeService {
     public OrderDetailDTO setForwardStage(String orderCode, ForwardStage stage) {
         ShipmentOrder order = requireOrder(orderCode);
         dayClosureGuard.assertOrderMutable(order);
+        // Quét xuống ở VP trung chuyển: client gọi tiếp nhập kho giao như ở VP nhận — đơn phải ở nhập kho gửi chặng sau.
+        if (stage == ForwardStage.DEST_WH_IN && orderFacadeService.goodsAtTransitHub(order)) {
+            return orderFacadeService.getByCode(order.getOrderCode());
+        }
         if (stage == ForwardStage.TRANSFER_PENDING || stage == ForwardStage.TRANSFERRING) {
             orderFacadeService.assertSenderWarehouseReceived(order);
         }

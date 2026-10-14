@@ -1,11 +1,17 @@
 package com.mycompany.myapp.service.config;
 
+import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.TransitHubPolicy;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.TransitHubPolicyRepository;
+import com.mycompany.myapp.service.OfficeItineraryPoints;
 import com.mycompany.myapp.service.dto.TransitHubPolicyDTO;
+import java.text.Normalizer;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +47,66 @@ public class TransitHubPolicyService {
         row.setDefaultHubOfficeCode(defaultHub);
         row.setUpdatedAt(Instant.now());
         return toDto(repository.save(row));
+    }
+
+    /** Tuyến tỉnh đi tỉnh: VP trung chuyển theo cấu hình; không phải tuyến tỉnh–tỉnh hoặc chưa có VP phù hợp → empty. */
+    @Transactional(readOnly = true)
+    public Optional<Office> resolveHub(Office from, Office to) {
+        if (from == null || to == null || from.getId() == null || to.getId() == null || from.getId().equals(to.getId())) {
+            return Optional.empty();
+        }
+        if (!isProvinceOffice(from) || !isProvinceOffice(to)) {
+            return Optional.empty();
+        }
+        TransitHubPolicy row = current();
+        Set<String> group = new LinkedHashSet<>(
+            Arrays.asList(row.getGroupPoints() == null ? new String[0] : row.getGroupPoints().split(","))
+        );
+        boolean grouped = inPointGroup(from, group) && inPointGroup(to, group);
+        Optional<Office> hub = grouped
+            ? officeByHint(row.getGroupHubOfficeCode(), "72", "trannhantong")
+            : officeByHint(row.getDefaultHubOfficeCode(), "31a", "nguyenquoctri");
+        return hub.filter(h -> !h.getId().equals(from.getId()) && !h.getId().equals(to.getId()));
+    }
+
+    static boolean isProvinceOffice(Office office) {
+        List<String> points = OfficeItineraryPoints.pointsOf(office);
+        if (points.isEmpty()) return false;
+        return (
+            points.stream().anyMatch(OfficeItineraryPoints.PROVINCE::containsKey) &&
+            points.stream().noneMatch(OfficeItineraryPoints.HANOI::containsKey)
+        );
+    }
+
+    private static boolean inPointGroup(Office office, Set<String> group) {
+        List<String> points = OfficeItineraryPoints.pointsOf(office).stream().filter(OfficeItineraryPoints.PROVINCE::containsKey).toList();
+        return !points.isEmpty() && group.containsAll(points);
+    }
+
+    private Optional<Office> officeByHint(String code, String... hints) {
+        if (code != null && !code.isBlank()) {
+            Optional<Office> byCode = officeRepository.findOneByCodeIgnoreCase(code.trim());
+            if (byCode.isPresent()) return byCode;
+        }
+        return officeRepository
+            .findAll()
+            .stream()
+            .filter(o -> {
+                String blob = foldKey(
+                    (o.getName() == null ? "" : o.getName()) + " " + (o.getAddress() == null ? "" : o.getAddress()) + " " + o.getCode()
+                );
+                return Arrays.stream(hints).allMatch(blob::contains);
+            })
+            .findFirst();
+    }
+
+    static String foldKey(String raw) {
+        return Normalizer.normalize(raw == null ? "" : raw, Normalizer.Form.NFD)
+            .replaceAll("\\p{M}", "")
+            .replace('Đ', 'D')
+            .replace('đ', 'd')
+            .toLowerCase()
+            .replaceAll("[^a-z0-9]+", "");
     }
 
     private void requireOffice(String code) {
