@@ -4,6 +4,7 @@ import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.ReceiptRepository;
 import com.mycompany.myapp.service.invoice.InvoicePolicy;
+import com.mycompany.myapp.service.order.CustomerTrackStatus;
 import com.mycompany.myapp.service.order.OrderMoney;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
@@ -22,7 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Doanh thu dùng chung cho Báo cáo kinh doanh và Báo cáo doanh thu ({@link #createdOrders}):
  * <ul>
- *   <li>Đơn tạo trong khoảng (theo ngày tạo đơn), trừ nháp và đơn huỷ, tính cho VP gửi.</li>
+ *   <li>Đơn tạo trong khoảng (theo ngày tạo đơn), tính cho VP gửi. Không tính nháp, đơn huỷ và đơn còn chờ bàn giao
+ *       (Chờ nhận hàng / Chờ lấy hàng / Đang lấy hàng).</li>
  *   <li>Doanh thu = cước khách trả − phí Ahamove đã lưu trên đơn (không âm). Không gồm tiền COD thu hộ.</li>
  *   <li>Đã thu = tiền cước đã thu của đơn (không vượt doanh thu); còn phải thu = phần còn lại.</li>
  * </ul>
@@ -125,7 +127,7 @@ public class RevenueLedger {
         return out;
     }
 
-    /** Đơn tạo trong [start, end), trừ nháp và huỷ, tính cho VP gửi. */
+    /** Đơn tạo trong [start, end), trừ nháp, huỷ và đơn còn chờ bàn giao (chưa có hàng), tính cho VP gửi. */
     public List<CreatedOrder> createdOrders(Instant start, Instant end) {
         List<Object[]> rows = em
             .createQuery(
@@ -140,6 +142,9 @@ public class RevenueLedger {
         List<CreatedOrder> out = new ArrayList<>(rows.size());
         for (Object[] r : rows) {
             ShipmentOrder o = (ShipmentOrder) r[0];
+            if (CustomerTrackStatus.pendingHandover(o)) {
+                continue;
+            }
             BigDecimal revenue = netFare(o.getFareAmount(), o.getPartnerCode(), o.getPartnerStatus(), o.getPartnerFeeAmount());
             out.add(new CreatedOrder(o, key(r[1]), revenue, collectedOf(revenue, o.getPaidAmount())));
         }

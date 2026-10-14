@@ -248,31 +248,14 @@ public class BusinessReportService {
         Map<LocalDate, long[]> sent = new TreeMap<>();
         Map<LocalDate, BigDecimal> revenue = new TreeMap<>();
         String officeKey = office == null ? "" : office;
-        List<Object[]> created = em
-            .createQuery(
-                "select o.createdAt, o.fareAmount, o.partnerCode, o.partnerStatus, o.partnerFeeAmount from ShipmentOrder o left join o.fromOffice fr" +
-                " where o.createdAt >= :start and o.createdAt < :end and o.status not in :excluded" +
-                " and (:office = '' or upper(fr.code) = :office)",
-                Object[].class
-            )
-            .setParameter("start", p.start())
-            .setParameter("end", p.end())
-            .setParameter("excluded", List.of(OrderStatus.DRAFT, OrderStatus.CANCELLED))
-            .setParameter("office", officeKey)
-            .getResultList();
-        for (Object[] r : created) {
-            if (r[0] == null) {
+        for (RevenueLedger.CreatedOrder c : revenueLedger.createdOrders(p.start(), p.end())) {
+            Instant createdAt = c.order().getCreatedAt();
+            if (createdAt == null || (office != null && !office.equalsIgnoreCase(c.officeCode()))) {
                 continue;
             }
-            LocalDate day = ((Instant) r[0]).atZone(VN).toLocalDate();
+            LocalDate day = createdAt.atZone(VN).toLocalDate();
             sent.computeIfAbsent(day, d -> new long[] { 0 })[0]++;
-            BigDecimal fare = RevenueLedger.netFare(
-                r[1] instanceof BigDecimal b ? b : BigDecimal.ZERO,
-                r[2] instanceof String code ? code : null,
-                r[3] instanceof String status ? status : null,
-                r[4] instanceof BigDecimal fee ? fee : BigDecimal.ZERO
-            );
-            revenue.merge(day, fare, BigDecimal::add);
+            revenue.merge(day, c.revenue(), BigDecimal::add);
         }
 
         Map<LocalDate, Long> received = new TreeMap<>();

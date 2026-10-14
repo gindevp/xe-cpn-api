@@ -53,6 +53,11 @@ public final class CustomerTrackStatus {
         };
     }
 
+    /** Đơn còn ở màn Chờ bàn giao (chờ nhận / chờ lấy / đang lấy): chưa có hàng. */
+    public static boolean pendingHandover(ShipmentOrder o) {
+        return pendingHandoverTab(o) != null;
+    }
+
     /** null nếu không thuộc màn Chờ bàn giao. */
     static String pendingHandoverTab(ShipmentOrder o) {
         OrderStatus st = o.getStatus();
