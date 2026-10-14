@@ -7,7 +7,6 @@ import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
-import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -24,11 +23,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Báo cáo doanh thu theo đơn — cùng logic và tổng với Báo cáo kinh doanh ({@link RevenueLedger}):
+ * Báo cáo doanh thu theo đơn — cùng logic và tổng với Báo cáo kinh doanh ({@link RevenueLedger#createdOrders}):
  * <ul>
- *   <li>Dòng phiếu thu: phiếu đã xác nhận có ngày thu tiền trong khoảng, tính cho VP lập phiếu, chỉ phần cước (bỏ COD).</li>
- *   <li>Dòng đơn tồn: đơn tạo trong khoảng chưa kết thúc tại cuối khoảng, tính cho VP gửi, cước còn lại chưa lên phiếu thu.</li>
- *   <li>Các khoản phí của dòng = khoản phí của đơn × (số tiền dòng / tổng các khoản), làm tròn đồng; chênh làm tròn dồn vào cước hàng.</li>
+ *   <li>Mỗi dòng một đơn tạo trong khoảng (theo ngày tạo), trừ nháp và đơn huỷ, tính cho VP gửi.</li>
+ *   <li>Doanh thu = cước khách trả − phí Ahamove. Các khoản phí của dòng = khoản phí của đơn × (doanh thu / tổng các khoản),
+ *       làm tròn đồng; chênh làm tròn dồn vào cước hàng.</li>
+ *   <li>Lọc: RECEIPT = đã thu đủ, BACKLOG = còn phải thu.</li>
  * </ul>
  */
 @Service
@@ -37,11 +37,12 @@ public class RevenueReportService {
 
     static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     static final int MAX_RANGE_DAYS = 366;
-    private static final int ID_CHUNK = 1000;
 
     public enum Kind {
         ALL,
+        /** Còn phải thu. */
         BACKLOG,
+        /** Đã thu đủ. */
         RECEIPT,
     }
 
@@ -50,7 +51,7 @@ public class RevenueReportService {
         Instant createdAt,
         String officeCode,
         String officeName,
-        /** RECEIPT = dòng phiếu thu, BACKLOG = đơn tồn còn phải thu. */
+        /** RECEIPT = đã thu đủ, BACKLOG = còn phải thu. */
         String source,
         String receiptCode,
         OrderStatus status,
@@ -61,9 +62,9 @@ public class RevenueReportService {
         BigDecimal declaredFee,
         BigDecimal discount,
         BigDecimal total,
-        /** Phí trả Ahamove (lấy hoặc giao). Đã trừ một lần khỏi tổng doanh thu. */
+        /** Phí trả Ahamove (lấy hoặc giao). Đã trừ khỏi tổng doanh thu. */
         BigDecimal ahamoveFee,
-        /** Phí giao tận nơi khi giao nội bộ. 0 nếu đơn book Ahamove. Không nằm trong tổng doanh thu. */
+        /** Phí giao tận nơi khi giao nội bộ. 0 nếu đơn book Ahamove. Đã nằm trong tổng doanh thu, chỉ để xem. */
         BigDecimal internalDeliveryFee
     ) {}
 
@@ -101,18 +102,11 @@ public class RevenueReportService {
         BigDecimal total
     ) {}
 
-    private final EntityManager em;
     private final RevenueLedger revenueLedger;
     private final OfficeRepository officeRepository;
     private final StaffAccessService staffAccessService;
 
-    public RevenueReportService(
-        EntityManager em,
-        RevenueLedger revenueLedger,
-        OfficeRepository officeRepository,
-        StaffAccessService staffAccessService
-    ) {
-        this.em = em;
+    public RevenueReportService(RevenueLedger revenueLedger, OfficeRepository officeRepository, StaffAccessService staffAccessService) {
         this.revenueLedger = revenueLedger;
         this.officeRepository = officeRepository;
         this.staffAccessService = staffAccessService;
@@ -136,49 +130,28 @@ public class RevenueReportService {
         Instant end = t.plusDays(1).atStartOfDay(VN).toInstant();
         Map<String, String> names = officeNames();
         List<Row> rows = new ArrayList<>();
-
-        List<RevenueLedger.ReceiptLine> lines = revenueLedger.receiptLines(start, end);
-        if (k != Kind.BACKLOG) {
-            List<RevenueLedger.ReceiptLine> mine = lines
-                .stream()
-                .filter(l -> l.fare().signum() > 0 && (office == null || office.equals(l.officeCode())))
-                .toList();
-            Map<Long, ShipmentOrder> orders = ordersById(mine.stream().map(RevenueLedger.ReceiptLine::orderId).distinct().toList());
-            for (RevenueLedger.ReceiptLine l : mine) {
-                ShipmentOrder o = orders.get(l.orderId());
-                if (o != null) {
-                    addRow(rows, o, l.officeCode(), "RECEIPT", l.receiptCode(), share(feesOf(o), l.fare()), names);
-                }
+        for (RevenueLedger.CreatedOrder c : revenueLedger.createdOrders(start, end)) {
+            if (office != null && !office.equals(c.officeCode())) {
+                continue;
             }
-        }
-        if (k != Kind.RECEIPT) {
-            for (RevenueLedger.BacklogOrder b : revenueLedger.backlog(start, end, lines)) {
-                if (office == null || office.equals(b.officeCode())) {
-                    addRow(rows, b.order(), b.officeCode(), "BACKLOG", null, share(feesOf(b.order()), b.remaining()), names);
-                }
+            BigDecimal due = c.revenue().subtract(c.collected());
+            boolean paid = due.signum() <= 0;
+            if ((k == Kind.RECEIPT && !paid) || (k == Kind.BACKLOG && paid)) {
+                continue;
             }
+            addRow(rows, c, paid ? "RECEIPT" : "BACKLOG", names);
         }
-        rows.sort(
-            Comparator.comparing(Row::createdAt, Comparator.nullsLast(Comparator.reverseOrder()))
-                .thenComparing(Row::orderCode)
-                .thenComparing(Row::source, Comparator.reverseOrder())
-                .thenComparing(Row::receiptCode, Comparator.nullsLast(Comparator.naturalOrder()))
-        );
+        rows.sort(Comparator.comparing(Row::createdAt, Comparator.nullsLast(Comparator.reverseOrder())).thenComparing(Row::orderCode));
         return new Report(f, t, office, k, rows, totals(rows));
     }
 
-    private static void addRow(
-        List<Row> rows,
-        ShipmentOrder o,
-        String officeCode,
-        String source,
-        String receiptCode,
-        Share s,
-        Map<String, String> names
-    ) {
+    private static void addRow(List<Row> rows, RevenueLedger.CreatedOrder c, String source, Map<String, String> names) {
+        Share s = share(feesOf(c.order()), c.revenue());
         if (s == null || s.total().signum() <= 0) {
             return;
         }
+        ShipmentOrder o = c.order();
+        String officeCode = c.officeCode();
         rows.add(
             new Row(
                 o.getOrderCode(),
@@ -186,7 +159,7 @@ public class RevenueReportService {
                 officeCode,
                 names.getOrDefault(officeCode, officeCode.isEmpty() ? "Chưa rõ VP" : officeCode),
                 source,
-                receiptCode,
+                null,
                 o.getStatus(),
                 s.goods(),
                 s.delivery(),
@@ -199,19 +172,6 @@ public class RevenueReportService {
                 internalDeliveryFee(o)
             )
         );
-    }
-
-    private Map<Long, ShipmentOrder> ordersById(List<Long> ids) {
-        Map<Long, ShipmentOrder> out = new HashMap<>();
-        for (int i = 0; i < ids.size(); i += ID_CHUNK) {
-            for (ShipmentOrder o : em
-                .createQuery("select o from ShipmentOrder o where o.id in :ids", ShipmentOrder.class)
-                .setParameter("ids", ids.subList(i, Math.min(ids.size(), i + ID_CHUNK)))
-                .getResultList()) {
-                out.put(o.getId(), o);
-            }
-        }
-        return out;
     }
 
     /** Chi phí Ahamove đã lưu trên đơn. Không chia theo phiếu thu; tổng doanh thu đã trừ khoản này một lần. */

@@ -83,6 +83,13 @@ class RevenueReportServiceTest {
     }
 
     @Test
+    void collectedNeverExceedsRevenue() {
+        assertThat(RevenueLedger.collectedOf(d(65_000), d(100_000))).isEqualByComparingTo("65000");
+        assertThat(RevenueLedger.collectedOf(d(100_000), d(40_000))).isEqualByComparingTo("40000");
+        assertThat(RevenueLedger.collectedOf(d(100_000), null)).isEqualByComparingTo("0");
+    }
+
+    @Test
     void legacyOrderWithoutGoodsFareDerivesIt() {
         ShipmentOrder o = order();
         o.setGoodsFareAmount(null);

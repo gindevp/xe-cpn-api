@@ -20,16 +20,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Doanh thu dùng chung cho Báo cáo kinh doanh và Báo cáo doanh thu:
+ * Doanh thu dùng chung cho Báo cáo kinh doanh và Báo cáo doanh thu ({@link #createdOrders}):
  * <ul>
- *   <li>Phiếu thu: phiếu đã xác nhận, ngày thu tiền trong khoảng, tính cho VP lập phiếu. Mỗi dòng chỉ tính phần cước,
- *       tối đa bằng cước đơn — phần vượt là COD thu hộ, không phải doanh thu. Đơn trên nhiều phiếu: phiếu lập trước
- *       ăn cước trước (khớp thứ tự trừ của phiếu thu: VP gửi → cước phía giao → COD).</li>
- *   <li>Đơn tồn: tạo trong khoảng, chưa kết thúc (giao / huỷ / hoàn xong) tại cuối khoảng, tính cho VP gửi;
- *       doanh thu = cước còn lại sau khi trừ phần cước đã lên phiếu thu của kỳ (không cộng 2 lần).</li>
- *   <li>Cước dùng làm doanh thu = cước khách trả − phí Ahamove đã lưu trên đơn (không âm). Phí chỉ trừ một lần,
- *       kể cả đơn có nhiều phiếu thu.</li>
+ *   <li>Đơn tạo trong khoảng (theo ngày tạo đơn), trừ nháp và đơn huỷ, tính cho VP gửi.</li>
+ *   <li>Doanh thu = cước khách trả − phí Ahamove đã lưu trên đơn (không âm). Không gồm tiền COD thu hộ.</li>
+ *   <li>Đã thu = tiền cước đã thu của đơn (không vượt doanh thu); còn phải thu = phần còn lại.</li>
  * </ul>
+ * {@link #receiptLines} / {@link #backlog} giữ cho số đơn tồn và các màn đối soát phiếu thu.
  */
 @Component
 @Transactional(readOnly = true)
@@ -51,6 +48,9 @@ public class RevenueLedger {
 
     /** Đơn tồn; {@code remaining} = cước chưa lên phiếu thu của kỳ. */
     public record BacklogOrder(ShipmentOrder order, String officeCode, BigDecimal remaining) {}
+
+    /** Đơn tính doanh thu theo ngày tạo; {@code revenue} = cước đã trừ phí Ahamove, {@code collected} = phần đã thu. */
+    public record CreatedOrder(ShipmentOrder order, String officeCode, BigDecimal revenue, BigDecimal collected) {}
 
     /** Dòng phiếu thu của một đơn, theo thứ tự lập phiếu. */
     record LineAmount(Long lineId, Long receiptId, BigDecimal amount) {}
@@ -123,6 +123,32 @@ public class RevenueLedger {
             out.add(new BacklogOrder(o, key(r[1]), remaining));
         }
         return out;
+    }
+
+    /** Đơn tạo trong [start, end), trừ nháp và huỷ, tính cho VP gửi. */
+    public List<CreatedOrder> createdOrders(Instant start, Instant end) {
+        List<Object[]> rows = em
+            .createQuery(
+                "select o, f.code from ShipmentOrder o left join o.fromOffice f" +
+                " where o.createdAt >= :start and o.createdAt < :end and o.status not in :excluded",
+                Object[].class
+            )
+            .setParameter("start", start)
+            .setParameter("end", end)
+            .setParameter("excluded", List.of(OrderStatus.DRAFT, OrderStatus.CANCELLED))
+            .getResultList();
+        List<CreatedOrder> out = new ArrayList<>(rows.size());
+        for (Object[] r : rows) {
+            ShipmentOrder o = (ShipmentOrder) r[0];
+            BigDecimal revenue = netFare(o.getFareAmount(), o.getPartnerCode(), o.getPartnerStatus(), o.getPartnerFeeAmount());
+            out.add(new CreatedOrder(o, key(r[1]), revenue, collectedOf(revenue, o.getPaidAmount())));
+        }
+        return out;
+    }
+
+    /** Phần doanh thu đã thu: tiền cước đã thu, không vượt doanh thu của đơn. */
+    static BigDecimal collectedOf(BigDecimal revenue, BigDecimal paid) {
+        return OrderMoney.nz(paid).max(BigDecimal.ZERO).min(OrderMoney.nz(revenue));
     }
 
     /** lineId → phần cước của dòng, xét mọi dòng phiếu thu (kể cả chưa xác nhận) của các đơn. */

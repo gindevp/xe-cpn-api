@@ -25,11 +25,12 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Báo cáo kinh doanh màn Tổng quan, theo khoảng ngày (giờ VN):
  * <ul>
- *   <li>DT phiếu thu = phần cước (bỏ COD thu hộ) của phiếu thu đã xác nhận, lọc theo ngày thu tiền, theo VP lập phiếu;</li>
+ *   <li>Tổng DT = cước các đơn tạo trong khoảng (trừ nháp, huỷ), theo VP gửi, đã trừ phí Ahamove
+ *       (xem {@link RevenueLedger#createdOrders});</li>
+ *   <li>DT đã thu / DT còn phải thu = phần tổng DT đã thu tiền / chưa thu;</li>
  *   <li>Đơn giao thành công = đơn DELIVERED có lần POD cuối trong khoảng, theo VP giao (VP nhận);</li>
  *   <li>Đơn tồn = đơn tạo trong khoảng, chưa kết thúc (giao / huỷ / hoàn xong) tại cuối khoảng, theo VP gửi;
- *       DT đơn tồn = cước còn lại chưa lên phiếu thu của kỳ (xem {@link RevenueLedger});</li>
- *   <li>Tổng DT = DT phiếu thu + DT đơn tồn, đã trừ phí Ahamove; Tổng số đơn = giao thành công + đơn tồn.</li>
+ *       Tổng số đơn = giao thành công + đơn tồn.</li>
  * </ul>
  * Kỳ so sánh = cùng khoảng ngày lùi 1 tháng.
  */
@@ -116,11 +117,14 @@ public class BusinessReportService {
         Period prev = cur.previousMonth();
 
         Map<String, long[]> delivered = deliveredByOffice(cur);
-        List<RevenueLedger.ReceiptLine> curLines = revenueLedger.receiptLines(cur.start(), cur.end());
-        Map<String, Object[]> backlog = backlogByOffice(cur, curLines);
-        Totals current = totals(office, curLines, delivered, backlog);
-        List<RevenueLedger.ReceiptLine> prevLines = revenueLedger.receiptLines(prev.start(), prev.end());
-        Totals previous = totals(office, prevLines, deliveredByOffice(prev), backlogByOffice(prev, prevLines));
+        Map<String, Object[]> backlog = backlogByOffice(cur);
+        Totals current = totals(office, revenueLedger.createdOrders(cur.start(), cur.end()), delivered, backlog);
+        Totals previous = totals(
+            office,
+            revenueLedger.createdOrders(prev.start(), prev.end()),
+            deliveredByOffice(prev),
+            backlogByOffice(prev)
+        );
 
         return new Report(
             f,
@@ -148,19 +152,20 @@ public class BusinessReportService {
 
     private Totals totals(
         String office,
-        List<RevenueLedger.ReceiptLine> lines,
+        List<RevenueLedger.CreatedOrder> created,
         Map<String, long[]> delivered,
         Map<String, Object[]> backlog
     ) {
-        BigDecimal receipt = BigDecimal.ZERO;
-        for (RevenueLedger.ReceiptLine l : lines) {
-            if (office == null || office.equalsIgnoreCase(l.officeCode())) {
-                receipt = receipt.add(l.fare());
+        BigDecimal collected = BigDecimal.ZERO;
+        BigDecimal due = BigDecimal.ZERO;
+        for (RevenueLedger.CreatedOrder c : created) {
+            if (office == null || office.equalsIgnoreCase(c.officeCode())) {
+                collected = collected.add(c.collected());
+                due = due.add(c.revenue().subtract(c.collected()));
             }
         }
         long d = 0;
         long b = 0;
-        BigDecimal bRev = BigDecimal.ZERO;
         for (var e : delivered.entrySet()) {
             if (office == null || office.equalsIgnoreCase(e.getKey())) {
                 d += e.getValue()[0];
@@ -169,10 +174,9 @@ public class BusinessReportService {
         for (var e : backlog.entrySet()) {
             if (office == null || office.equalsIgnoreCase(e.getKey())) {
                 b += (Long) e.getValue()[0];
-                bRev = bRev.add((BigDecimal) e.getValue()[1]);
             }
         }
-        return Totals.of(receipt, bRev, d, b);
+        return Totals.of(collected, due, d, b);
     }
 
     /** VP giao (finalTo → to) → số đơn có lần POD cuối trong khoảng. */
@@ -198,13 +202,12 @@ public class BusinessReportService {
         return out;
     }
 
-    /** VP gửi → [số đơn tồn, cước còn lại chưa lên phiếu thu của kỳ]. */
-    private Map<String, Object[]> backlogByOffice(Period p, List<RevenueLedger.ReceiptLine> periodLines) {
+    /** VP gửi → [số đơn tồn]. */
+    private Map<String, Object[]> backlogByOffice(Period p) {
         Map<String, Object[]> out = new LinkedHashMap<>();
-        for (RevenueLedger.BacklogOrder b : revenueLedger.backlog(p.start(), p.end(), periodLines)) {
-            Object[] agg = out.computeIfAbsent(b.officeCode(), x -> new Object[] { 0L, BigDecimal.ZERO });
+        for (RevenueLedger.BacklogOrder b : revenueLedger.backlog(p.start(), p.end(), List.of())) {
+            Object[] agg = out.computeIfAbsent(b.officeCode(), x -> new Object[] { 0L });
             agg[0] = (Long) agg[0] + 1;
-            agg[1] = ((BigDecimal) agg[1]).add(b.remaining());
         }
         return out;
     }
@@ -248,12 +251,13 @@ public class BusinessReportService {
         List<Object[]> created = em
             .createQuery(
                 "select o.createdAt, o.fareAmount, o.partnerCode, o.partnerStatus, o.partnerFeeAmount from ShipmentOrder o left join o.fromOffice fr" +
-                " where o.createdAt >= :start and o.createdAt < :end" +
+                " where o.createdAt >= :start and o.createdAt < :end and o.status not in :excluded" +
                 " and (:office = '' or upper(fr.code) = :office)",
                 Object[].class
             )
             .setParameter("start", p.start())
             .setParameter("end", p.end())
+            .setParameter("excluded", List.of(OrderStatus.DRAFT, OrderStatus.CANCELLED))
             .setParameter("office", officeKey)
             .getResultList();
         for (Object[] r : created) {
