@@ -6,6 +6,8 @@ import com.mycompany.myapp.domain.InventoryCheckScan;
 import com.mycompany.myapp.domain.InventoryCheckStatus;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.StaffProfile;
+import com.mycompany.myapp.domain.enumeration.ForwardStage;
+import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.InventoryCheckRepository;
 import com.mycompany.myapp.repository.InventoryCheckScanRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
@@ -182,7 +184,7 @@ public class InventoryCheckSessionService {
                 expected.computeIfAbsent(e.orderCode().trim().toUpperCase(Locale.ROOT), k -> new HashSet<>()).addAll(seqs);
             }
         }
-        dropOrdersCreatedAfterOpen(expected, check.getOpenedAt());
+        dropOrdersOutsideSession(expected, check.getOpenedAt());
         Map<String, Set<Integer>> scanned = new LinkedHashMap<>();
         for (InventoryCheckScan s : scanRepository.findByCheckIdOrderByIdAsc(checkId)) {
             scanned.computeIfAbsent(s.getOrderCode().toUpperCase(Locale.ROOT), k -> new HashSet<>()).add(s.getPackageSeq());
@@ -208,9 +210,12 @@ public class InventoryCheckSessionService {
         return checkService.toDto(checkRepository.save(check));
     }
 
-    /** Đơn tạo sau giờ mở phiên không thuộc mốc kiểm kho đó. */
-    private void dropOrdersCreatedAfterOpen(Map<String, Set<Integer>> expected, Instant openedAt) {
-        if (openedAt == null || expected.isEmpty()) {
+    /**
+     * Bỏ đơn không thuộc phiên: tạo sau giờ mở, hoặc chưa có hàng trong kho
+     * (chờ nhận / chờ lấy / đang lấy / lấy thành công chưa nhập kho).
+     */
+    private void dropOrdersOutsideSession(Map<String, Set<Integer>> expected, Instant openedAt) {
+        if (expected.isEmpty()) {
             return;
         }
         List<ShipmentOrder> orders = orderRepository.findWithOfficesByOrderCodeIn(expected.keySet());
@@ -218,13 +223,58 @@ public class InventoryCheckSessionService {
             return;
         }
         for (ShipmentOrder order : orders) {
-            if (order.getOrderCode() == null || order.getCreatedAt() == null) {
+            if (order.getOrderCode() == null) {
                 continue;
             }
-            if (order.getCreatedAt().isAfter(openedAt)) {
-                expected.remove(order.getOrderCode().trim().toUpperCase(Locale.ROOT));
+            String code = order.getOrderCode().trim().toUpperCase(Locale.ROOT);
+            boolean createdAfterOpen = openedAt != null && order.getCreatedAt() != null && order.getCreatedAt().isAfter(openedAt);
+            if (createdAfterOpen || !inWarehouseStock(order)) {
+                expected.remove(code);
             }
         }
+    }
+
+    /**
+     * Hàng đang nằm ở Nhập kho gửi, Đợi trung chuyển hoặc Nhập kho giao.
+     * Đơn tạo tại quầy (không lấy tận nơi, không QR mang đến) coi là đã có hàng.
+     */
+    static boolean inWarehouseStock(ShipmentOrder order) {
+        ForwardStage stage = order.getForwardStage();
+        if (
+            stage == ForwardStage.WH_IN ||
+            stage == ForwardStage.TRANSFER_PENDING ||
+            stage == ForwardStage.TRANSFERRING ||
+            stage == ForwardStage.DEST_WH_IN
+        ) {
+            return true;
+        }
+        if (stage == ForwardStage.PICKED) {
+            return order.getPickedUpAt() != null;
+        }
+        if (stage == ForwardStage.DELIVERING || stage == ForwardStage.FAILED || stage == ForwardStage.REDELIVER_WAIT) {
+            return false;
+        }
+        OrderStatus status = order.getStatus();
+        if (status == OrderStatus.WAITING || status == OrderStatus.AT_DEST || status == OrderStatus.IN_TRANSIT) {
+            return true;
+        }
+        if (
+            status == OrderStatus.OUT_FOR_DELIVERY ||
+            status == OrderStatus.DELIVERED ||
+            status == OrderStatus.CANCELLED ||
+            status == OrderStatus.RETURNED ||
+            status == OrderStatus.FAILED_DELIVERY ||
+            status == OrderStatus.DRAFT
+        ) {
+            return false;
+        }
+        if (order.getPickedUpAt() != null) {
+            return true;
+        }
+        if (Boolean.TRUE.equals(order.getHomePickup()) || Boolean.TRUE.equals(order.getQrDropOff())) {
+            return false;
+        }
+        return status == OrderStatus.CONFIRMED;
     }
 
     record Tally(int systemPkg, int checkedPkg, int extraPkg, List<String> missingCodes) {}

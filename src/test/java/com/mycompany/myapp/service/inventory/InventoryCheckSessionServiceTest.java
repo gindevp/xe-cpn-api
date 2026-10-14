@@ -13,6 +13,8 @@ import com.mycompany.myapp.domain.InventoryCheck;
 import com.mycompany.myapp.domain.InventoryCheckScan;
 import com.mycompany.myapp.domain.InventoryCheckStatus;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.ForwardStage;
+import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.InventoryCheckPhotoRepository;
 import com.mycompany.myapp.repository.InventoryCheckRepository;
 import com.mycompany.myapp.repository.InventoryCheckScanRepository;
@@ -240,7 +242,7 @@ class InventoryCheckSessionServiceTest {
 
     @Test
     void complete_dropsOrdersCreatedAfterSessionOpened() {
-        Instant opened = Instant.parse("2026-10-11T13:00:00Z");
+        Instant opened = Instant.now();
         InventoryCheck c = open(1L, opened);
         when(checkRepository.findForUpdate(1L)).thenReturn(Optional.of(c));
         when(scanRepository.findByCheckIdOrderByIdAsc(1L)).thenReturn(List.of(scan(1, "HD1", 1, "nam")));
@@ -255,6 +257,56 @@ class InventoryCheckSessionServiceTest {
         assertThat(c.getSystemPkgCount()).isEqualTo(1);
         assertThat(c.getMissingCount()).isZero();
         assertThat(c.getMissingCodesJson()).doesNotContain("HD2");
+    }
+
+    @Test
+    void complete_dropsOrdersStillWaitingForGoods() {
+        Instant opened = Instant.now();
+        InventoryCheck c = open(1L, opened);
+        when(checkRepository.findForUpdate(1L)).thenReturn(Optional.of(c));
+        when(scanRepository.findByCheckIdOrderByIdAsc(1L)).thenReturn(List.of());
+
+        ShipmentOrder dropOff = stockOrder("NB1", opened.minusSeconds(3600));
+        dropOff.setQrDropOff(true);
+
+        ShipmentOrder pickup = stockOrder("NB4", opened.minusSeconds(3600));
+        pickup.setHomePickup(true);
+        pickup.setForwardStage(ForwardStage.PICKED);
+
+        ShipmentOrder counter = stockOrder("NB2", opened.minusSeconds(3600));
+
+        ShipmentOrder received = stockOrder("NB3", opened.minusSeconds(3600));
+        received.setQrDropOff(true);
+        received.setForwardStage(ForwardStage.WH_IN);
+        received.setPickedUpAt(opened.minusSeconds(600));
+
+        when(orderRepository.findWithOfficesByOrderCodeIn(any())).thenReturn(List.of(dropOff, pickup, counter, received));
+
+        service.complete(
+            1L,
+            new CompleteRequest(
+                List.of(
+                    new ExpectedOrder("NB1", List.of(1)),
+                    new ExpectedOrder("NB4", List.of(1)),
+                    new ExpectedOrder("NB2", List.of(1)),
+                    new ExpectedOrder("NB3", List.of(1))
+                )
+            )
+        );
+
+        assertThat(c.getSystemCount()).isEqualTo(2);
+        assertThat(c.getSystemCodesJson()).doesNotContain("NB1").doesNotContain("NB4");
+        assertThat(c.getSystemCodesJson()).contains("NB2").contains("NB3");
+    }
+
+    private static ShipmentOrder stockOrder(String code, Instant createdAt) {
+        ShipmentOrder order = new ShipmentOrder();
+        order.setOrderCode(code);
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setCreatedAt(createdAt);
+        order.setHomePickup(false);
+        order.setQrDropOff(false);
+        return order;
     }
 
     @Test
