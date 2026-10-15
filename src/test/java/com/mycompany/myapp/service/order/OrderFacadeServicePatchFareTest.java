@@ -476,6 +476,72 @@ class OrderFacadeServicePatchFareTest {
         assertThat(order.getPaidAmount()).isEqualByComparingTo("40000");
     }
 
+    @Test
+    void senderPaidFull_fareUpOnTruck_extraPayerSender_recordsSenderPayment() {
+        stubLoadAndDetail();
+        prepaidAtSenderWarehouse();
+        order.setCurrentTrip(new Trip());
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setFareAmount(new BigDecimal("55000"));
+        req.setExtraFarePayer("SENDER");
+
+        service.patch("XE-H1-001", req);
+
+        ArgumentCaptor<OrderPayment> pay = ArgumentCaptor.forClass(OrderPayment.class);
+        verify(orderPaymentRepository).save(pay.capture());
+        assertThat(pay.getValue().getAmount()).isEqualByComparingTo("15000");
+        assertThat(pay.getValue().getPaymentKind()).isEqualTo(PaymentKind.TRUOC);
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("55000");
+        assertThat(order.getPaymentTerm()).isEqualTo(PaymentTerm.GUI_TRA);
+    }
+
+    @Test
+    void senderPaidFull_fareUpAtWarehouse_extraPayerReceiver_becomesPartialNoPayment() {
+        stubLoadAndDetail();
+        prepaidAtSenderWarehouse();
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setFareAmount(new BigDecimal("55000"));
+        req.setExtraFarePayer("RECEIVER");
+
+        service.patch("XE-H1-001", req);
+
+        verify(orderPaymentRepository, never()).save(any());
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("40000");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("55000");
+        assertThat(order.getPaymentTerm()).isEqualTo(PaymentTerm.NHAN_TRA);
+        ArgumentCaptor<OrderEvent> ev = ArgumentCaptor.forClass(OrderEvent.class);
+        verify(orderEventRepository, org.mockito.Mockito.atLeastOnce()).save(ev.capture());
+        assertThat(ev.getAllValues()).anySatisfy(e -> assertThat(e.getAction()).isEqualTo("PAYMENT_TERM_CHANGE"));
+    }
+
+    @Test
+    void senderPaidFull_fareDownOnTruck_extraPayerIgnored_stillH1() {
+        when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("XE-H1-001")).thenReturn(Optional.of(order));
+        prepaidAtSenderWarehouse();
+        order.setCurrentTrip(new Trip());
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setFareAmount(new BigDecimal("25000"));
+        req.setExtraFarePayer("SENDER");
+
+        assertThatThrownBy(() -> service.patch("XE-H1-001", req))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("fareBelowPaid");
+        verify(orderPaymentRepository, never()).save(any());
+    }
+
+    @Test
+    void extraPayerInvalid_rejected() {
+        when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("XE-H1-001")).thenReturn(Optional.of(order));
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setExtraFarePayer("BOTH");
+
+        assertThatThrownBy(() -> service.patch("XE-H1-001", req))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("extraFarePayer");
+    }
+
     private void prepaidAtSenderWarehouse() {
         service.setOrderPaymentRepository(orderPaymentRepository);
         service.setReceiptOrderLineRepository(receiptOrderLineRepository);

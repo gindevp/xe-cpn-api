@@ -998,6 +998,8 @@ public class OrderFacadeService {
         String endpointsBefore = itineraryEndpointsKey(order);
         java.util.Map<String, String> fieldsBefore = OrderEditDiff.snapshot(order);
         BigDecimal fareBefore = OrderMoney.nz(order.getFareAmount());
+        String extraPayer = extraFarePayer(req.getExtraFarePayer());
+        boolean senderPaidFullBefore = senderPaidFull(order);
         boolean prepaidFollowsFare = senderPrepaidFollowsFare(order) && !passedTransitHub(order);
         if (req.getSenderName() != null) {
             order.setSenderName(req.getSenderName());
@@ -1183,8 +1185,31 @@ public class OrderFacadeService {
         if (OrderMoney.nz(order.getFareAmount()).compareTo(fareBefore) != 0) {
             PartnerAdvance.assertNotPending(order, ENTITY);
         }
-        BigDecimal prepaidDelta = prepaidFollowsFare ? syncSenderPrepaidToFare(order) : BigDecimal.ZERO;
+        BigDecimal fareAfter = OrderMoney.nz(order.getFareAmount());
+        boolean extraChosen = extraPayer != null && senderPaidFullBefore && fareAfter.compareTo(fareBefore) > 0;
+        BigDecimal prepaidDelta;
+        boolean receiverTakesExtra = false;
+        if (extraChosen && EXTRA_PAYER_SENDER.equals(extraPayer)) {
+            prepaidDelta = syncSenderPrepaidToFare(order);
+        } else if (extraChosen) {
+            // Người nhận trả phần chênh = "Thu cước 1 phần": giữ số người gửi đã trả, còn lại thu khi giao.
+            prepaidDelta = BigDecimal.ZERO;
+            order.setPaymentTerm(PaymentTerm.NHAN_TRA);
+            receiverTakesExtra = true;
+        } else {
+            prepaidDelta = prepaidFollowsFare ? syncSenderPrepaidToFare(order) : BigDecimal.ZERO;
+        }
         shipmentOrderRepository.save(order);
+        if (receiverTakesExtra) {
+            appendEvent(
+                order,
+                "PAYMENT_TERM_CHANGE",
+                "Cước tăng sau khi người gửi đã trả · người nhận trả phần chênh " +
+                fareAfter.subtract(OrderMoney.nz(order.getPaidAmount())).toPlainString() +
+                "đ (Thu cước 1 phần)",
+                currentActor()
+            );
+        }
         if (prepaidDelta.signum() != 0) {
             appendEvent(
                 order,
@@ -1877,6 +1902,29 @@ public class OrderFacadeService {
      * Người gửi trả đủ cước, hàng còn ở kho gửi chưa lên xe: khách trả trực tiếp cho NV tại VP gửi
      * nên sửa cước thì số đã thu đi theo cước mới (không áp H1 chặn giảm).
      */
+    static final String EXTRA_PAYER_SENDER = "SENDER";
+    static final String EXTRA_PAYER_RECEIVER = "RECEIVER";
+
+    static String extraFarePayer(String raw) {
+        if (isBlank(raw)) {
+            return null;
+        }
+        String v = raw.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!EXTRA_PAYER_SENDER.equals(v) && !EXTRA_PAYER_RECEIVER.equals(v)) {
+            throw new BadRequestAlertException("extraFarePayer phải là SENDER hoặc RECEIVER", ENTITY, "extraFarePayer");
+        }
+        return v;
+    }
+
+    /** Người gửi trả, đã trả đủ cước (không công nợ). */
+    static boolean senderPaidFull(ShipmentOrder order) {
+        if (order.getPaymentTerm() != PaymentTerm.GUI_TRA || Boolean.TRUE.equals(order.getOnCredit())) {
+            return false;
+        }
+        BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
+        return paid.signum() > 0 && paid.compareTo(OrderMoney.nz(order.getFareAmount())) >= 0;
+    }
+
     static boolean senderPrepaidFollowsFare(ShipmentOrder order) {
         if (order.getPaymentTerm() != PaymentTerm.GUI_TRA || Boolean.TRUE.equals(order.getOnCredit())) {
             return false;

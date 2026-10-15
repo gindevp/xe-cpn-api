@@ -388,4 +388,19 @@ public class PatchOrderRequest {
     public void setSkipHistory(Boolean skipHistory) {
         this.skipHistory = skipHistory;
     }
+
+    /**
+     * Đơn người gửi đã trả đủ mà sửa làm cước tăng: ai trả phần chênh.
+     * SENDER = người gửi trả thêm (ghi thu vào ca người sửa); RECEIVER = chuyển "Thu cước 1 phần", thu người nhận khi giao.
+     * Bỏ trống = giữ cách xử lý cũ.
+     */
+    private String extraFarePayer;
+
+    public String getExtraFarePayer() {
+        return extraFarePayer;
+    }
+
+    public void setExtraFarePayer(String extraFarePayer) {
+        this.extraFarePayer = extraFarePayer;
+    }
 }
