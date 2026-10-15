@@ -145,6 +145,7 @@
     <include file="config/liquibase/changelog/20261011204500_partner_pay_method.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261013120000_storage_return_fee.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261013180000_transit_hub_policy.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261014170000_bidv_collection.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
 

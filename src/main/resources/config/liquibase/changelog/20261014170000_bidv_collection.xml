@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261014170000-bidv-config" author="cpn">
+        <comment>Cấu hình thu hộ BIDV (tài khoản định danh) — một dòng.</comment>
+        <createTable tableName="bidv_config">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="enabled" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="mode" type="varchar(10)" defaultValue="TEST">
+                <constraints nullable="false"/>
+            </column>
+            <column name="service_id" type="varchar(50)"/>
+            <column name="secret_code" type="varchar(255)"/>
+            <column name="va_prefix" type="varchar(20)"/>
+            <column name="allowed_ips" type="varchar(1000)"/>
+            <column name="api_key" type="varchar(100)"/>
+            <column name="api_key_required" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checksum_required" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="${datetimeType}"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="20261014170000-bidv-test-bill" author="cpn">
+        <comment>Hóa đơn test BIDV — chỉ dùng khi chế độ TEST, không gắn đơn / phiếu thật.</comment>
+        <createTable tableName="bidv_test_bill">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="customer_id" type="varchar(20)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_bidv_test_bill_customer"/>
+            </column>
+            <column name="customer_name" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="amount" type="decimal(21,2)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="remark" type="varchar(200)"/>
+            <column name="created_at" type="${datetimeType}"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="20261014170000-bank-transaction" author="cpn">
+        <comment>Giao dịch gạch nợ ngân hàng đã ghi nhận — trans_id duy nhất để BIDV gọi lại không ghi trùng.</comment>
+        <createTable tableName="bank_transaction">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="provider" type="varchar(10)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="trans_id" type="varchar(64)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_bank_transaction_trans_id"/>
+            </column>
+            <column name="trans_date" type="varchar(20)"/>
+            <column name="customer_id" type="varchar(40)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="bill_id" type="varchar(40)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="amount" type="decimal(21,2)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="target_type" type="varchar(16)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="target_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <createIndex tableName="bank_transaction" indexName="ix_bank_transaction_target">
+            <column name="target_type"/>
+            <column name="target_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20261014170000-bidv-call-log" author="cpn">
+        <comment>Nhật ký mọi lần BIDV gọi getbill / paybill (kể cả bị từ chối).</comment>
+        <createTable tableName="bidv_call_log">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="called_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="endpoint" type="varchar(10)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="client_ip" type="varchar(64)"/>
+            <column name="customer_id" type="varchar(64)"/>
+            <column name="trans_id" type="varchar(64)"/>
+            <column name="amount" type="decimal(21,2)"/>
+            <column name="result_code" type="varchar(5)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="result_desc" type="varchar(255)"/>
+            <column name="checksum_variant" type="varchar(20)"/>
+            <column name="duration_ms" type="int"/>
+            <column name="request_body" type="varchar(4000)"/>
+            <column name="response_body" type="varchar(4000)"/>
+        </createTable>
+        <createIndex tableName="bidv_call_log" indexName="ix_bidv_call_log_called_at">
+            <column name="called_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

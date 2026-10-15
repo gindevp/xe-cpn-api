@@ -197,6 +197,9 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         ) {
             return true;
         }
+        if ("POST".equals(method) && path.startsWith("/api/public/bidv/")) {
+            return true;
+        }
         if ("POST".equals(method) && path.startsWith("/api/account/reset-password")) {
             return true;
         }
