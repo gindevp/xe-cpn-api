@@ -383,11 +383,27 @@ class OrderFacadeServicePatchFareTest {
     }
 
     @Test
-    void senderPrepaidAtWarehouse_fareUp_recordsAdjustmentAndPaidFollows() {
+    void senderPaidFull_fareUpWithoutExtraPayer_rejected() {
+        when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("XE-H1-001")).thenReturn(Optional.of(order));
+        prepaidAtSenderWarehouse();
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setFareAmount(new BigDecimal("55000"));
+
+        assertThatThrownBy(() -> service.patch("XE-H1-001", req))
+            .isInstanceOf(BadRequestAlertException.class)
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("extraFarePayerRequired");
+        verify(orderPaymentRepository, never()).save(any());
+        verify(shipmentOrderRepository, never()).save(any());
+    }
+
+    @Test
+    void senderPrepaidAtWarehouse_fareUp_extraPayerSender_recordsAdjustmentAndPaidFollows() {
         stubLoadAndDetail();
         prepaidAtSenderWarehouse();
         PatchOrderRequest req = new PatchOrderRequest();
         req.setFareAmount(new BigDecimal("55000"));
+        req.setExtraFarePayer("SENDER");
 
         service.patch("XE-H1-001", req);
 
@@ -439,6 +455,7 @@ class OrderFacadeServicePatchFareTest {
         prepaidAtSenderWarehouse();
         PatchOrderRequest req = new PatchOrderRequest();
         req.setFareAmount(new BigDecimal("50000"));
+        req.setExtraFarePayer("SENDER");
 
         service.patch("XE-H1-001", req);
 

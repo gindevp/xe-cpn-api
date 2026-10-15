@@ -1186,6 +1186,17 @@ public class OrderFacadeService {
             PartnerAdvance.assertNotPending(order, ENTITY);
         }
         BigDecimal fareAfter = OrderMoney.nz(order.getFareAmount());
+        if (extraPayer == null && senderPaidFullBefore && fareAfter.compareTo(fareBefore) > 0) {
+            throw new BadRequestAlertException(
+                "Người gửi đã trả đủ " +
+                fareBefore.toPlainString() +
+                "đ, cước mới " +
+                fareAfter.toPlainString() +
+                "đ — chọn người gửi trả thêm hay người nhận trả phần chênh.",
+                ENTITY,
+                "extraFarePayerRequired"
+            );
+        }
         boolean extraChosen = extraPayer != null && senderPaidFullBefore && fareAfter.compareTo(fareBefore) > 0;
         BigDecimal prepaidDelta;
         boolean receiverTakesExtra = false;
