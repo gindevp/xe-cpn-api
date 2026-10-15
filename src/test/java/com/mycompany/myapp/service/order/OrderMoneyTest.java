@@ -3,6 +3,7 @@ package com.mycompany.myapp.service.order;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 
@@ -43,5 +44,25 @@ class OrderMoneyTest {
 
         o.setCodAmount(null);
         assertThat(OrderMoney.receiptCollectable(o)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void receiverDue_senderPays_onlyStorageFee() {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setPaymentTerm(PaymentTerm.GUI_TRA);
+        o.setFareAmount(new BigDecimal("39000"));
+        o.setPaidAmount(new BigDecimal("20000"));
+        o.setStorageFeeAmount(new BigDecimal("9000"));
+        assertThat(OrderMoney.receiverDue(o)).isEqualByComparingTo("9000");
+
+        o.setPaidAmount(new BigDecimal("36000"));
+        assertThat(OrderMoney.receiverDue(o)).isEqualByComparingTo("3000");
+
+        o.setOnCredit(true);
+        assertThat(OrderMoney.receiverDue(o)).isEqualByComparingTo("0");
+
+        o.setOnCredit(false);
+        o.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        assertThat(OrderMoney.receiverDue(o)).isEqualByComparingTo("3000");
     }
 }

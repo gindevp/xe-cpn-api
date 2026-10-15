@@ -90,6 +90,32 @@ class RevenueReportServiceTest {
     }
 
     @Test
+    void storageAndReturnFeesHaveOwnColumnsAndTotalUnchanged() {
+        ShipmentOrder o = order();
+        o.setFareAmount(d(112_000));
+        o.setStorageFeeAmount(d(9_000));
+        o.setReturnFeeAmount(d(3_000));
+        RevenueReportService.Share s = RevenueReportService.share(RevenueReportService.feesOf(o), d(112_000));
+        assertThat(s.goods()).isEqualByComparingTo("60000");
+        assertThat(s.storage()).isEqualByComparingTo("9000");
+        assertThat(s.returnFee()).isEqualByComparingTo("3000");
+        assertThat(s.total()).isEqualByComparingTo("112000");
+
+        RevenueReportService.Share half = RevenueReportService.share(RevenueReportService.feesOf(o), d(56_000));
+        BigDecimal sum = half
+            .goods()
+            .add(half.delivery())
+            .add(half.pickup())
+            .add(half.codFee())
+            .add(half.declared())
+            .add(half.storage())
+            .add(half.returnFee())
+            .subtract(half.discount());
+        assertThat(sum).isEqualByComparingTo("56000");
+        assertThat(half.storage()).isEqualByComparingTo("4500");
+    }
+
+    @Test
     void legacyOrderWithoutGoodsFareDerivesIt() {
         ShipmentOrder o = order();
         o.setGoodsFareAmount(null);

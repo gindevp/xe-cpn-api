@@ -32,6 +32,7 @@ import com.mycompany.myapp.service.dto.order.OrderTransitionRequest;
 import com.mycompany.myapp.service.dto.order.PodRequest;
 import com.mycompany.myapp.service.order.DeliveryFacadeService;
 import com.mycompany.myapp.service.order.OrderFacadeService;
+import com.mycompany.myapp.service.order.SurchargeFeeService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -130,6 +131,27 @@ class AhamoveDispatchServiceFlowTest {
         assertThat(order.getPartnerCodCollectedAt()).isNull();
         assertThat(order.getPaidAmount()).isEqualByComparingTo("20000");
         verify(delivery, never()).recordPartnerAdvance(any(), any(), any(), any());
+    }
+
+    @Test
+    void dispatch_refreshesStorageFeeBeforeAdvance() {
+        order.setPaidAmount(new BigDecimal("50000"));
+        order.setPaymentTerm(PaymentTerm.GUI_TRA);
+        SurchargeFeeService fees = mock(SurchargeFeeService.class);
+        when(fees.refreshStorageFee(order)).thenAnswer(inv -> {
+            order.setStorageFeeAmount(new BigDecimal("3000"));
+            order.setFareAmount(new BigDecimal("53000"));
+            return true;
+        });
+        service.setSurchargeFeeService(fees);
+        when(client.createOrder(any(), any(), any(), any())).thenReturn(
+            new AhamoveOrderClient.CreatedOrder("AHA7", "ASSIGNING", null, new BigDecimal("25000"), null)
+        );
+        service.dispatch("GP-0001", pin());
+        ArgumentCaptor<AhamoveOrderClient.Stop> drop = ArgumentCaptor.forClass(AhamoveOrderClient.Stop.class);
+        verify(client).createOrder(any(), drop.capture(), any(), any());
+        assertThat(drop.getValue().cod()).isEqualTo(3000L);
+        assertThat(order.getPartnerCodAmount()).isEqualByComparingTo("3000");
     }
 
     @Test

@@ -28,6 +28,7 @@ import com.mycompany.myapp.service.order.DeliveryFacadeService;
 import com.mycompany.myapp.service.order.OrderFacadeService;
 import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.service.order.PartnerAdvance;
+import com.mycompany.myapp.service.order.SurchargeFeeService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -202,6 +203,13 @@ public class AhamoveDispatchService {
         this.tx = new TransactionTemplate(transactionManager);
     }
 
+    private SurchargeFeeService surchargeFeeService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setSurchargeFeeService(SurchargeFeeService surchargeFeeService) {
+        this.surchargeFeeService = surchargeFeeService;
+    }
+
     public static class DispatchRequest {
 
         private Double lat;
@@ -280,6 +288,10 @@ public class AhamoveDispatchService {
         final DispatchRequest req = request != null ? request : new DispatchRequest();
         if ((req.getLat() == null) != (req.getLng() == null)) {
             throw new BadRequestAlertException("Toạ độ giao thiếu lat hoặc lng", ENTITY, "ahamovePinInvalid");
+        }
+        // Phí tồn kho tăng theo giờ nhập kho, không theo lượt cập nhật 00:10 — tính lại để số tài xế ứng đủ cước.
+        if (surchargeFeeService != null) {
+            surchargeFeeService.refreshStorageFee(requireOrder(orderCode));
         }
         ShipmentOrder order = requireOrder(orderCode);
         Dispatchable ok = assertDispatchable(order);

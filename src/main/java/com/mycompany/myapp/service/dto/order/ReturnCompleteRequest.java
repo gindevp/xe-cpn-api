@@ -1,8 +1,11 @@
 package com.mycompany.myapp.service.dto.order;
 
+import com.mycompany.myapp.domain.enumeration.PaymentMethod;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,6 +36,28 @@ public class ReturnCompleteRequest {
 
     public void setActualRecipientPhone(String actualRecipientPhone) {
         this.actualRecipientPhone = actualRecipientPhone;
+    }
+
+    /** Số thu người gửi lúc trả hàng hoàn; null/0 = không thu. */
+    @PositiveOrZero
+    private BigDecimal collectedAmount;
+
+    private PaymentMethod paymentMethod;
+
+    public BigDecimal getCollectedAmount() {
+        return collectedAmount;
+    }
+
+    public void setCollectedAmount(BigDecimal collectedAmount) {
+        this.collectedAmount = collectedAmount;
+    }
+
+    public PaymentMethod getPaymentMethod() {
+        return paymentMethod;
+    }
+
+    public void setPaymentMethod(PaymentMethod paymentMethod) {
+        this.paymentMethod = paymentMethod;
     }
 
     public List<String> getPhotos() {

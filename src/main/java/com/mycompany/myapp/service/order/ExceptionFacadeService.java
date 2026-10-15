@@ -92,6 +92,13 @@ public class ExceptionFacadeService {
         this.surchargeFeeService = surchargeFeeService;
     }
 
+    private DeliveryFacadeService deliveryFacadeService;
+
+    @Autowired(required = false)
+    void setDeliveryFacadeService(@org.springframework.context.annotation.Lazy DeliveryFacadeService deliveryFacadeService) {
+        this.deliveryFacadeService = deliveryFacadeService;
+    }
+
     public ExceptionFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
         OrderIssueRepository orderIssueRepository,
@@ -527,6 +534,12 @@ public class ExceptionFacadeService {
             seq++;
         }
         shipmentOrderRepository.save(order);
+        if (req.getCollectedAmount() != null && req.getCollectedAmount().signum() > 0) {
+            if (deliveryFacadeService == null) {
+                throw new IllegalStateException("DeliveryFacadeService unavailable");
+            }
+            deliveryFacadeService.recordReturnCollect(order, req.getCollectedAmount(), req.getPaymentMethod());
+        }
 
         return setReturnStage(orderCode, ReturnStage.RT_DONE);
     }

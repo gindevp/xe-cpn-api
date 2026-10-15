@@ -44,6 +44,26 @@ class ReceiptSettlementTest {
     }
 
     @Test
+    void guiTra_storageFeeAtDest_notOwedBySenderOffice() {
+        ShipmentOrder o = order(PaymentTerm.GUI_TRA, OrderStatus.AT_DEST, ForwardStage.DEST_WH_IN, "33000", "30000", "0");
+        o.setStorageFeeAmount(new BigDecimal("3000"));
+        Split s = ReceiptSettlement.split(o, Totals.ZERO);
+        assertThat(s.senderFareDue()).isEqualByComparingTo("0");
+        assertThat(s.senderOut()).isEqualByComparingTo("30000");
+        assertThat(s.deliveryOut()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void guiTra_storageFeeUncollectedAfterDelivery_owedByDelivery() {
+        ShipmentOrder o = order(PaymentTerm.GUI_TRA, OrderStatus.DELIVERED, ForwardStage.DELIVERING, "39000", "20000", "0");
+        o.setStorageFeeAmount(new BigDecimal("9000"));
+        Split s = ReceiptSettlement.split(o, Totals.ZERO);
+        assertThat(s.senderFareDue()).isEqualByComparingTo("10000");
+        assertThat(s.deliveryFareDue()).isEqualByComparingTo("9000");
+        assertThat(s.deliveryOut()).isEqualByComparingTo("9000");
+    }
+
+    @Test
     void guiTra_unpaidBeforeWarehouse_nothing() {
         ShipmentOrder o = order(PaymentTerm.GUI_TRA, OrderStatus.CONFIRMED, null, "30000", "0", "0");
         assertThat(ReceiptSettlement.split(o, Totals.ZERO).totalOut()).isEqualByComparingTo("0");

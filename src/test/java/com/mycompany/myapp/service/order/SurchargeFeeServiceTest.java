@@ -15,6 +15,8 @@ import com.mycompany.myapp.repository.SurchargePolicyRepository;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,18 +35,30 @@ class SurchargeFeeServiceTest {
     }
 
     @Test
-    void storageChargesCeilDaysAfterFreePeriod() {
-        Instant arrived = Instant.parse("2026-10-01T00:00:00Z");
+    void storageChargesCalendarDaysAfterFreePeriod() {
+        // 15:00 giờ VN ngày 01/10
+        Instant arrived = Instant.parse("2026-10-01T08:00:00Z");
         assertThat(SurchargeFeeService.storageAmount(arrived, arrived.plus(Duration.ofHours(1)), 0, d("10000"))).isEqualByComparingTo(
             "10000"
         );
-        assertThat(SurchargeFeeService.storageAmount(arrived, arrived.plus(Duration.ofDays(3)), 3, d("10000"))).isEqualByComparingTo("0");
-        assertThat(
-            SurchargeFeeService.storageAmount(arrived, arrived.plus(Duration.ofDays(3)).plusSeconds(1), 3, d("10000"))
-        ).isEqualByComparingTo("10000");
-        assertThat(SurchargeFeeService.storageAmount(arrived, arrived.plus(Duration.ofHours(60)), 1, d("10000"))).isEqualByComparingTo(
-            "20000"
+        // 23:59 VN ngày 03/10: vẫn trong 3 ngày miễn phí
+        assertThat(SurchargeFeeService.storageAmount(arrived, Instant.parse("2026-10-03T16:59:00Z"), 3, d("10000"))).isEqualByComparingTo(
+            "0"
         );
+        // 00:01 VN ngày 04/10: sang ngày thứ 4
+        assertThat(SurchargeFeeService.storageAmount(arrived, Instant.parse("2026-10-03T17:01:00Z"), 3, d("10000"))).isEqualByComparingTo(
+            "10000"
+        );
+    }
+
+    @Test
+    void storageFeeDoesNotStepMidDay() {
+        Instant arrived = Instant.parse("2026-10-01T08:00:00Z");
+        // 00:10 và 16:00 VN cùng ngày 03/10 → cùng số tiền
+        BigDecimal morning = SurchargeFeeService.storageAmount(arrived, Instant.parse("2026-10-02T17:10:00Z"), 1, d("3000"));
+        BigDecimal afternoon = SurchargeFeeService.storageAmount(arrived, Instant.parse("2026-10-03T09:00:00Z"), 1, d("3000"));
+        assertThat(morning).isEqualByComparingTo("6000");
+        assertThat(afternoon).isEqualByComparingTo("6000");
     }
 
     @Test
@@ -63,7 +77,9 @@ class SurchargeFeeServiceTest {
         stubPolicy(true, 1, "10000", false, "0");
         OrderEvent arrived = new OrderEvent();
         arrived.setAction("SCAN_IN");
-        arrived.setEventAt(Instant.now().minus(Duration.ofHours(60)));
+        // 01:00 giờ VN cách đây 2 ngày → hôm nay là ngày lịch thứ 3
+        ZoneId vn = ZoneId.of("Asia/Ho_Chi_Minh");
+        arrived.setEventAt(LocalDate.now(vn).minusDays(2).atStartOfDay(vn).plusHours(1).toInstant());
         when(events.findByOrder_IdOrderByEventAtAsc(1L)).thenReturn(List.of(arrived));
 
         assertThat(service.refreshStorageFee(order)).isTrue();

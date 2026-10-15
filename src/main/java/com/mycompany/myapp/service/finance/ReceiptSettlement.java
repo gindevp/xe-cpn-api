@@ -11,8 +11,8 @@ import java.math.BigDecimal;
 /**
  * Chia số tiền phải nộp phiếu thu của một đơn thành 2 phần, mỗi phần một người chịu trách nhiệm:
  * <ul>
- *   <li>{@link #SENDER}: tiền VP gửi đang giữ (thu đầu gửi / thu tay) + cước gửi trả còn nợ sau nhập kho gửi.</li>
- *   <li>{@link #DELIVERY}: tiền thu lúc giao + cước nhận trả còn nợ + COD — chỉ sau DELIVERED.</li>
+ *   <li>{@link #SENDER}: tiền VP gửi đang giữ (thu đầu gửi / thu tay) + cước gửi trả còn nợ sau nhập kho gửi (trừ phí tồn kho).</li>
+ *   <li>{@link #DELIVERY}: tiền thu lúc giao + cước nhận trả còn nợ (đơn gửi trả: phí tồn kho) + COD — chỉ sau DELIVERED.</li>
  * </ul>
  * Phiếu đã ghi phần (SENDER / DELIVERY) trừ đúng phần đó. Phiếu cũ không ghi phần vẫn trừ SENDER trước, phần dư vào DELIVERY.
  */
@@ -124,10 +124,13 @@ public final class ReceiptSettlement {
         BigDecimal senderHeld = paid.subtract(deliveryPaid);
         // Tài xế Ahamove đã ứng cước nhưng NV chưa ghi nhận: số đó là nợ người book ship (phần giao), không phải VP gửi.
         BigDecimal pendingAdvance = !returned && PartnerAdvance.pending(order) ? PartnerAdvance.amount(order).min(due) : BigDecimal.ZERO;
+        BigDecimal remaining = nonNegative(due.subtract(pendingAdvance));
+        // Đơn người gửi trả: phí tồn kho do người nhận trả lúc giao → phần giao, không tính cho VP gửi.
+        BigDecimal storageDue = guiTra ? remaining.min(nonNegative(OrderMoney.nz(order.getStorageFeeAmount()))) : BigDecimal.ZERO;
         BigDecimal senderFareDue = guiTra && !returned && (delivered || pastSenderWarehouse(order))
-            ? nonNegative(due.subtract(pendingAdvance))
+            ? remaining.subtract(storageDue)
             : BigDecimal.ZERO;
-        BigDecimal deliveryFareDue = delivered && !guiTra ? nonNegative(due.subtract(pendingAdvance)) : BigDecimal.ZERO;
+        BigDecimal deliveryFareDue = delivered ? (guiTra ? storageDue : remaining) : BigDecimal.ZERO;
         BigDecimal deliveryCod = delivered ? cod : BigDecimal.ZERO;
 
         BigDecimal senderExpected = senderHeld.add(senderFareDue);

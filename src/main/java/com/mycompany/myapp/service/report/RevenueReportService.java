@@ -60,6 +60,8 @@ public class RevenueReportService {
         BigDecimal pickupFee,
         BigDecimal codFee,
         BigDecimal declaredFee,
+        BigDecimal storageFee,
+        BigDecimal returnFee,
         BigDecimal discount,
         BigDecimal total,
         /** Phí trả Ahamove (lấy hoặc giao). Đã trừ khỏi tổng doanh thu. */
@@ -74,13 +76,15 @@ public class RevenueReportService {
         BigDecimal pickupFee,
         BigDecimal codFee,
         BigDecimal declaredFee,
+        BigDecimal storageFee,
+        BigDecimal returnFee,
         BigDecimal discount,
         BigDecimal total
     ) {}
 
     public record Report(LocalDate from, LocalDate to, String officeCode, Kind kind, List<Row> rows, Totals totals) {}
 
-    /** Khoản phí của đơn; fare = goods + delivery + pickup + codFee + declared − discount. */
+    /** Khoản phí của đơn; fare = goods + delivery + pickup + codFee + declared + storage + returnFee − discount. */
     record Fees(
         BigDecimal fare,
         BigDecimal goods,
@@ -88,6 +92,8 @@ public class RevenueReportService {
         BigDecimal pickup,
         BigDecimal codFee,
         BigDecimal declared,
+        BigDecimal storage,
+        BigDecimal returnFee,
         BigDecimal discount
     ) {}
 
@@ -98,6 +104,8 @@ public class RevenueReportService {
         BigDecimal pickup,
         BigDecimal codFee,
         BigDecimal declared,
+        BigDecimal storage,
+        BigDecimal returnFee,
         BigDecimal discount,
         BigDecimal total
     ) {}
@@ -166,6 +174,8 @@ public class RevenueReportService {
                 s.pickup(),
                 s.codFee(),
                 s.declared(),
+                s.storage(),
+                s.returnFee(),
                 s.discount(),
                 s.total(),
                 ahamoveFee(o),
@@ -210,9 +220,7 @@ public class RevenueReportService {
                 .subtract(returnFee)
                 .add(discount)
                 .max(BigDecimal.ZERO);
-        // Phí tồn kho và phí hoàn đi cùng cước hàng trên báo cáo để các cột vẫn cộng đủ tổng đã thu.
-        goods = goods.add(storage).add(returnFee);
-        return new Fees(fare, goods, delivery, pickup, codFee, declared, discount);
+        return new Fees(fare, goods, delivery, pickup, codFee, declared, storage, returnFee, discount);
     }
 
     static Share share(Fees fees, BigDecimal collected) {
@@ -227,17 +235,29 @@ public class RevenueReportService {
             .add(fees.pickup())
             .add(fees.codFee())
             .add(fees.declared())
+            .add(fees.storage())
+            .add(fees.returnFee())
             .subtract(fees.discount());
+        BigDecimal zero = BigDecimal.ZERO;
         if (base.signum() <= 0) {
-            return new Share(total, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, total);
+            return new Share(total, zero, zero, zero, zero, zero, zero, zero, total);
         }
         BigDecimal delivery = scale(fees.delivery(), total, base);
         BigDecimal pickup = scale(fees.pickup(), total, base);
         BigDecimal codFee = scale(fees.codFee(), total, base);
         BigDecimal declared = scale(fees.declared(), total, base);
+        BigDecimal storage = scale(fees.storage(), total, base);
+        BigDecimal returnFee = scale(fees.returnFee(), total, base);
         BigDecimal discount = scale(fees.discount(), total, base);
-        BigDecimal goods = total.subtract(delivery).subtract(pickup).subtract(codFee).subtract(declared).add(discount);
-        return new Share(goods, delivery, pickup, codFee, declared, discount, total);
+        BigDecimal goods = total
+            .subtract(delivery)
+            .subtract(pickup)
+            .subtract(codFee)
+            .subtract(declared)
+            .subtract(storage)
+            .subtract(returnFee)
+            .add(discount);
+        return new Share(goods, delivery, pickup, codFee, declared, storage, returnFee, discount, total);
     }
 
     private static BigDecimal scale(BigDecimal part, BigDecimal collected, BigDecimal base) {
@@ -253,16 +273,19 @@ public class RevenueReportService {
     private static Totals totals(List<Row> rows) {
         BigDecimal g = BigDecimal.ZERO, d = BigDecimal.ZERO, p = BigDecimal.ZERO, c = BigDecimal.ZERO;
         BigDecimal k = BigDecimal.ZERO, disc = BigDecimal.ZERO, t = BigDecimal.ZERO;
+        BigDecimal st = BigDecimal.ZERO, rf = BigDecimal.ZERO;
         for (Row r : rows) {
             g = g.add(r.goodsFare());
             d = d.add(r.deliveryFee());
             p = p.add(r.pickupFee());
             c = c.add(r.codFee());
             k = k.add(r.declaredFee());
+            st = st.add(r.storageFee());
+            rf = rf.add(r.returnFee());
             disc = disc.add(r.discount());
             t = t.add(r.total());
         }
-        return new Totals(g, d, p, c, k, disc, t);
+        return new Totals(g, d, p, c, k, st, rf, disc, t);
     }
 
     private String resolveOffice(String requested) {

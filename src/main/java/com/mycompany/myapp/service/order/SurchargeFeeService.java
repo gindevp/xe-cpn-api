@@ -11,8 +11,10 @@ import com.mycompany.myapp.repository.SurchargePolicyRepository;
 import com.mycompany.myapp.security.SecurityUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Phí tồn kho giao và phí hoàn — cộng vào {@code fare_amount} theo cấu hình phụ phí.
- * Tồn kho: ceil(số ngày kể từ nhập kho giao) − ngày miễn phí, nhân phí/ngày. Chỉ khi đơn còn nằm kho giao.
+ * Tồn kho: số ngày lịch kể từ ngày nhập kho giao (ngày nhập là ngày 1) − ngày miễn phí, nhân phí/ngày. Chỉ khi đơn còn nằm kho giao.
  * Hoàn: phần trăm × (cước hàng + cước lấy + cước giao) lúc bấm hoàn; hủy hoàn thì trừ lại.
  */
 @Service
@@ -30,6 +32,7 @@ public class SurchargeFeeService {
 
     private static final Logger LOG = LoggerFactory.getLogger(SurchargeFeeService.class);
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
+    private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     static final List<String> ARRIVAL_ACTIONS = List.of(
         "SCAN_IN",
         "HUB_IN",
@@ -116,14 +119,17 @@ public class SurchargeFeeService {
         return applyDelta(order, BigDecimal.ZERO, prev, false, "RETURN_FEE_CANCEL", "Gỡ phí hoàn " + prev.toPlainString());
     }
 
-    /** ceil(ngày) − ngày miễn phí, rồi nhân phí/ngày. Chưa tới kho thì 0. */
+    /**
+     * Số ngày lịch (giờ VN, ngày nhập kho là ngày 1) − ngày miễn phí, rồi nhân phí/ngày. Chưa tới kho thì 0.
+     * Theo ngày lịch để phí chỉ đổi qua nửa đêm — số hiện trên màn giao / phiếu thu không nhảy giữa ngày.
+     */
     static BigDecimal storageAmount(Instant arrivedAt, Instant now, Integer freeDays, BigDecimal feePerDay) {
         if (arrivedAt == null || now == null || !now.isAfter(arrivedAt) || feePerDay == null || feePerDay.signum() <= 0) {
             return BigDecimal.ZERO;
         }
-        double days = Duration.between(arrivedAt, now).toMillis() / 86_400_000d;
+        long days = ChronoUnit.DAYS.between(LocalDate.ofInstant(arrivedAt, VN), LocalDate.ofInstant(now, VN)) + 1;
         int free = freeDays == null ? 0 : Math.max(0, freeDays);
-        int charged = (int) Math.max(0, Math.ceil(days) - free);
+        int charged = (int) Math.max(0, days - free);
         if (charged == 0) {
             return BigDecimal.ZERO;
         }

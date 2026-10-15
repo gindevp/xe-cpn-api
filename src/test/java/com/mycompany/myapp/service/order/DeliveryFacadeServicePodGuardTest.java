@@ -62,6 +62,19 @@ class DeliveryFacadeServicePodGuardTest {
     }
 
     @Test
+    void senderPaysOrderAllowsCollectingStorageFeeOnly() {
+        ShipmentOrder o = order(OrderStatus.AT_DEST, 1, 2, null);
+        o.setPaymentTerm(PaymentTerm.GUI_TRA);
+        o.setFareAmount(new BigDecimal("39000"));
+        o.setPaidAmount(new BigDecimal("30000"));
+        o.setStorageFeeAmount(new BigDecimal("9000"));
+        assertThatCode(() -> DeliveryFacadeService.assertReceiverCollectAllowed(o, new BigDecimal("9000"))).doesNotThrowAnyException();
+        assertThatThrownBy(() -> DeliveryFacadeService.assertReceiverCollectAllowed(o, new BigDecimal("9001")))
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("senderPaysNoCollect");
+    }
+
+    @Test
     void receiverPaysOrderAllowsCollecting() {
         ShipmentOrder o = order(OrderStatus.AT_DEST, 1, 2, null);
         o.setPaymentTerm(PaymentTerm.NHAN_TRA);

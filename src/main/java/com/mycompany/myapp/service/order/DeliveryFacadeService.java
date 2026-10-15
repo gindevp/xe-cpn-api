@@ -118,8 +118,8 @@ public class DeliveryFacadeService {
         BigDecimal collected = req.getCollectedAmount() == null ? BigDecimal.ZERO : req.getCollectedAmount();
         if (owner != null) {
             owner = requireStaffLogin(owner);
-            if (collected.signum() == 0 && order.getPaymentTerm() != PaymentTerm.GUI_TRA) {
-                collected = OrderMoney.collectDue(order);
+            if (collected.signum() == 0) {
+                collected = OrderMoney.receiverDue(order);
             }
         } else if (admin && collected.signum() == 0 && receiverOwes(order)) {
             throw new BadRequestAlertException(
@@ -158,7 +158,8 @@ public class DeliveryFacadeService {
 
         if (collected.compareTo(BigDecimal.ZERO) > 0) {
             PaymentMethod method = req.getPaymentMethod() != null ? req.getPaymentMethod() : PaymentMethod.TM;
-            addPaymentInternal(order, collected, method, PaymentKind.SAU, "POD " + channel, owner != null ? owner : actor);
+            String note = order.getStatus() == OrderStatus.RETURNING ? NOTE_RETURN_COLLECT : "POD " + channel;
+            addPaymentInternal(order, collected, method, PaymentKind.SAU, note, owner != null ? owner : actor);
         }
 
         shipmentOrderRepository.save(order);
@@ -409,9 +410,16 @@ public class DeliveryFacadeService {
 
     /** Đơn người gửi trả: cước còn nợ thuộc phần VP gửi lập phiếu thu, không thu người nhận lúc giao. */
     static void assertReceiverCollectAllowed(ShipmentOrder order, BigDecimal collected) {
-        if (collected != null && collected.signum() > 0 && order.getPaymentTerm() == PaymentTerm.GUI_TRA) {
+        if (
+            collected != null &&
+            order.getStatus() != OrderStatus.RETURNING &&
+            order.getPaymentTerm() == PaymentTerm.GUI_TRA &&
+            collected.compareTo(OrderMoney.receiverDue(order)) > 0
+        ) {
             throw new BadRequestAlertException(
-                "Đơn người gửi trả — cước còn nợ do VP gửi lập phiếu thu, không thu người nhận khi giao. Để số thu = 0.",
+                "Đơn người gửi trả — người nhận chỉ trả phí tồn kho " +
+                OrderMoney.receiverDue(order).setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() +
+                "đ, cước còn nợ do VP gửi lập phiếu thu.",
                 ENTITY,
                 "senderPaysNoCollect"
             );
@@ -547,6 +555,17 @@ public class DeliveryFacadeService {
         order.setPaidAmount(paid.add(amount));
     }
 
+    static final String NOTE_RETURN_COLLECT = "Thu người gửi khi hoàn";
+
+    /** Thu người gửi lúc trả hàng hoàn (cước còn nợ + phí hoàn + phí tồn kho); người bấm hoàn giữ tiền. */
+    public void recordReturnCollect(ShipmentOrder order, BigDecimal amount, PaymentMethod method) {
+        if (amount == null || amount.signum() <= 0) {
+            return;
+        }
+        addPaymentInternal(order, amount, method != null ? method : PaymentMethod.TM, PaymentKind.SAU, NOTE_RETURN_COLLECT, currentActor());
+        shipmentOrderRepository.save(order);
+    }
+
     /** {@code collector} = người bấm bàn giao ship (nhận nợ ngay, không cần bấm xác nhận). */
     public void recordPartnerAdvance(ShipmentOrder order, BigDecimal amount, String note, String collector) {
         String debtor = collector != null && !collector.isBlank() ? collector.trim() : currentActor();
@@ -641,7 +660,7 @@ public class DeliveryFacadeService {
         if (order.getStatus() == OrderStatus.RETURNING) {
             return false;
         }
-        boolean fareDue = order.getPaymentTerm() != PaymentTerm.GUI_TRA && OrderMoney.collectDue(order).signum() > 0;
+        boolean fareDue = OrderMoney.receiverDue(order).signum() > 0;
         return fareDue || OrderMoney.nz(order.getCodAmount()).signum() > 0;
     }
 

@@ -1,6 +1,7 @@
 package com.mycompany.myapp.service.order;
 
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import java.math.BigDecimal;
 
 /**
@@ -34,6 +35,18 @@ public final class OrderMoney {
             return BigDecimal.ZERO;
         }
         return due(order);
+    }
+
+    /**
+     * Cước thu người nhận lúc giao. Đơn người gửi trả: chỉ phí tồn kho còn nợ (phát sinh ở kho giao),
+     * phần cước còn lại vẫn do VP gửi lập phiếu thu.
+     */
+    public static BigDecimal receiverDue(ShipmentOrder order) {
+        BigDecimal due = collectDue(order);
+        if (order == null || order.getPaymentTerm() != PaymentTerm.GUI_TRA) {
+            return due;
+        }
+        return due.min(nz(order.getStorageFeeAmount()).max(BigDecimal.ZERO));
     }
 
     /**
