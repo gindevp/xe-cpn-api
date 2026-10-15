@@ -38,12 +38,19 @@ public class BidvCollectionResource {
         this.objectMapper = objectMapper;
     }
 
-    @PostMapping(value = { "/api/public/bidv/getbill", "/api/public/bidv/get-bill" }, produces = MediaType.APPLICATION_JSON_VALUE)
+    // /api/payment/bidv/*: cùng đường dẫn cổng vé xe XEVN, phòng BIDV chỉ đăng ký domain và giữ nguyên path.
+    @PostMapping(
+        value = { "/api/public/bidv/getbill", "/api/public/bidv/get-bill", "/api/payment/bidv/getbill" },
+        produces = MediaType.APPLICATION_JSON_VALUE
+    )
     public ResponseEntity<Map<String, Object>> getBill(@RequestBody(required = false) byte[] rawBody, HttpServletRequest http) {
         return handle("GETBILL", rawBody, http, collectionService::getBill);
     }
 
-    @PostMapping(value = { "/api/public/bidv/paybill", "/api/public/bidv/pay-bill" }, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(
+        value = { "/api/public/bidv/paybill", "/api/public/bidv/pay-bill", "/api/payment/bidv/paybill" },
+        produces = MediaType.APPLICATION_JSON_VALUE
+    )
     public ResponseEntity<Map<String, Object>> payBill(@RequestBody(required = false) byte[] rawBody, HttpServletRequest http) {
         return handle("PAYBILL", rawBody, http, collectionService::payBill);
     }

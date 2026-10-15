@@ -86,6 +86,8 @@ public class SecurityConfiguration {
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/ahamove/webhook")).permitAll()
                     // BIDV thu hộ getbill / paybill: IP + API key + checksum — BidvCollectionService
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/bidv/**")).permitAll()
+                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/payment/bidv/getbill")).permitAll()
+                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/payment/bidv/paybill")).permitAll()
                     .requestMatchers(mvc.pattern("/api/admin/**")).hasAuthority(AuthoritiesConstants.ADMIN)
                     // Generated domain CRUD must not bypass facade money/status/day-close guards (TASK-007)
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/shipment-orders")).hasAuthority(AuthoritiesConstants.ADMIN)

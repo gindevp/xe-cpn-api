@@ -349,14 +349,17 @@ public class BidvAdminService {
         }
         String customerId = nz(c.getVaPrefix()) + BidvCollectionService.normalizeCustomerId(c.getVaPrefix(), code);
         String serviceId = nz(c.getServiceId());
-        String secretMask = "{SECRET}";
         Map<String, Object> body = new LinkedHashMap<>();
         String input;
+        Map<String, String> checksums;
+        String variant;
         if (!pay) {
-            input = BidvChecksum.getBillInputs(c.getSecretCode(), serviceId, customerId).get(BidvChecksum.GETBILL_PLUS);
+            input = BidvChecksum.getBillInputs(c.getSecretCode(), serviceId, customerId).get(BidvChecksum.GETBILL_CONCAT);
+            checksums = BidvChecksum.getBillChecksums(c.getSecretCode(), serviceId, customerId);
+            variant = BidvChecksum.CONFIRMED;
             body.put("serviceId", serviceId);
             body.put("customerId", customerId);
-            body.put("checksum", BidvChecksum.hash(input));
+            body.put("checksum", checksums.get(variant));
         } else {
             BigDecimal amount = in.amount();
             if (amount == null) {
@@ -370,18 +373,25 @@ public class BidvAdminService {
             if (transId == null) {
                 transId = "TEST" + DateTimeFormatter.ofPattern("yyMMddHHmmss").format(Instant.now().atZone(VN));
             }
-            input = BidvChecksum.payBillInputs(c.getSecretCode(), transId, amt).get(BidvChecksum.PAYBILL_PLUS_PIPE);
+            input = BidvChecksum.payBillInputs(c.getSecretCode(), transId, amt).get(BidvChecksum.PAYBILL_CONCAT);
+            checksums = BidvChecksum.payBillChecksums(c.getSecretCode(), transId, amt);
+            variant = BidvChecksum.CONFIRMED;
             body.put("transId", transId);
             body.put("transDate", DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(Instant.now().atZone(VN)));
             body.put("customerId", customerId);
             body.put("billId", BidvCollectionService.normalizeCustomerId(c.getVaPrefix(), code));
             body.put("amount", amt);
-            body.put("checksum", BidvChecksum.hash(input));
+            body.put("checksum", checksums.get(variant));
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("path", pay ? "/api/public/bidv/paybill" : "/api/public/bidv/getbill");
         out.put("body", body);
-        out.put("checksumInput", secretMask + input.substring(c.getSecretCode().length()));
+        out.put("checksumVariant", variant);
+        out.put(
+            "checksumInput",
+            "Base64(HMAC-SHA256(key = {SECRET}, \"{SECRET}" + BidvChecksum.hmacMessage(c.getSecretCode(), input) + "\"))"
+        );
+        out.put("checksums", checksums);
         return out;
     }
 
