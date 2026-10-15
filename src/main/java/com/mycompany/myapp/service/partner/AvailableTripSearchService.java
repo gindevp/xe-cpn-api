@@ -85,7 +85,11 @@ public class AvailableTripSearchService {
         return items;
     }
 
-    /** Chuyến CRM của một lộ trình, xuất bến trong [from, to] giờ VN — không tính tải hàng. */
+    /**
+     * Chuyến CRM của một lộ trình, xuất bến trong [from, to] giờ VN — không tính tải hàng.
+     * Lỗi CRM không đánh dấu rollback: nơi gọi bắt lỗi từng lộ trình rồi chạy tiếp trong cùng transaction.
+     */
+    @Transactional(readOnly = true, noRollbackFor = RuntimeException.class)
     public List<AvailableTripDTO> searchWindow(Itinerary itinerary, LocalDateTime from, LocalDateTime to) {
         String maHanhTrinh = blankToNull(itinerary.getName());
         if (maHanhTrinh == null) {
