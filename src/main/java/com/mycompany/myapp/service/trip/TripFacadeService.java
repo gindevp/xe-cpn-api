@@ -523,7 +523,7 @@ public class TripFacadeService {
             OrderTransitionRequest tr = new OrderTransitionRequest();
             tr.setToStatus(OrderStatus.AT_DEST);
             tr.setAction("SCAN_IN");
-            tr.setDetail(officeCode != null ? "Văn phòng " + officeCode : "Nhập kho nhận");
+            tr.setDetail(officeCode != null ? "Văn phòng " + officeCode : "Nhập kho giao");
             orderFacadeService.transition(order.getOrderCode(), tr);
             // Web/app chỉ gọi khi đã quét đủ kiện; ghi [WHIN] cùng transaction để note không lệch trạng thái khi client lỗi mạng.
             order = requireOrder(req.getOrderCode());
