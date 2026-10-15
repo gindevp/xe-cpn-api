@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Phí tồn kho giao và phí hoàn — cộng vào {@code fare_amount} theo cấu hình phụ phí.
- * Tồn kho: số ngày lịch kể từ ngày nhập kho giao (ngày nhập là ngày 1) − ngày miễn phí, nhân phí/ngày. Chỉ khi đơn còn nằm kho giao.
+ * Tồn kho: số ngày lịch từ ngày nhập kho giao (ngày giao − ngày nhập) − ngày miễn phí, nhân phí/ngày. Chỉ khi đơn còn nằm kho giao.
  * Hoàn: phần trăm × (cước hàng + cước lấy + cước giao) lúc bấm hoàn; hủy hoàn thì trừ lại.
  */
 @Service
@@ -120,14 +120,14 @@ public class SurchargeFeeService {
     }
 
     /**
-     * Số ngày lịch (giờ VN, ngày nhập kho là ngày 1) − ngày miễn phí, rồi nhân phí/ngày. Chưa tới kho thì 0.
+     * Số ngày lịch (giờ VN, ngày hiện tại − ngày nhập kho) − ngày miễn phí, rồi nhân phí/ngày. Chưa tới kho thì 0.
      * Theo ngày lịch để phí chỉ đổi qua nửa đêm — số hiện trên màn giao / phiếu thu không nhảy giữa ngày.
      */
     static BigDecimal storageAmount(Instant arrivedAt, Instant now, Integer freeDays, BigDecimal feePerDay) {
         if (arrivedAt == null || now == null || !now.isAfter(arrivedAt) || feePerDay == null || feePerDay.signum() <= 0) {
             return BigDecimal.ZERO;
         }
-        long days = ChronoUnit.DAYS.between(LocalDate.ofInstant(arrivedAt, VN), LocalDate.ofInstant(now, VN)) + 1;
+        long days = ChronoUnit.DAYS.between(LocalDate.ofInstant(arrivedAt, VN), LocalDate.ofInstant(now, VN));
         int free = freeDays == null ? 0 : Math.max(0, freeDays);
         int charged = (int) Math.max(0, days - free);
         if (charged == 0) {
