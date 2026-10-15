@@ -72,6 +72,16 @@ public class VehicleEventResource {
         return vehicleBoardService.reportList(from, to, officeCode);
     }
 
+    /** Bảng tài CRM trong [from, to] (screen bao-gio-xe). officeCode bỏ trống = mọi lộ trình. */
+    @GetMapping("/vehicle-events/plan")
+    public VehicleBoardDtos.Plan plan(
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+        @RequestParam(required = false) String officeCode
+    ) {
+        return vehicleBoardService.plan(from, to, officeCode);
+    }
+
     @GetMapping("/vehicle-events/{id}/photo")
     public VehicleBoardDtos.EventPhoto eventPhoto(@PathVariable Long id) {
         return vehicleBoardService.eventPhoto(id);

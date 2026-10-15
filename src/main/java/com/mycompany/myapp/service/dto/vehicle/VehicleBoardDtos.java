@@ -73,6 +73,12 @@ public final class VehicleBoardDtos {
     /** {@code itineraries}: lộ trình báo giờ của VP đang xem (rỗng khi xem toàn hệ thống). */
     public record Report(List<ReportItem> events, List<ItineraryOption> itineraries) {}
 
+    /** Một chuyến trên bảng tài CRM. */
+    public record PlanTrip(String externalTripId, String vehiclePlate, String driverName, String routeLabel, Instant departAt) {}
+
+    /** {@code warning} khác null khi không lấy đủ bảng tài từ CRM. */
+    public record Plan(List<PlanTrip> trips, String warning) {}
+
     /** Cấu hình lộ trình báo giờ của VP: mọi lộ trình qua điểm của VP, {@code selected} = VP báo giờ lộ trình đó. */
     public record ItineraryConfig(Long officeId, String officeName, List<ConfigOption> options) {}
 

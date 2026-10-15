@@ -663,6 +663,43 @@ class VehicleBoardServiceTest {
         assertThat(VehicleBoardService.foldPoint("hđ")).isEqualTo("HD");
     }
 
+    private static AvailableTripDTO crmTrip(String id, String plate) {
+        AvailableTripDTO t = new AvailableTripDTO();
+        t.setExternalTripId(id);
+        t.setVehiclePlate(plate);
+        t.setDepartAt(todayAt(8));
+        return t;
+    }
+
+    @Test
+    void planListsCrmTripsOnceAndReportsFailedItinerary() {
+        when(vthkClient.isEnabled()).thenReturn(true);
+        when(staffAccessService.isSystemAdmin()).thenReturn(true);
+        Itinerary gaYb = itinerary("GA-YB", "GA - YB");
+        Itinerary gaTb = itinerary("GA-TB", "GA - TB");
+        when(itineraryRepository.findFiltered(null, true)).thenReturn(List.of(gaYb, gaTb));
+        when(availableTripSearchService.searchWindow(eq(gaYb), any(), any())).thenReturn(
+            List.of(crmTrip("CH1", "30H-1"), crmTrip("CH1", "30H-1"), crmTrip("CH2", "30H-1"))
+        );
+        when(availableTripSearchService.searchWindow(eq(gaTb), any(), any())).thenThrow(new RuntimeException("CRM down"));
+
+        LocalDate day = LocalDate.now(VN);
+        VehicleBoardDtos.Plan plan = service.plan(day, day, null);
+
+        assertThat(plan.trips()).extracting(VehicleBoardDtos.PlanTrip::externalTripId).containsExactly("CH1", "CH2");
+        assertThat(plan.trips()).extracting(VehicleBoardDtos.PlanTrip::routeLabel).containsOnly("GA - YB");
+        assertThat(plan.warning()).contains("GA - TB");
+    }
+
+    @Test
+    void planRejectsLongRangeWithoutCallingCrm() {
+        LocalDate day = LocalDate.now(VN);
+        VehicleBoardDtos.Plan plan = service.plan(day.minusDays(40), day, null);
+        assertThat(plan.trips()).isEmpty();
+        assertThat(plan.warning()).contains("31 ngày");
+        verify(availableTripSearchService, never()).searchWindow(any(), any(), any());
+    }
+
     @Test
     void crmIgnoredWhenDisabled() {
         when(tripRepository.findForOfficeBoard(anyLong(), any(), any())).thenReturn(List.of());

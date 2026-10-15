@@ -61,6 +61,8 @@ public class VehicleBoardService {
     static final String ENTITY = "vehicleEvent";
     private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     static final int MAX_REPORT_DAYS = 92;
+    /** Bảng tài gọi CRM từng lộ trình nên giới hạn khoảng ngày ngắn hơn báo cáo. */
+    static final int MAX_PLAN_DAYS = 31;
     /** Rời VP trễ hơn giờ đón từ ngần này phút là MUỘN — báo rời phải kèm lý do. */
     static final int LATE_MINUTES = 5;
     /** Phút lệch giờ đón tối đa so với giờ xuất bến (± 12 tiếng). */
@@ -681,6 +683,70 @@ public class VehicleBoardService {
             ? List.of()
             : officeRepository.findOneByCode(office).map(this::reportItineraries).orElse(List.of());
         return new VehicleBoardDtos.Report(items, itineraries);
+    }
+
+    /**
+     * Bảng tài: chuyến CRM xuất bến trong [from, to] (giờ VN) của các lộ trình VP báo giờ; không chọn VP = mọi lộ trình.
+     * Lộ trình nào CRM lỗi thì bỏ qua và báo trong {@code warning}.
+     */
+    @Transactional(readOnly = true)
+    public VehicleBoardDtos.Plan plan(LocalDate from, LocalDate to, String officeCode) {
+        staffAccessService.requireScreenRead(ScreenKey.BAO_GIO_XE);
+        if (from == null || to == null || to.isBefore(from)) {
+            throw new BadRequestAlertException("Khoảng ngày không hợp lệ", ENTITY, "rangeInvalid");
+        }
+        if (ChronoUnit.DAYS.between(from, to) >= MAX_PLAN_DAYS) {
+            return new VehicleBoardDtos.Plan(List.of(), "Bảng tài chỉ xem tối đa " + MAX_PLAN_DAYS + " ngày mỗi lần");
+        }
+        if (!vthkClient.isEnabled()) {
+            return new VehicleBoardDtos.Plan(List.of(), "Chưa bật kết nối CRM — không có bảng tài");
+        }
+        String code = trimToNull(officeCode);
+        if (!staffAccessService.isSystemAdmin()) {
+            code = staffAccessService.scopedOfficeCode().orElse(code);
+        }
+        List<Itinerary> itineraries;
+        if (code == null) {
+            itineraries = itineraryRepository.findFiltered(null, true);
+        } else {
+            Office office = officeRepository
+                .findOneByCode(code)
+                .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy văn phòng", ENTITY, "officeNotFound"));
+            Set<String> configured = configuredCodes(office);
+            itineraries = pointItineraries(office)
+                .stream()
+                .filter(it -> configured.isEmpty() || configured.contains(it.getCode()))
+                .toList();
+        }
+        Set<String> seen = new HashSet<>();
+        List<VehicleBoardDtos.PlanTrip> trips = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+        for (Itinerary it : itineraries) {
+            List<AvailableTripDTO> found;
+            try {
+                found = availableTripSearchService.searchWindow(it, from.atStartOfDay(), to.atTime(23, 59, 59));
+            } catch (RuntimeException e) {
+                LOG.warn("Vehicle plan CRM lookup failed for itinerary {}: {}", it.getCode(), e.getMessage());
+                failed.add(firstNonBlank(it.getName(), it.getCode()));
+                continue;
+            }
+            for (AvailableTripDTO t : found) {
+                if (!seen.add(t.getExternalTripId())) {
+                    continue;
+                }
+                trips.add(
+                    new VehicleBoardDtos.PlanTrip(
+                        cut(t.getExternalTripId(), 60),
+                        firstNonBlank(t.getVehiclePlate(), t.getAssignVehiclePlate()),
+                        firstNonBlank(t.getDriverName(), t.getAssignDriverName()),
+                        firstNonBlank(it.getName(), t.getRouteLabel()),
+                        t.getDepartAt()
+                    )
+                );
+            }
+        }
+        String warning = failed.isEmpty() ? null : "Không tải được bảng tài CRM của lộ trình: " + String.join(", ", failed);
+        return new VehicleBoardDtos.Plan(trips, warning);
     }
 
     private void appendCrm(List<Candidate> candidates, Set<String> points, Set<String> configured, LocalDate today) {
