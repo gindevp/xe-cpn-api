@@ -203,6 +203,9 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         if ("POST".equals(method) && ("/api/payment/bidv/getbill".equals(path) || "/api/payment/bidv/paybill".equals(path))) {
             return true;
         }
+        if (("PUT".equals(method) || "POST".equals(method)) && "/api/public/onepay/ipn".equals(path)) {
+            return true;
+        }
         if ("POST".equals(method) && path.startsWith("/api/account/reset-password")) {
             return true;
         }

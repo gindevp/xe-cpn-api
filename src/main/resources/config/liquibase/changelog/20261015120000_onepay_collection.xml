@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261015120000-onepay-config" author="cpn">
+        <comment>Cấu hình thu hộ OnePay PayCollect — một dòng.</comment>
+        <createTable tableName="onepay_config">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="enabled" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="environment" type="varchar(12)" defaultValue="SANDBOX">
+                <constraints nullable="false"/>
+            </column>
+            <column name="partner_id" type="varchar(50)"/>
+            <column name="partner_key" type="varchar(255)"/>
+            <column name="bank_swift" type="varchar(20)"/>
+            <column name="ipn_url" type="varchar(255)"/>
+            <column name="invoice_ttl_hours" type="int" defaultValueNumeric="24">
+                <constraints nullable="false"/>
+            </column>
+            <column name="signature_required" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="insecure_ssl" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="${datetimeType}"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="20261015120000-onepay-invoice" author="cpn">
+        <comment>Hoá đơn CPN tạo trên OnePay (một tài khoản ảo mỗi hoá đơn). Giai đoạn đầu chỉ purpose TEST.</comment>
+        <createTable tableName="onepay_invoice">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="purpose" type="varchar(16)" defaultValue="TEST">
+                <constraints nullable="false"/>
+            </column>
+            <column name="user_reference" type="varchar(50)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_onepay_invoice_user_ref"/>
+            </column>
+            <column name="invoice_reference" type="varchar(20)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_onepay_invoice_invoice_ref"/>
+            </column>
+            <column name="payer_name" type="varchar(70)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="amount" type="decimal(21,2)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="varchar(200)"/>
+            <column name="state" type="varchar(16)" defaultValue="UNPAID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="onepay_user_id" type="varchar(40)"/>
+            <column name="onepay_invoice_id" type="varchar(40)"/>
+            <column name="account_number" type="varchar(40)"/>
+            <column name="bank_name" type="varchar(60)"/>
+            <column name="qr_data" type="varchar(1000)"/>
+            <column name="va_state" type="varchar(16)"/>
+            <column name="expires_at" type="${datetimeType}"/>
+            <column name="paid_trans_id" type="varchar(64)"/>
+            <column name="paid_amount" type="decimal(21,2)"/>
+            <column name="paid_at" type="${datetimeType}"/>
+            <column name="last_error" type="varchar(255)"/>
+            <column name="created_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="${datetimeType}"/>
+        </createTable>
+        <createIndex tableName="onepay_invoice" indexName="ix_onepay_invoice_account">
+            <column name="account_number"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20261015120000-onepay-call-log" author="cpn">
+        <comment>Nhật ký lệnh gọi OnePay (OUT) và IPN OnePay gọi về (IN).</comment>
+        <createTable tableName="onepay_call_log">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="called_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="direction" type="varchar(3)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="action" type="varchar(16)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="http_status" type="int"/>
+            <column name="result" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="message" type="varchar(255)"/>
+            <column name="reference" type="varchar(64)"/>
+            <column name="trans_id" type="varchar(64)"/>
+            <column name="amount" type="decimal(21,2)"/>
+            <column name="client_ip" type="varchar(64)"/>
+            <column name="duration_ms" type="int"/>
+            <column name="request_body" type="varchar(4000)"/>
+            <column name="response_body" type="varchar(4000)"/>
+        </createTable>
+        <createIndex tableName="onepay_call_log" indexName="ix_onepay_call_log_called_at">
+            <column name="called_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

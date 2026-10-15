@@ -15,7 +15,11 @@ public class BankTransaction implements Serializable {
     private static final long serialVersionUID = 1L;
 
     public static final String PROVIDER_BIDV = "BIDV";
+    public static final String PROVIDER_ONEPAY = "ONEPAY";
+    /** target_id = bidv_test_bill.id */
     public static final String TARGET_TEST = "TEST";
+    /** target_id = onepay_invoice.id */
+    public static final String TARGET_ONEPAY_TEST = "ONEPAY_TEST";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
