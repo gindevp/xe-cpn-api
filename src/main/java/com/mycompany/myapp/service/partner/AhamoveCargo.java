@@ -2,6 +2,7 @@ package com.mycompany.myapp.service.partner;
 
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -23,14 +24,20 @@ public final class AhamoveCargo {
     private static final Pattern KG = Pattern.compile("\\[PKGKG]([^\\[]*)\\[/PKGKG]");
     private static final Pattern DIM = Pattern.compile("\\[PKGDIM]([^\\[]*)\\[/PKGDIM]");
 
+    /** Hỗ trợ tài xế: 5.000đ/suất, tối đa 6 suất (HAN-BIKE / HAN-ECO). */
+    public static final int TIP_UNIT_VND = 5000;
+    public static final int TIP_MAX = 6;
+
     private final List<Pkg> packages;
     private final String tier;
     private final boolean oversize;
+    private final int tipUnits;
 
-    private AhamoveCargo(List<Pkg> packages, String tier, boolean oversize) {
+    private AhamoveCargo(List<Pkg> packages, String tier, boolean oversize, int tipUnits) {
         this.packages = packages;
         this.tier = tier;
         this.oversize = oversize;
+        this.tipUnits = tipUnits;
     }
 
     public static AhamoveCargo from(ShipmentOrder order) {
@@ -57,7 +64,7 @@ public final class AhamoveCargo {
                 need = Math.max(need, t);
             }
         }
-        return new AhamoveCargo(pkgs, over ? null : TIER[need], over);
+        return new AhamoveCargo(pkgs, over ? null : TIER[need], over, 0);
     }
 
     public List<Pkg> packages() {
@@ -74,7 +81,42 @@ public final class AhamoveCargo {
      * {@code TIER_2}..{@code TIER_4} gửi đúng bậc Ahamove.
      */
     public AhamoveCargo withTierChoice(String raw) {
-        return new AhamoveCargo(packages, parseTierChoice(raw), oversize);
+        return new AhamoveCargo(packages, parseTierChoice(raw), oversize, tipUnits);
+    }
+
+    /** Số suất tip. 0 = không hỗ trợ. */
+    public int tipUnits() {
+        return tipUnits;
+    }
+
+    public AhamoveCargo withTip(Object raw) {
+        return new AhamoveCargo(packages, tier, oversize, parseTip(raw));
+    }
+
+    public static int parseTip(Object raw) {
+        if (raw == null) {
+            return 0;
+        }
+        String text = String.valueOf(raw).trim();
+        if (text.isEmpty() || "null".equals(text)) {
+            return 0;
+        }
+        int n;
+        try {
+            BigDecimal d = raw instanceof Number num ? BigDecimal.valueOf(num.doubleValue()) : new BigDecimal(text);
+            if (d.stripTrailingZeros().scale() > 0) {
+                throw new NumberFormatException(text);
+            }
+            n = d.intValue();
+        } catch (BadRequestAlertException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BadRequestAlertException("Số suất tip không hợp lệ", "ahamove", "ahamoveTip");
+        }
+        if (n < 0 || n > TIP_MAX) {
+            throw new BadRequestAlertException("Tip tài xế từ 0 đến " + TIP_MAX + " suất (5.000đ/suất)", "ahamove", "ahamoveTip");
+        }
+        return n;
     }
 
     public static String parseTierChoice(String raw) {

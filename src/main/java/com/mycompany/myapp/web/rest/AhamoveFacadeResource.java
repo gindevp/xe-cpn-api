@@ -59,6 +59,9 @@ public class AhamoveFacadeResource {
             String choice = body.get("bulkyTier") == null ? "" : String.valueOf(body.get("bulkyTier"));
             cargo = (cargo == null ? AhamoveCargo.from(null) : cargo).withTierChoice(choice);
         }
+        if (body.containsKey("tipUnits")) {
+            cargo = (cargo == null ? AhamoveCargo.from(null) : cargo).withTip(body.get("tipUnits"));
+        }
         return ahamoveOrderClient.estimatePickupDistance(officeLat, officeLng, officeAddress, pinLat, pinLng, pinAddress, cargo);
     }
 

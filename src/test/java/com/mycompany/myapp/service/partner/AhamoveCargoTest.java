@@ -20,6 +20,14 @@ class AhamoveCargoTest {
     }
 
     @Test
+    void tipUnitsStayWithinCatalog() {
+        AhamoveCargo cargo = AhamoveCargo.from(order(null, "1")).withTip(2);
+        assertThat(cargo.tipUnits()).isEqualTo(2);
+        assertThat(cargo.withTierChoice("TIER_2").tipUnits()).isEqualTo(2);
+        assertThatThrownBy(() -> cargo.withTip(7)).isInstanceOf(com.mycompany.myapp.web.rest.errors.BadRequestAlertException.class);
+    }
+
+    @Test
     void standardSizeNeedsNoTier() {
         AhamoveCargo cargo = AhamoveCargo.from(order("[PKGKG]5[/PKGKG]\n[PKGDIM]30x20x10[/PKGDIM]", null));
         assertThat(cargo.tier()).isNull();

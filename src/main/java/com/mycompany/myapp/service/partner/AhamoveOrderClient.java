@@ -135,7 +135,9 @@ public class AhamoveOrderClient {
             ArrayNode services = body.putArray("services");
             ObjectNode svc = services.addObject();
             svc.put("_id", serviceId.trim());
-            writeRequests(svc.putArray("requests"), serviceId.trim() + "-BULKY", cargo);
+            ArrayNode requests = svc.putArray("requests");
+            writeRequests(requests, serviceId.trim() + "-BULKY", cargo);
+            writeTip(requests, serviceId.trim() + "-TIP", cargo);
             writePackages(body, cargo);
 
             HttpRequest request = HttpRequest.newBuilder()
@@ -296,7 +298,9 @@ public class AhamoveOrderClient {
         ArrayNode groups = body.putArray("group_services");
         ObjectNode g = groups.addObject();
         g.put("_id", groupId);
-        writeRequests(g.putArray("group_requests"), "BULKY", cargo);
+        ArrayNode requests = g.putArray("group_requests");
+        writeRequests(requests, "BULKY", cargo);
+        writeTip(requests, "TIP", cargo);
         writePackages(body, cargo);
 
         HttpRequest request = HttpRequest.newBuilder()
@@ -370,7 +374,9 @@ public class AhamoveOrderClient {
             path.add(stop(pickup));
             path.add(stop(drop));
             body.put("group_service_id", "BIKE");
-            writeRequests(body.putArray("group_requests"), "BULKY", cargo);
+            ArrayNode requests = body.putArray("group_requests");
+            writeRequests(requests, "BULKY", cargo);
+            writeTip(requests, "TIP", cargo);
             writePackages(body, cargo);
             String remarks = drop.remarks();
             if (remarks != null && !remarks.isBlank()) {
@@ -544,6 +550,19 @@ public class AhamoveOrderClient {
         if (cargo != null && cargo.tier() != null) {
             out.put("bulkyTier", cargo.tier());
         }
+        if (cargo != null && cargo.tipUnits() > 0) {
+            out.put("tipUnits", cargo.tipUnits());
+        }
+    }
+
+    /** Tip PER_UNIT. {@code requestId} là {@code TIP} (group) hoặc {@code HAN-BIKE-TIP}. */
+    private static void writeTip(ArrayNode requests, String requestId, AhamoveCargo cargo) {
+        if (cargo == null || cargo.tipUnits() <= 0) {
+            return;
+        }
+        ObjectNode req = requests.addObject();
+        req.put("_id", requestId);
+        req.put("num", cargo.tipUnits());
     }
 
     /** Request BULKY chỉ khi kiện vượt khổ tiêu chuẩn. {@code requestId} là {@code BULKY} (group) hoặc {@code HAN-BIKE-BULKY}. */

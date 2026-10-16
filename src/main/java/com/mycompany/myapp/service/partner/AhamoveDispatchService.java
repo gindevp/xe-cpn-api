@@ -218,6 +218,8 @@ public class AhamoveDispatchService {
         private String remarks;
         /** Rỗng = tiêu chuẩn. {@code TIER_2}/{@code TIER_3}/{@code TIER_4} = phụ phí cồng kềnh NV chọn. Null = tự xét theo kiện. */
         private String bulkyTier;
+        /** Số suất tip, 0–6. Null = không tip. */
+        private Integer tipUnits;
 
         public Double getLat() {
             return lat;
@@ -257,6 +259,14 @@ public class AhamoveDispatchService {
 
         public void setBulkyTier(String bulkyTier) {
             this.bulkyTier = bulkyTier;
+        }
+
+        public Integer getTipUnits() {
+            return tipUnits;
+        }
+
+        public void setTipUnits(Integer tipUnits) {
+            this.tipUnits = tipUnits;
         }
     }
 
@@ -330,10 +340,7 @@ public class AhamoveDispatchService {
             order.getOrderCode(),
             advance.longValue()
         );
-        AhamoveCargo cargo = AhamoveCargo.from(order);
-        if (req.getBulkyTier() != null) {
-            cargo = cargo.withTierChoice(req.getBulkyTier());
-        }
+        AhamoveCargo cargo = cargoOf(order, req);
         cargo.assertFitsBike();
         AhamoveOrderClient.CreatedOrder created = ahamoveOrderClient.createOrder(pickup, drop, paymentMethod, cargo);
 
@@ -395,10 +402,7 @@ public class AhamoveDispatchService {
             order.getOrderCode(),
             0L
         );
-        AhamoveCargo cargo = AhamoveCargo.from(order);
-        if (req.getBulkyTier() != null) {
-            cargo = cargo.withTierChoice(req.getBulkyTier());
-        }
+        AhamoveCargo cargo = cargoOf(order, req);
         cargo.assertFitsBike();
         AhamoveOrderClient.CreatedOrder created = ahamoveOrderClient.createOrder(pickup, drop, paymentMethod, cargo);
         String actor = currentActor();
@@ -666,6 +670,25 @@ public class AhamoveDispatchService {
                 collectUrls(child, out);
             }
         }
+    }
+
+    private static AhamoveCargo cargoOf(ShipmentOrder order, DispatchRequest req) {
+        AhamoveCargo cargo = AhamoveCargo.from(order);
+        if (req.getBulkyTier() != null) {
+            cargo = cargo.withTierChoice(req.getBulkyTier());
+        }
+        if (req.getTipUnits() != null) {
+            cargo = cargo.withTip(req.getTipUnits());
+        }
+        return cargo;
+    }
+
+    private static String tipNote(DispatchRequest req) {
+        int n = req == null || req.getTipUnits() == null ? 0 : req.getTipUnits();
+        if (n <= 0) {
+            return "";
+        }
+        return " · tip " + (n * AhamoveCargo.TIP_UNIT_VND) + "đ";
     }
 
     record Dispatchable(Office office, BigDecimal advance) {}
@@ -1032,6 +1055,7 @@ public class AhamoveDispatchService {
             viStatus(created.status() != null ? created.status() : "ASSIGNING") +
             " · chờ tài xế lấy hàng" +
             (created.totalPay() != null ? " · phí " + created.totalPay() + " (" + payMethodLabel(paymentMethod) + ")" : "") +
+            tipNote(req) +
             (advance.signum() > 0 ? " · sẽ ứng " + PartnerAdvance.money(advance) + " khi bàn giao ship" : "") +
             (pinned ? "" : " · không ghim GPS, Ahamove tự dò địa chỉ"),
             actor
@@ -1147,6 +1171,7 @@ public class AhamoveDispatchService {
             viStatus(created.status() != null ? created.status() : "ASSIGNING") +
             " · chờ tài xế đến lấy" +
             (created.totalPay() != null ? " · phí " + created.totalPay() + " (" + payMethodLabel(paymentMethod) + ")" : "") +
+            tipNote(req) +
             (req.getLat() != null ? "" : " · không ghim GPS, Ahamove tự dò địa chỉ"),
             actor
         );
