@@ -355,10 +355,18 @@ public class OrderFacadeService {
                 )
             );
         }
-        String phoneSuffix = phoneEndsWithDigits(ex.phoneEndsWith());
-        if (phoneSuffix != null) {
-            String ends = "%" + phoneSuffix;
-            spec = spec.and((root, q, cb) -> cb.or(cb.like(root.get("senderPhone"), ends), cb.like(root.get("receiverPhone"), ends)));
+        String phoneAffix = phoneAffixDigits(ex.phoneEndsWith());
+        if (phoneAffix != null) {
+            String ends = "%" + phoneAffix;
+            String starts = phoneAffix + "%";
+            spec = spec.and((root, q, cb) ->
+                cb.or(
+                    cb.like(root.get("senderPhone"), ends),
+                    cb.like(root.get("receiverPhone"), ends),
+                    cb.like(root.get("senderPhone"), starts),
+                    cb.like(root.get("receiverPhone"), starts)
+                )
+            );
         }
         Instant rangeStart = parseDayStart(createdFrom);
         Instant rangeEndExclusive = parseDayEndExclusive(createdTo);
@@ -377,14 +385,14 @@ public class OrderFacadeService {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("itineraryLabel"), it));
         }
         CancelRequestMode cancelMode = ex.cancelRequests() == null ? CancelRequestMode.INCLUDE : ex.cancelRequests();
-        boolean lookup = (keyword != null && !keyword.isBlank()) || phoneSuffix != null || (codes != null && !codes.isEmpty());
+        boolean lookup = (keyword != null && !keyword.isBlank()) || phoneAffix != null || (codes != null && !codes.isEmpty());
         if (cancelMode == CancelRequestMode.ONLY) {
             spec = spec.and((root, q, cb) -> pendingCancelRequest(root, q, cb));
         } else if (cancelMode == CancelRequestMode.HIDE && !lookup) {
             spec = spec.and((root, q, cb) -> cb.not(pendingCancelRequest(root, q, cb)));
         }
         String scoped = staffAccessService.scopedOfficeCode().orElse(null);
-        boolean crossOfficeSearch = ex.searchAllOffices() && ((keyword != null && !keyword.isBlank()) || phoneSuffix != null);
+        boolean crossOfficeSearch = ex.searchAllOffices() && ((keyword != null && !keyword.isBlank()) || phoneAffix != null);
         if (scoped != null && !crossOfficeSearch) {
             spec = spec.and((root, q, cb) ->
                 cb.or(
@@ -541,11 +549,19 @@ public class OrderFacadeService {
         return digits;
     }
 
-    /** Đúng 5 chữ số cuối SĐT. Giá trị khác → bỏ qua, không nới thành tìm gần đúng. */
-    static String phoneEndsWithDigits(String raw) {
+    /**
+     * Đúng 5 chữ số — dùng để khớp đầu hoặc cuối SĐT (gợi ý khi tạo đơn).
+     * Giá trị khác → bỏ qua, không nới thành tìm gần đúng.
+     */
+    static String phoneAffixDigits(String raw) {
         if (raw == null) return null;
         String digits = raw.replaceAll("\\D", "");
         return digits.matches("\\d{5}") ? digits : null;
+    }
+
+    /** Giữ tên cũ cho test/gọi nội bộ — cùng {@link #phoneAffixDigits(String)}. */
+    static String phoneEndsWithDigits(String raw) {
+        return phoneAffixDigits(raw);
     }
 
     private static Instant parseDayStart(String day) {
