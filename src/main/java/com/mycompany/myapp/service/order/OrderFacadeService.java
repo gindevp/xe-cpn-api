@@ -906,6 +906,9 @@ public class OrderFacadeService {
         res.setHomeDelivery(order.getHomeDelivery());
         res.setHomePickup(order.getHomePickup());
         res.setFareAmount(order.getFareAmount());
+        res.setPaidAmount(order.getPaidAmount());
+        res.setCodAmount(order.getCodAmount());
+        res.setCodRefundPaid(order.getCodExportedAt() != null);
         res.setGoodsFareAmount(order.getGoodsFareAmount());
         res.setDeliveryFeeAmount(order.getDeliveryFeeAmount());
         res.setPickupFeeAmount(order.getPickupFeeAmount());

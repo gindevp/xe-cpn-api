@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -43,6 +44,9 @@ public class OnePayAdminService {
     private static final DateTimeFormatter EXPIRED_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(VN);
     private static final DateTimeFormatter REF_TIME = DateTimeFormatter.ofPattern("yyMMddHHmmss").withZone(VN);
     private static final SecureRandom RANDOM = new SecureRandom();
+
+    @Value("${cpn.collect-account-holder:DLLXEVIETNAM}")
+    private String collectHolder;
 
     private final OnePayConfigRepository configRepository;
     private final OnePayInvoiceRepository invoiceRepository;
@@ -338,6 +342,84 @@ public class OnePayAdminService {
             "Hoá đơn test OnePay " + ref + " · " + amount.toPlainString() + "đ · TK " + nz(inv.getAccountNumber())
         );
         return toView(inv);
+    }
+
+    /**
+     * Tài khoản ảo thu cước một đơn. Chủ tài khoản là tên merchant, không phải tên khách.
+     * OnePay từ chối thì không lưu hoá đơn.
+     */
+    public OnePayInvoice createForOrder(String orderCode, BigDecimal amount) {
+        if (orderCode == null || orderCode.isBlank()) {
+            throw bad("Thiếu mã đơn");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            throw bad("Đơn không còn số tiền cần thu");
+        }
+        OnePayConfig c = requireCredentials(true);
+        String partner = c.getPartnerId().trim();
+        String ref = newReference();
+        int hours = c.getInvoiceTtlHours() == null ? 24 : c.getInvoiceTtlHours();
+        Instant expiresAt = Instant.now().plus(Duration.ofHours(hours));
+        String holder = asciiName(collectHolder);
+        if (holder.isEmpty()) {
+            holder = "XEVIETNAM";
+        }
+        String desc = ascii("CPN " + orderCode.trim());
+        if (desc.length() > 20) {
+            desc = desc.substring(0, 20);
+        }
+
+        ObjectNode user = objectMapper.createObjectNode();
+        user.put("name", holder);
+        if (notBlank(c.getBankSwift())) {
+            user.put("bank_id", c.getBankSwift());
+        }
+        user.put("description", desc);
+        user.put("expired_time", EXPIRED_TIME.format(expiresAt));
+        ObjectNode invoice = objectMapper.createObjectNode();
+        invoice.put("amount", amount.setScale(0, java.math.RoundingMode.DOWN).toPlainString());
+        invoice.put("description", desc);
+        ArrayNode batch = objectMapper.createArrayNode();
+        batch
+            .addObject()
+            .put("name", "user")
+            .put("do_on", "always")
+            .put("method", "PUT")
+            .put("href", "/partners/" + partner + "/users/" + ref)
+            .set("body", user);
+        batch
+            .addObject()
+            .put("name", "invoice")
+            .put("do_on", "$user.response.status == 201")
+            .put("method", "PUT")
+            .put("href", "/partners/" + partner + "/users/" + ref + "/invoices/" + ref)
+            .set("body", invoice);
+
+        OnePayClient.Result r = client.call(c, "BATCH", ref, "POST", "/batchs", batch.toString());
+        if (!r.ok()) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OnePay từ chối tạo tài khoản thu hộ");
+        }
+        OnePayInvoice inv = new OnePayInvoice();
+        inv.setPurpose(OnePayInvoice.PURPOSE_ORDER);
+        inv.setOrderCode(orderCode.trim());
+        inv.setUserReference(ref);
+        inv.setInvoiceReference(ref);
+        inv.setPayerName(holder);
+        inv.setAmount(amount.setScale(0, java.math.RoundingMode.DOWN));
+        inv.setDescription(desc);
+        inv.setState(OnePayInvoice.STATE_UNPAID);
+        inv.setExpiresAt(expiresAt);
+        applyBatchResponse(inv, r.json());
+        inv.setCreatedAt(Instant.now());
+        inv.setUpdatedAt(inv.getCreatedAt());
+        return invoiceRepository.save(inv);
+    }
+
+    public boolean collectEnabled() {
+        return configRepository
+            .findFirstByOrderByIdAsc()
+            .map(c -> Boolean.TRUE.equals(c.getEnabled()) && notBlank(c.getPartnerId()) && notBlank(c.getPartnerKey()))
+            .orElse(false);
     }
 
     static void applyBatchResponse(OnePayInvoice inv, JsonNode json) {

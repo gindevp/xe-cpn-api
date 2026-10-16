@@ -18,6 +18,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +37,12 @@ public class OnePayIpnService {
     private final OnePayInvoiceRepository invoiceRepository;
     private final BankTransactionRepository bankTransactionRepository;
     private final ObjectMapper objectMapper;
+    private OnePayOrderPaidHandler paidHandler;
+
+    @Autowired(required = false)
+    public void setPaidHandler(OnePayOrderPaidHandler paidHandler) {
+        this.paidHandler = paidHandler;
+    }
 
     public OnePayIpnService(
         OnePayConfigRepository configRepository,
@@ -129,7 +136,7 @@ public class OnePayIpnService {
         t.setCustomerId(cut(inv.getUserReference(), 40));
         t.setBillId(cut(inv.getInvoiceReference(), 40));
         t.setAmount(amount);
-        t.setTargetType(BankTransaction.TARGET_ONEPAY_TEST);
+        t.setTargetType(OnePayInvoice.PURPOSE_ORDER.equals(inv.getPurpose()) ? "ORDER" : BankTransaction.TARGET_ONEPAY_TEST);
         t.setTargetId(inv.getId());
         t.setCreatedAt(Instant.now());
         bankTransactionRepository.saveAndFlush(t);
@@ -151,6 +158,9 @@ public class OnePayIpnService {
         }
         inv.setUpdatedAt(Instant.now());
         invoiceRepository.save(inv);
+        if (paidHandler != null && "PAID".equals(result) && OnePayInvoice.PURPOSE_ORDER.equals(inv.getPurpose())) {
+            paidHandler.paid(inv.getOrderCode(), amount);
+        }
         return accept(result, message + sigNote, inv.getUserReference(), transId, amount);
     }
 

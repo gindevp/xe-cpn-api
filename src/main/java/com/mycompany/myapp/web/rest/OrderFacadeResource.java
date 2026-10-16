@@ -38,6 +38,7 @@ import com.mycompany.myapp.service.order.ExceptionFacadeService;
 import com.mycompany.myapp.service.order.OrderFacadeService;
 import com.mycompany.myapp.service.order.PublicSenderLookupService;
 import com.mycompany.myapp.service.partner.AhamoveDispatchService;
+import com.mycompany.myapp.service.payment.onepay.OnePayOrderCollectService;
 import com.mycompany.myapp.service.trip.TripFacadeService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import jakarta.validation.Valid;
@@ -58,6 +59,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import tech.jhipster.web.util.PaginationUtil;
 
@@ -93,6 +95,7 @@ public class OrderFacadeResource {
     private final PublicInvoiceService publicInvoiceService;
     private final PublicSenderLookupService publicSenderLookupService;
     private final AhamoveDispatchService ahamoveDispatchService;
+    private final OnePayOrderCollectService onePayOrderCollectService;
 
     public OrderFacadeResource(
         OrderFacadeService orderFacadeService,
@@ -103,7 +106,8 @@ public class OrderFacadeResource {
         FinanceFacadeService financeFacadeService,
         PublicInvoiceService publicInvoiceService,
         PublicSenderLookupService publicSenderLookupService,
-        AhamoveDispatchService ahamoveDispatchService
+        AhamoveDispatchService ahamoveDispatchService,
+        OnePayOrderCollectService onePayOrderCollectService
     ) {
         this.publicInvoiceService = publicInvoiceService;
         this.publicSenderLookupService = publicSenderLookupService;
@@ -114,6 +118,7 @@ public class OrderFacadeResource {
         this.exceptionFacadeService = exceptionFacadeService;
         this.meInvoiceIssueService = meInvoiceIssueService;
         this.ahamoveDispatchService = ahamoveDispatchService;
+        this.onePayOrderCollectService = onePayOrderCollectService;
     }
 
     @GetMapping("")
@@ -323,6 +328,26 @@ public class OrderFacadeResource {
             trackLookupLimitService.consume(http.getHeader("X-Device-Id"), clientIp(http));
         }
         return orderFacadeService.track(request);
+    }
+
+    /** Thu cước qua VA. Chỉ mobile_service gọi, bằng khóa nội bộ. */
+    @PostMapping("/track/collect")
+    public Map<String, Object> trackCollect(@RequestBody TrackOrderRequest request, jakarta.servlet.http.HttpServletRequest http) {
+        requireMobileKey(http);
+        return onePayOrderCollectService.view(request.getCode(), request.getPhone(), false);
+    }
+
+    @PostMapping("/track/collect/refresh")
+    public Map<String, Object> trackCollectRefresh(@RequestBody TrackOrderRequest request, jakarta.servlet.http.HttpServletRequest http) {
+        requireMobileKey(http);
+        return onePayOrderCollectService.view(request.getCode(), request.getPhone(), true);
+    }
+
+    private void requireMobileKey(jakarta.servlet.http.HttpServletRequest http) {
+        String serviceKey = http.getHeader("X-Mobile-Track-Key");
+        if (mobileTrackKey == null || mobileTrackKey.isBlank() || !mobileTrackKey.equals(serviceKey)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Không được tạo mã thu hộ");
+        }
     }
 
     /** Tra cứu công khai: khách (người trả cước) tra MST để xuất HĐ công ty. */

@@ -37,6 +37,10 @@ public class TrackOrderResponse {
     /** NONE / REQUESTED (đã lưu, chờ tự xuất) / ISSUED / OFFICE (VP xử lý). */
     private String invoiceState;
     private String invoiceNo;
+    private BigDecimal paidAmount;
+    private BigDecimal codAmount;
+    /** Kế toán đã đánh dấu chi COD cho người gửi. */
+    private Boolean codRefundPaid;
 
     public String getInvoiceState() {
         return invoiceState;
@@ -283,5 +287,29 @@ public class TrackOrderResponse {
 
     public void setEvents(List<OrderDetailDTO.OrderEventViewDTO> events) {
         this.events = events;
+    }
+
+    public BigDecimal getPaidAmount() {
+        return paidAmount;
+    }
+
+    public void setPaidAmount(BigDecimal paidAmount) {
+        this.paidAmount = paidAmount;
+    }
+
+    public BigDecimal getCodAmount() {
+        return codAmount;
+    }
+
+    public void setCodAmount(BigDecimal codAmount) {
+        this.codAmount = codAmount;
+    }
+
+    public Boolean getCodRefundPaid() {
+        return codRefundPaid;
+    }
+
+    public void setCodRefundPaid(Boolean codRefundPaid) {
+        this.codRefundPaid = codRefundPaid;
     }
 }

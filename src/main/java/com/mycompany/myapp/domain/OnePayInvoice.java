@@ -18,6 +18,8 @@ public class OnePayInvoice implements Serializable {
     private static final long serialVersionUID = 1L;
 
     public static final String PURPOSE_TEST = "TEST";
+    /** Tài khoản ảo thu cước đơn app. */
+    public static final String PURPOSE_ORDER = "ORDER";
     public static final String STATE_UNPAID = "UNPAID";
     public static final String STATE_PAID = "PAID";
     public static final String STATE_EXPIRED = "EXPIRED";
@@ -110,6 +112,10 @@ public class OnePayInvoice implements Serializable {
 
     @Column(name = "updated_at")
     private Instant updatedAt;
+
+    @Size(max = 40)
+    @Column(name = "order_code", length = 40)
+    private String orderCode;
 
     public Long getId() {
         return id;
@@ -277,5 +283,13 @@ public class OnePayInvoice implements Serializable {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getOrderCode() {
+        return orderCode;
+    }
+
+    public void setOrderCode(String orderCode) {
+        this.orderCode = orderCode;
     }
 }
