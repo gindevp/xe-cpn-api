@@ -49,6 +49,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -75,6 +76,9 @@ public class OrderFacadeResource {
 
     private final OrderFacadeService orderFacadeService;
     private TrackLookupLimitService trackLookupLimitService;
+
+    @Value("${cpn.mobile-track-key:}")
+    private String mobileTrackKey;
 
     @Autowired
     public void setTrackLookupLimitService(TrackLookupLimitService trackLookupLimitService) {
@@ -208,9 +212,12 @@ public class OrderFacadeResource {
      */
     @PostMapping("/guest")
     @ResponseStatus(HttpStatus.CREATED)
-    public CreateDraftOrderResponse createGuestOrder(@Valid @RequestBody CreateDraftOrderRequest request) {
+    public CreateDraftOrderResponse createGuestOrder(
+        @Valid @RequestBody CreateDraftOrderRequest request,
+        jakarta.servlet.http.HttpServletRequest http
+    ) {
         LOG.debug("REST request to create public guest order (CONFIRMED)");
-        return orderFacadeService.createDraft(request);
+        return orderFacadeService.createDraft(request, http.getHeader("X-Device-Id"));
     }
 
     /** Public /tao-don: khách nhập SĐT của mình → tên người gửi ở đơn gần nhất (giới hạn theo IP). */
@@ -222,8 +229,11 @@ public class OrderFacadeResource {
     /** @deprecated Prefer POST /api/orders/guest — same behavior (CONFIRMED). Kept for old FE. */
     @PostMapping("/drafts")
     @ResponseStatus(HttpStatus.CREATED)
-    public CreateDraftOrderResponse createDraft(@Valid @RequestBody CreateDraftOrderRequest request) {
-        return createGuestOrder(request);
+    public CreateDraftOrderResponse createDraft(
+        @Valid @RequestBody CreateDraftOrderRequest request,
+        jakarta.servlet.http.HttpServletRequest http
+    ) {
+        return createGuestOrder(request, http);
     }
 
     @PostMapping("")
@@ -305,7 +315,11 @@ public class OrderFacadeResource {
 
     @PostMapping("/track")
     public TrackOrderResponse track(@Valid @RequestBody TrackOrderRequest request, jakarta.servlet.http.HttpServletRequest http) {
-        if (trackLookupLimitService != null) {
+        String serviceKey = http.getHeader("X-Mobile-Track-Key");
+        boolean serviceOwn = mobileTrackKey != null && !mobileTrackKey.isBlank() && mobileTrackKey.equals(serviceKey);
+        boolean ownOrder =
+            serviceOwn || orderFacadeService.exemptOwnDeviceLookup(request.getCode(), request.getPhone(), http.getHeader("X-Device-Id"));
+        if (trackLookupLimitService != null && !ownOrder) {
             trackLookupLimitService.consume(http.getHeader("X-Device-Id"), clientIp(http));
         }
         return orderFacadeService.track(request);

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261016150000-1" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="shipment_order" columnName="creator_device_id"/>
+            </not>
+        </preConditions>
+        <comment>Mã thiết bị tạo đơn khách, để tra cứu đơn của chính thiết bị đó không tính hạn mức.</comment>
+        <addColumn tableName="shipment_order">
+            <column name="creator_device_id" type="varchar(80)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

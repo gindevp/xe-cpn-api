@@ -428,6 +428,10 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "public_tracking_allowed", nullable = false)
     private Boolean publicTrackingAllowed;
 
+    /** Thiết bị tạo đơn khách. Cùng mã khi tra cứu thì không tính hạn mức tra cứu công khai. */
+    @Column(name = "creator_device_id", length = 80)
+    private String creatorDeviceId;
+
     @PrePersist
     protected void setCreationTimestamps() {
         Instant now = Instant.now();
@@ -1477,6 +1481,14 @@ public class ShipmentOrder implements Serializable {
 
     public void setPublicTrackingAllowed(Boolean publicTrackingAllowed) {
         this.publicTrackingAllowed = publicTrackingAllowed;
+    }
+
+    public String getCreatorDeviceId() {
+        return creatorDeviceId;
+    }
+
+    public void setCreatorDeviceId(String creatorDeviceId) {
+        this.creatorDeviceId = creatorDeviceId;
     }
 
     public OrderIssue getIssue() {

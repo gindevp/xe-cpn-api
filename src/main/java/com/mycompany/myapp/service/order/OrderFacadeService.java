@@ -49,6 +49,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -623,6 +624,10 @@ public class OrderFacadeService {
      * Guest drop-off (!homePickup) → qrDropOff so đơn vào Chờ nhận hàng.
      */
     public CreateDraftOrderResponse createDraft(CreateDraftOrderRequest req) {
+        return createDraft(req, null);
+    }
+
+    public CreateDraftOrderResponse createDraft(CreateDraftOrderRequest req, String creatorDeviceHeader) {
         String goodsPhoto = validGoodsPhoto(req.getGoodsPhoto());
         boolean homeDelivery = Boolean.TRUE.equals(req.getHomeDelivery());
         boolean homePickup = Boolean.TRUE.equals(req.getHomePickup());
@@ -737,6 +742,7 @@ public class OrderFacadeService {
         order.setFinalToOffice(to);
         applyProvinceTransit(order);
         order.setPublicTrackingAllowed(true);
+        order.setCreatorDeviceId(normalizeCreatorDeviceId(creatorDeviceHeader));
         fillItineraryIfMissing(order);
 
         order = shipmentOrderRepository.save(order);
@@ -838,6 +844,38 @@ public class OrderFacadeService {
         return new OrderTransitionResponse(true, OrderStatus.CONFIRMED, order.getOrderCode());
     }
 
+    /**
+     * Đơn khách do chính thiết bị này tạo thì tra cứu không tính hạn mức.
+     * Đơn khách cũ chưa gắn thiết bị: lần tra bằng đủ số điện thoại sẽ gắn thiết bị đó.
+     */
+    @Transactional
+    public boolean exemptOwnDeviceLookup(String code, String phone, String deviceHeader) {
+        String device = normalizeCreatorDeviceId(deviceHeader);
+        if (device == null || code == null || code.isBlank()) {
+            return false;
+        }
+        ShipmentOrder order = shipmentOrderRepository.findOneByOrderCodeOrDraftCode(code.trim()).orElse(null);
+        if (order == null || !Boolean.TRUE.equals(order.getPublicTrackingAllowed())) {
+            return false;
+        }
+        String saved = normalizeCreatorDeviceId(order.getCreatorDeviceId());
+        if (device.equals(saved)) {
+            return true;
+        }
+        if (saved != null) {
+            return false;
+        }
+        if (!fullPhoneMatches(phone, order.getSenderPhone(), order.getReceiverPhone())) {
+            return false;
+        }
+        if (order.getId() == null || !orderEventRepository.existsByOrder_IdAndActionAndActorUsername(order.getId(), "CREATE", "customer")) {
+            return false;
+        }
+        order.setCreatorDeviceId(device);
+        shipmentOrderRepository.save(order);
+        return true;
+    }
+
     @Transactional(readOnly = true)
     public TrackOrderResponse track(TrackOrderRequest req) {
         TrackOrderResponse res = new TrackOrderResponse();
@@ -905,6 +943,23 @@ public class OrderFacadeService {
     /**
      * Public track: full phone OR last 4 digits must match sender or receiver (digits only).
      */
+    static String normalizeCreatorDeviceId(String header) {
+        if (header == null) {
+            return null;
+        }
+        String id = header.trim().toLowerCase(Locale.ROOT);
+        return id.matches("[a-z0-9._-]{8,80}") ? id : null;
+    }
+
+    /** Đủ số điện thoại người gửi hoặc người nhận, không nhận 4 số cuối. */
+    static boolean fullPhoneMatches(String input, String senderPhone, String receiverPhone) {
+        String in = digitsOnly(input);
+        if (in.length() < 9) {
+            return false;
+        }
+        return in.equals(digitsOnly(senderPhone)) || in.equals(digitsOnly(receiverPhone));
+    }
+
     static boolean phoneMatchesSenderOrReceiver(String input, String senderPhone, String receiverPhone) {
         String in = digitsOnly(input);
         if (in.isEmpty()) {

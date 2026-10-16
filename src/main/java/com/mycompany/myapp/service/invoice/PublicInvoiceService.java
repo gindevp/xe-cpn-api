@@ -55,7 +55,19 @@ public class PublicInvoiceService {
 
     public record LookupRequest(String code, String phone, String taxCode) {}
 
-    public record SubmitRequest(String code, String phone, String taxCode, String email) {}
+    public record SubmitRequest(
+        String code,
+        String phone,
+        String taxCode,
+        String email,
+        String buyerName,
+        String buyerIdNumber,
+        String buyerPhone
+    ) {
+        public SubmitRequest(String code, String phone, String taxCode, String email) {
+            this(code, phone, taxCode, email, null, null, null);
+        }
+    }
 
     /** action: ISSUED (đã xuất) / SAVED (đã lưu, tự xuất sau) / FAILED (MISA lỗi, VP xử lý). */
     public record SubmitResult(String action, String invoiceNo, String email, String message) {}
@@ -111,7 +123,16 @@ public class PublicInvoiceService {
         if (!issueService.paymentReached(order)) {
             issueService.saveInfo(
                 order.getOrderCode(),
-                new MeInvoiceIssueService.InvoiceInfoRequest(true, taxCode, companyName, address, email),
+                new MeInvoiceIssueService.InvoiceInfoRequest(
+                    true,
+                    taxCode,
+                    companyName,
+                    address,
+                    email,
+                    req.buyerName(),
+                    req.buyerIdNumber(),
+                    req.buyerPhone()
+                ),
                 ACTOR
             );
             return new SubmitResult(
@@ -136,6 +157,9 @@ public class PublicInvoiceService {
         issue.setCompanyName(companyName);
         issue.setAddress(address);
         issue.setEmail(email);
+        issue.setBuyerName(req.buyerName());
+        issue.setBuyerIdNumber(req.buyerIdNumber());
+        issue.setBuyerPhone(req.buyerPhone());
         ShipmentOrder done = issueService.issueManual(order.getOrderCode(), issue, ACTOR);
         if (MeInvoiceIssueService.isIssued(done)) {
             return new SubmitResult("ISSUED", done.getInvoiceNo(), email, "Đã xuất hoá đơn và gửi về email " + email);

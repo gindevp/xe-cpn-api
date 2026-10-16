@@ -231,3 +231,7 @@ jhipster:
 # ===================================================================
 
 # application:
+
+# Khóa để mobile_service tra cứu đơn của chính tài khoản app, không tính hạn mức công khai.
+cpn:
+  mobile-track-key: ${CPN_MOBILE_TRACK_KEY:xvn-cpn-mobile-own-track-20261016}
