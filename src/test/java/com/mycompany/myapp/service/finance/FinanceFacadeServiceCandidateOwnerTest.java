@@ -215,6 +215,27 @@ class FinanceFacadeServiceCandidateOwnerTest {
     }
 
     @Test
+    void unconfirmedAhamoveAdvance_ownerIsBookerNotCreator() {
+        order.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        order.setStatus(OrderStatus.DELIVERED);
+        order.setForwardStage(null);
+        order.setPaidAmount(BigDecimal.ZERO);
+        order.setFareAmount(new BigDecimal("200000"));
+        order.setPartnerCode("AHAMOVE");
+        order.setPartnerCodAmount(new BigDecimal("200000"));
+        when(orderEventRepository.findByOrder_IdOrderByEventAtAsc(7L)).thenReturn(
+            List.of(event("CREATE", "xe00102"), event("AHAMOVE_BOOK", "xe01646"), event("POD", "anonymousUser"))
+        );
+
+        List<CandidateDTO> rows = service.candidates(null, null);
+        assertThat(rows).anySatisfy(r -> {
+            assertThat(r.portion()).isEqualTo(ReceiptSettlement.DELIVERY);
+            assertThat(r.dueAmount()).isEqualByComparingTo("200000");
+            assertThat(r.debtOwnerUsername()).isEqualTo("xe01646");
+        });
+    }
+
+    @Test
     void adminCatchUpPod_codOwnerIsAssignedStaffNotAdmin() {
         order.setStatus(OrderStatus.DELIVERED);
         order.setForwardStage(null);

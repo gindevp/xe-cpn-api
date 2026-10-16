@@ -36,6 +36,7 @@ import com.mycompany.myapp.service.order.DeliveryFacadeService;
 import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.service.order.OrderStatusTransitions;
 import com.mycompany.myapp.service.order.PartnerAdvance;
+import com.mycompany.myapp.service.order.PartnerAdvance;
 import com.mycompany.myapp.service.storage.StoredMedia;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import jakarta.persistence.criteria.JoinType;
@@ -1680,6 +1681,20 @@ public class FinanceFacadeService {
         }
         if (shipStaff != null) {
             return shipStaff;
+        }
+        // Chưa quét bàn giao ship: nợ ứng Ahamove gán người book, để họ bảo người giao vào xác nhận bù.
+        if (PartnerAdvance.pending(order)) {
+            for (int i = events.size() - 1; i >= 0; i--) {
+                OrderEvent event = events.get(i);
+                String action = event.getAction() == null ? "" : event.getAction().trim().toUpperCase();
+                if (!"AHAMOVE_BOOK".equals(action)) {
+                    continue;
+                }
+                String booker = staffActor(event);
+                if (booker != null) {
+                    return booker;
+                }
+            }
         }
         return resolveDebtOwner(order);
     }
