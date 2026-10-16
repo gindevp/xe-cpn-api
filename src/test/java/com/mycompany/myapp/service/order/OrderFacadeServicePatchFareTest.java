@@ -254,7 +254,7 @@ class OrderFacadeServicePatchFareTest {
         service.patch("XE-H1-001", req);
 
         assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("0");
-        assertThat(order.getFareAmount()).isEqualByComparingTo("80000");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("30000");
     }
 
     @Test
@@ -275,7 +275,7 @@ class OrderFacadeServicePatchFareTest {
         service.patch("XE-H1-001", req);
 
         assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("0");
-        assertThat(order.getFareAmount()).isEqualByComparingTo("80000");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("30000");
         assertThat(order.getPaidAmount()).isEqualByComparingTo("80000");
     }
 
@@ -390,7 +390,7 @@ class OrderFacadeServicePatchFareTest {
         service.patch("XE-H1-001", req);
 
         assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("15000");
-        assertThat(order.getFareAmount()).isEqualByComparingTo("100000");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("95000");
         assertThat(order.getPaidAmount()).isEqualByComparingTo("100000");
     }
 

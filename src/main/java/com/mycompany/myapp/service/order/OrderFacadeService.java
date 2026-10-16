@@ -1207,31 +1207,9 @@ public class OrderFacadeService {
             order.setDiscountAmount(req.getDiscountAmount());
         }
         if (doorFees != null) {
-            // Phí tận nơi (tiền trả theo km Ahamove) cập nhật theo thực tế.
-            // Cước thu khách chỉ tăng: phần phí ship giảm thì giữ nguyên số đang ghi, không hoàn.
-            BigDecimal recalc = recalcFareAfterDoorChange(order, doorFees);
-            BigDecimal oldDoor = OrderMoney.nz(prevPickupFee).add(OrderMoney.nz(prevDeliveryFee));
-            BigDecimal newDoor = OrderMoney.nz(order.getPickupFeeAmount()).add(OrderMoney.nz(order.getDeliveryFeeAmount()));
-            BigDecimal doorDrop = oldDoor.subtract(newDoor);
-            if (doorDrop.signum() > 0) {
-                recalc = recalc.add(doorDrop);
-            }
-            if (recalc.compareTo(fareBefore) < 0) {
-                recalc = fareBefore;
-            }
-            BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
-            if (!prepaidFollowsFare && recalc.compareTo(paid) < 0) {
-                throw new BadRequestAlertException(
-                    "Đơn đã thu " +
-                    paid.toPlainString() +
-                    "đ — cước mới " +
-                    recalc.toPlainString() +
-                    "đ thấp hơn số đã thu. Cần hoàn tiền cho khách trước khi đổi.",
-                    ENTITY,
-                    "fareBelowPaid"
-                );
-            }
-            order.setFareAmount(recalc);
+            // Phí tận nơi cập nhật theo km Ahamove. Cước khách hạ theo phí mới.
+            // Số đã thu giữ nguyên — không hoàn, không chặn khi cước mới thấp hơn số đã thu.
+            order.setFareAmount(recalcFareAfterDoorChange(order, doorFees));
         }
         if (req.getBankName() != null) {
             order.setBankName(blankToNull(req.getBankName()));
@@ -1292,6 +1270,9 @@ public class OrderFacadeService {
             prepaidDelta = BigDecimal.ZERO;
             order.setPaymentTerm(PaymentTerm.NHAN_TRA);
             receiverTakesExtra = true;
+        } else if (prepaidFollowsFare && fareAfter.compareTo(fareBefore) < 0 && doorFees != null) {
+            // Đổi địa chỉ / bỏ tận nơi làm cước giảm: không ghi khoản âm, không hoàn khách.
+            prepaidDelta = BigDecimal.ZERO;
         } else {
             prepaidDelta = prepaidFollowsFare ? syncSenderPrepaidToFare(order) : BigDecimal.ZERO;
         }
