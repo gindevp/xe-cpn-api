@@ -222,6 +222,7 @@ class FinanceFacadeServiceCandidateOwnerTest {
         order.setPaidAmount(BigDecimal.ZERO);
         order.setFareAmount(new BigDecimal("200000"));
         order.setPartnerCode("AHAMOVE");
+        order.setPartnerOrderId("26FUMUT9");
         order.setPartnerCodAmount(new BigDecimal("200000"));
         when(orderEventRepository.findByOrder_IdOrderByEventAtAsc(7L)).thenReturn(
             List.of(event("CREATE", "xe00102"), event("AHAMOVE_BOOK", "xe01646"), event("POD", "anonymousUser"))
@@ -232,6 +233,7 @@ class FinanceFacadeServiceCandidateOwnerTest {
             assertThat(r.portion()).isEqualTo(ReceiptSettlement.DELIVERY);
             assertThat(r.dueAmount()).isEqualByComparingTo("200000");
             assertThat(r.debtOwnerUsername()).isEqualTo("xe01646");
+            assertThat(r.shipDebtSubstitute()).isTrue();
         });
     }
 

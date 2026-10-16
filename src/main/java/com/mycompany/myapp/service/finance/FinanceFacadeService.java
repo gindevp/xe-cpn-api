@@ -1796,7 +1796,11 @@ public class FinanceFacadeService {
             return true;
         }
         String debtor = o.getPartnerCodCollectedBy();
-        return debtor != null && debtor.equalsIgnoreCase(owner.trim());
+        if (debtor != null && debtor.equalsIgnoreCase(owner.trim())) {
+            return true;
+        }
+        // Chưa quét bàn giao: tiền ứng vẫn treo, người book đang chịu nợ thay.
+        return PartnerAdvance.pending(o);
     }
 
     /** portion null = tự phân bổ (phần giao trước). */
