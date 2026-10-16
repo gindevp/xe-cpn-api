@@ -1107,12 +1107,6 @@ public class OrderFacadeService {
         if (req.getQuantity() != null) {
             order.setQuantity(req.getQuantity());
         }
-        if (req.getFareAmount() != null) {
-            if (!prepaidFollowsFare) {
-                assertFareNotBelowPaid(req.getFareAmount(), order.getPaidAmount());
-            }
-            order.setFareAmount(req.getFareAmount());
-        }
         SimpleFareCalculator.FareBreakdown doorFees = null;
         BigDecimal estimatedPickupKm = null;
         BigDecimal estimatedDeliveryKm = null;
@@ -1130,10 +1124,17 @@ public class OrderFacadeService {
         boolean pickupAddrChanged = !sameText(pickupAddrBefore, order.getPickupAddress());
         boolean deliveryAddrChanged = !sameText(deliveryAddrBefore, order.getDeliveryAddress());
         boolean recomputeDoor = pickupFlagChanged || deliveryFlagChanged || (hp && pickupAddrChanged) || (hd && deliveryAddrChanged);
+        // Đổi địa chỉ/tận nơi thì cước khách do máy tính lại bên dưới — không nhận fare client (có thể đã trừ phí ship mới).
+        if (req.getFareAmount() != null && !recomputeDoor) {
+            if (!prepaidFollowsFare) {
+                assertFareNotBelowPaid(req.getFareAmount(), order.getPaidAmount());
+            }
+            order.setFareAmount(req.getFareAmount());
+        }
+        BigDecimal prevPickupFee = order.getPickupFeeAmount();
+        BigDecimal prevDeliveryFee = order.getDeliveryFeeAmount();
         if (recomputeDoor) {
             order.setServiceType(resolveServiceType(hp, hd));
-            BigDecimal prevPickupFee = order.getPickupFeeAmount();
-            BigDecimal prevDeliveryFee = order.getDeliveryFeeAmount();
             if (hp && (pickupFlagChanged || pickupAddrChanged)) {
                 estimatedPickupKm = requireDoorKm(order.getFromOffice(), order.getPickupAddress(), "lấy");
             }
@@ -1206,16 +1207,26 @@ public class OrderFacadeService {
             order.setDiscountAmount(req.getDiscountAmount());
         }
         if (doorFees != null) {
-            // Phí tận nơi vừa tính lại → tổng cước dựng lại từ các khoản (fareAmount client gửi kèm có thể còn phí cũ).
+            // Phí tận nơi (tiền trả theo km Ahamove) cập nhật theo thực tế.
+            // Cước thu khách chỉ tăng: phần phí ship giảm thì giữ nguyên số đang ghi, không hoàn.
             BigDecimal recalc = recalcFareAfterDoorChange(order, doorFees);
+            BigDecimal oldDoor = OrderMoney.nz(prevPickupFee).add(OrderMoney.nz(prevDeliveryFee));
+            BigDecimal newDoor = OrderMoney.nz(order.getPickupFeeAmount()).add(OrderMoney.nz(order.getDeliveryFeeAmount()));
+            BigDecimal doorDrop = oldDoor.subtract(newDoor);
+            if (doorDrop.signum() > 0) {
+                recalc = recalc.add(doorDrop);
+            }
+            if (recalc.compareTo(fareBefore) < 0) {
+                recalc = fareBefore;
+            }
             BigDecimal paid = OrderMoney.nz(order.getPaidAmount());
             if (!prepaidFollowsFare && recalc.compareTo(paid) < 0) {
                 throw new BadRequestAlertException(
                     "Đơn đã thu " +
                     paid.toPlainString() +
-                    "đ — bỏ lấy/giao tận nơi làm cước còn " +
+                    "đ — cước mới " +
                     recalc.toPlainString() +
-                    "đ, thấp hơn số đã thu. Cần hoàn tiền cho khách trước khi đổi.",
+                    "đ thấp hơn số đã thu. Cần hoàn tiền cho khách trước khi đổi.",
                     ENTITY,
                     "fareBelowPaid"
                 );

@@ -254,12 +254,12 @@ class OrderFacadeServicePatchFareTest {
         service.patch("XE-H1-001", req);
 
         assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("0");
-        assertThat(order.getFareAmount()).isEqualByComparingTo("30000");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("80000");
     }
 
     @Test
-    void patch_untickHomeDelivery_belowPaid_throws() {
-        when(shipmentOrderRepository.findOneByOrderCodeOrDraftCode("XE-H1-001")).thenReturn(Optional.of(order));
+    void patch_untickHomeDelivery_belowPaid_keepsCollectedFare() {
+        stubLoadAndDetail();
         order.setGoodsFareAmount(new BigDecimal("30000"));
         order.setDeliveryFeeAmount(new BigDecimal("50000"));
         order.setHomeDelivery(true);
@@ -270,13 +270,13 @@ class OrderFacadeServicePatchFareTest {
         );
         PatchOrderRequest req = new PatchOrderRequest();
         req.setHomeDelivery(false);
-        req.setFareAmount(new BigDecimal("80000"));
+        req.setFareAmount(new BigDecimal("30000"));
 
-        assertThatThrownBy(() -> service.patch("XE-H1-001", req))
-            .isInstanceOf(BadRequestAlertException.class)
-            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
-            .isEqualTo("fareBelowPaid");
-        verify(shipmentOrderRepository, never()).save(any());
+        service.patch("XE-H1-001", req);
+
+        assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("0");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("80000");
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("80000");
     }
 
     @Test
@@ -358,6 +358,40 @@ class OrderFacadeServicePatchFareTest {
 
         assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("80000");
         assertThat(order.getFareAmount()).isEqualByComparingTo("125000");
+    }
+
+    @Test
+    void patch_changeDeliveryAddress_lowerDoorFee_keepsCustomerFare() {
+        stubLoadAndDetail();
+        service.setDoorKmEstimator(doorKmEstimator);
+        Office dest = new Office();
+        dest.setCode("VP_YB");
+        order.setFinalToOffice(dest);
+        order.setHomeDelivery(true);
+        order.setDeliveryAddress("địa chỉ cũ");
+        order.setGoodsFareAmount(new BigDecimal("80000"));
+        order.setDeliveryFeeAmount(new BigDecimal("20000"));
+        order.setFareAmount(new BigDecimal("100000"));
+        order.setPaidAmount(new BigDecimal("100000"));
+        BigDecimal km = new BigDecimal("3");
+        when(doorKmEstimator.km(eq(dest), isNull(), isNull(), eq("địa chỉ gần hơn"), eq("giao"))).thenReturn(km);
+        when(fareCalculator.estimate(any(), eq(false), eq(true), any(), any(), isNull(), eq(km))).thenReturn(
+            new SimpleFareCalculator.FareBreakdown(
+                new BigDecimal("80000"),
+                BigDecimal.ZERO,
+                new BigDecimal("15000"),
+                new BigDecimal("95000")
+            )
+        );
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setDeliveryAddress("địa chỉ gần hơn");
+        req.setFareAmount(new BigDecimal("95000"));
+
+        service.patch("XE-H1-001", req);
+
+        assertThat(order.getDeliveryFeeAmount()).isEqualByComparingTo("15000");
+        assertThat(order.getFareAmount()).isEqualByComparingTo("100000");
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("100000");
     }
 
     @Test
