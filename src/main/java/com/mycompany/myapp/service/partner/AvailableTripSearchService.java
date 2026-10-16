@@ -10,7 +10,9 @@ import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.service.dto.trip.AvailableTripDTO;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import java.math.BigDecimal;
+import java.text.Normalizer;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -98,14 +100,49 @@ public class AvailableTripSearchService {
         if (maHanhTrinh == null) {
             return List.of();
         }
+        List<JsonNode> raw = loadWindowNodes(itinerary, maHanhTrinh, from, to);
+        Instant start = from.atZone(VN).toInstant();
+        Instant end = to.atZone(VN).toInstant();
         List<AvailableTripDTO> items = new ArrayList<>();
-        for (JsonNode n : vthkClient.searchTripsByItineraries(List.of(maHanhTrinh), CRM_DT.format(from), CRM_DT.format(to))) {
+        for (JsonNode n : raw) {
             AvailableTripDTO dto = mapTrip(n, itinerary.getCode());
-            if (dto.getDepartAt() != null && dto.getExternalTripId() != null) {
-                items.add(dto);
+            if (dto.getDepartAt() == null || dto.getExternalTripId() == null) {
+                continue;
             }
+            if (dto.getDepartAt().isBefore(start) || dto.getDepartAt().isAfter(end)) {
+                continue;
+            }
+            items.add(dto);
         }
         return items;
+    }
+
+    private List<JsonNode> loadWindowNodes(Itinerary itinerary, String maHanhTrinh, LocalDateTime from, LocalDateTime to) {
+        if (!vthkClient.isListTripsDenied()) {
+            try {
+                return vthkClient.searchTripsByItineraries(List.of(maHanhTrinh), CRM_DT.format(from), CRM_DT.format(to));
+            } catch (BadRequestAlertException e) {
+                if (!vthkClient.isListTripsDenied()) {
+                    throw e;
+                }
+            }
+        }
+        return catalogNodes(itinerary, from, to);
+    }
+
+    /** Catalog theo tỉnh; lọc ProductName đúng điểm (Ga / BigC / Hà Đông / …) của lộ trình. */
+    private List<JsonNode> catalogNodes(Itinerary itinerary, LocalDateTime from, LocalDateTime to) {
+        String[] pair = catalogPair(itinerary);
+        List<JsonNode> raw = new ArrayList<>();
+        for (LocalDate day = from.toLocalDate(); !day.isAfter(to.toLocalDate()); day = day.plusDays(1)) {
+            for (JsonNode n : vthkClient.searchCatalog(pair[0], pair[1], day)) {
+                String label = firstNonBlank(text(n, "ProductName"), text(n, "TenLoTrinh"));
+                if (productMatches(itinerary, label)) {
+                    raw.add(n);
+                }
+            }
+        }
+        return raw;
     }
 
     private void enrichCargo(List<AvailableTripDTO> items) {
@@ -221,6 +258,105 @@ public class AvailableTripSearchService {
             );
         }
         return new String[] { from, to };
+    }
+
+    /** Cặp điểm catalog. Điểm Hà Nội (Ga, Hà Đông, BigC, Phố cổ) và Việt Trì (chung slug Phú Thọ) lấy từ tên lộ trình. */
+    static String[] catalogPair(Itinerary itinerary) {
+        String name = blankToNull(itinerary.getName());
+        if (name == null) {
+            name = blankToNull(itinerary.getCode());
+        }
+        if (name != null) {
+            String[] parts = name.split("\\s*-\\s*");
+            if (parts.length >= 2) {
+                String from = slugOfToken(parts[0]);
+                String to = slugOfToken(parts[parts.length - 1]);
+                if (from != null && to != null) {
+                    return new String[] { from, to };
+                }
+            }
+        }
+        return toLocationPair(itinerary);
+    }
+
+    static String slugOfToken(String raw) {
+        String kw = pointKeyword(raw);
+        if (kw == null) {
+            return null;
+        }
+        if (kw.equals("ga ha noi") || kw.equals("ha dong") || kw.equals("bigc") || kw.equals("pho co")) {
+            return "ha-noi";
+        }
+        if (kw.equals("thai binh")) {
+            return "thai-binh";
+        }
+        if (kw.equals("ninh binh") || kw.equals("tam coc")) {
+            return "ninh-binh";
+        }
+        if (kw.equals("nam dinh")) {
+            return "nam-dinh";
+        }
+        if (kw.equals("phu tho") || kw.equals("viet tri")) {
+            return "phu-tho";
+        }
+        if (kw.equals("yen bai")) {
+            return "yen-bai";
+        }
+        return toSlug(raw);
+    }
+
+    /** ProductName catalog có đúng hai đầu lộ trình, đúng thứ tự. Ninh Bình không lấy chuyến Tam Cốc. */
+    static boolean productMatches(Itinerary itinerary, String productName) {
+        String name = blankToNull(itinerary.getName());
+        if (name == null) {
+            name = blankToNull(itinerary.getCode());
+        }
+        if (name == null || productName == null || productName.isBlank()) {
+            return false;
+        }
+        String[] parts = name.split("\\s*-\\s*");
+        if (parts.length < 2) {
+            return false;
+        }
+        String from = pointKeyword(parts[0]);
+        String to = pointKeyword(parts[parts.length - 1]);
+        String folded = fold(productName);
+        if (from == null || to == null) {
+            return false;
+        }
+        int iFrom = folded.indexOf(from);
+        int iTo = folded.indexOf(to, Math.max(iFrom, 0));
+        if (iFrom < 0 || iTo < 0 || iFrom > iTo) {
+            return false;
+        }
+        boolean wantsTamCoc = "tam coc".equals(from) || "tam coc".equals(to);
+        return wantsTamCoc || !folded.contains("tam coc");
+    }
+
+    static String pointKeyword(String raw) {
+        String f = fold(raw);
+        if (f.isEmpty()) {
+            return null;
+        }
+        return switch (f) {
+            case "ga" -> "ga ha noi";
+            case "hd" -> "ha dong";
+            case "bc" -> "bigc";
+            case "phoco", "pho co" -> "pho co";
+            case "tb" -> "thai binh";
+            case "nb" -> "ninh binh";
+            case "nd" -> "nam dinh";
+            case "pt" -> "phu tho";
+            case "vt" -> "viet tri";
+            case "yb" -> "yen bai";
+            case "tc" -> "tam coc";
+            default -> f;
+        };
+    }
+
+    private static String fold(String raw) {
+        String p = raw.trim().toLowerCase(Locale.ROOT).replace('đ', 'd').replace('Đ', 'd');
+        return Normalizer.normalize(p, Normalizer.Form.NFD).replaceAll("\\p{M}+", "").replaceAll("\\s+", " ").trim();
     }
 
     static String toSlug(String place) {
