@@ -98,6 +98,9 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
     /** Trùng đuôi mã (để 4 ký tự cuối tìm đơn ít đụng). */
     boolean existsByOrderCodeEndingWithIgnoreCase(String suffix);
 
+    /** Tra đuôi mã qua index order_code_tail. Suffix do generator luôn là 4 ký tự hoa. */
+    boolean existsByOrderCodeTail(String orderCodeTail);
+
     List<ShipmentOrder> findByCurrentTrip_Id(Long tripId);
 
     /** Đơn gửi trả chờ tự xuất HĐ: đã nhập kho gửi trong [from, to], chưa có trạng thái HĐ, không công nợ, không ngoại lệ mở. */

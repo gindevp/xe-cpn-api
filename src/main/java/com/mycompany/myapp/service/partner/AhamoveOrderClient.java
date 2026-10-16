@@ -219,8 +219,7 @@ public class AhamoveOrderClient {
                 cargo
             );
             if (byGroup.get("distanceKm") != null) {
-                List<Map<String, Object>> services = listServices(officeLat, officeLng, "INSTANT");
-                byGroup.put("services", services);
+                // Đã có km từ group BIKE. Không gọi thêm /services — app và web chỉ dùng distanceKm.
                 tagTier(byGroup, cargo);
                 return byGroup;
             }

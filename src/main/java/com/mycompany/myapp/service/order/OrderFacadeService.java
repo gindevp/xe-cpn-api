@@ -648,17 +648,20 @@ public class OrderFacadeService {
         Office from = requireOffice(fromCode);
         Office to = requireOffice(destOfficeCode);
 
-        Office fareTo = to;
-        SimpleFareCalculator.FareBreakdown fare = fareCalculator.estimate(
-            req.getEstimatedWeightKg(),
-            homePickup,
-            homeDelivery,
-            from,
-            fareTo,
-            req.getPickupKm(),
-            req.getDeliveryKm(),
-            req.getBranchCode()
-        );
+        // App/web đã gửi đủ cước theo kiện. Bỏ ước lượng BE (đọc cả bảng giá) để tạo đơn không chờ thêm.
+        boolean clientFare = req.getFareAmount() != null && req.getPickupFeeAmount() != null && req.getDeliveryFeeAmount() != null;
+        SimpleFareCalculator.FareBreakdown fare = clientFare
+            ? null
+            : fareCalculator.estimate(
+                req.getEstimatedWeightKg(),
+                homePickup,
+                homeDelivery,
+                from,
+                to,
+                req.getPickupKm(),
+                req.getDeliveryKm(),
+                req.getBranchCode()
+            );
 
         // Guest public create: auto-confirm soft daily overflow (no staff dialog).
         String orderCode = orderCodeGenerator.nextOrderCode(fromCode, true);

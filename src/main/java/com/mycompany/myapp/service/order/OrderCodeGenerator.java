@@ -80,7 +80,7 @@ public class OrderCodeGenerator {
                 continue;
             }
             // Tránh trùng đuôi 4 ký tự với đơn khác (kể cả mã cũ có năm) — tìm kiếm tail chính xác hơn.
-            if (shipmentOrderRepository.existsByOrderCodeEndingWithIgnoreCase(suffix)) {
+            if (shipmentOrderRepository.existsByOrderCodeTail(suffix)) {
                 continue;
             }
             return code;

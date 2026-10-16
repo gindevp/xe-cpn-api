@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261016124500-1" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="shipment_order" columnName="order_code_tail"/>
+            </not>
+        </preConditions>
+        <comment>4 ký tự cuối mã đơn, có index, để cấp mã không quét LIKE '%đuôi' trên cả bảng.</comment>
+        <addColumn tableName="shipment_order">
+            <column name="order_code_tail" type="varchar(4)"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20261016124500-2" author="cpn">
+        <sql>UPDATE shipment_order SET order_code_tail = UPPER(RIGHT(order_code, 4)) WHERE order_code IS NOT NULL AND (order_code_tail IS NULL OR order_code_tail = '')</sql>
+    </changeSet>
+
+    <changeSet id="20261016124500-3" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <indexExists tableName="shipment_order" indexName="idx_shipment_order__code_tail"/>
+            </not>
+        </preConditions>
+        <createIndex tableName="shipment_order" indexName="idx_shipment_order__code_tail">
+            <column name="order_code_tail"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

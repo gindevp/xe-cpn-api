@@ -46,7 +46,7 @@ class OrderCodeGeneratorTest {
     void formatIsOfficeDdMmPlusFourAlnum() {
         when(shipmentOrderRepository.findOrderCodesByPrefix(prefix(YB))).thenReturn(List.of());
         when(shipmentOrderRepository.existsByOrderCode(anyString())).thenReturn(false);
-        when(shipmentOrderRepository.existsByOrderCodeEndingWithIgnoreCase(anyString())).thenReturn(false);
+        when(shipmentOrderRepository.existsByOrderCodeTail(anyString())).thenReturn(false);
 
         String code = generator.nextOrderCode(YB);
         String p = prefix(YB);
@@ -62,7 +62,7 @@ class OrderCodeGeneratorTest {
         when(shipmentOrderRepository.findOrderCodesByPrefix(prefix(YB))).thenReturn(List.of());
         when(shipmentOrderRepository.findOrderCodesByPrefix(prefix(ND))).thenReturn(List.of());
         when(shipmentOrderRepository.existsByOrderCode(anyString())).thenReturn(false);
-        when(shipmentOrderRepository.existsByOrderCodeEndingWithIgnoreCase(anyString())).thenReturn(false);
+        when(shipmentOrderRepository.existsByOrderCodeTail(anyString())).thenReturn(false);
 
         assertThat(generator.nextOrderCode(YB)).startsWith(prefix(YB));
         assertThat(generator.nextOrderCode(ND)).startsWith(prefix(ND));
@@ -76,7 +76,7 @@ class OrderCodeGeneratorTest {
             String c = inv.getArgument(0);
             return c.endsWith("AAAA"); // never generated (A not in SAFE) — always false path
         });
-        when(shipmentOrderRepository.existsByOrderCodeEndingWithIgnoreCase(anyString())).thenReturn(false);
+        when(shipmentOrderRepository.existsByOrderCodeTail(anyString())).thenReturn(false);
 
         String code = generator.nextOrderCode(YB);
         assertThat(code).startsWith(p).hasSize(p.length() + 4);
@@ -99,7 +99,7 @@ class OrderCodeGeneratorTest {
         List<String> full = IntStream.range(0, 1000).mapToObj(i -> p + String.format("%04d", i)).toList();
         when(shipmentOrderRepository.findOrderCodesByPrefix(p)).thenReturn(full);
         when(shipmentOrderRepository.existsByOrderCode(anyString())).thenReturn(false);
-        when(shipmentOrderRepository.existsByOrderCodeEndingWithIgnoreCase(anyString())).thenReturn(false);
+        when(shipmentOrderRepository.existsByOrderCodeTail(anyString())).thenReturn(false);
 
         assertThat(generator.nextOrderCode(YB, true)).startsWith(p).hasSize(p.length() + 4);
     }
@@ -108,7 +108,7 @@ class OrderCodeGeneratorTest {
     void officePrefixDropsVpPrefix() {
         when(shipmentOrderRepository.findOrderCodesByPrefix(prefix("TDN"))).thenReturn(Collections.emptyList());
         when(shipmentOrderRepository.existsByOrderCode(anyString())).thenReturn(false);
-        when(shipmentOrderRepository.existsByOrderCodeEndingWithIgnoreCase(anyString())).thenReturn(false);
+        when(shipmentOrderRepository.existsByOrderCodeTail(anyString())).thenReturn(false);
 
         assertThat(generator.nextOrderCode("VP_TDN")).startsWith(prefix("TDN"));
     }

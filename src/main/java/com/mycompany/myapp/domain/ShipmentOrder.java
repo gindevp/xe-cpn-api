@@ -41,6 +41,11 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "order_code", length = 40, nullable = false, unique = true)
     private String orderCode;
 
+    /** 4 ký tự cuối của mã đơn, chữ hoa — index để kiểm tra trùng đuôi lúc cấp mã, không quét cả bảng. */
+    @Size(max = 4)
+    @Column(name = "order_code_tail", length = 4)
+    private String orderCodeTail;
+
     @Size(max = 40)
     @Column(name = "draft_code", length = 40, unique = true)
     private String draftCode;
@@ -518,6 +523,19 @@ public class ShipmentOrder implements Serializable {
 
     public void setOrderCode(String orderCode) {
         this.orderCode = orderCode;
+        this.orderCodeTail = orderCodeTailOf(orderCode);
+    }
+
+    static String orderCodeTailOf(String orderCode) {
+        if (orderCode == null) {
+            return null;
+        }
+        String code = orderCode.trim();
+        if (code.isEmpty()) {
+            return null;
+        }
+        String tail = code.length() <= 4 ? code : code.substring(code.length() - 4);
+        return tail.toUpperCase();
     }
 
     public String getDraftCode() {

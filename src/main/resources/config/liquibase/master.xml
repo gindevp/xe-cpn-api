@@ -147,6 +147,8 @@
     <include file="config/liquibase/changelog/20261013180000_transit_hub_policy.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261014170000_bidv_collection.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261015120000_onepay_collection.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261016124500_order_code_tail.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261016130000_vehicle_plan_trip.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
 
