@@ -963,7 +963,7 @@ public class OrderFacadeService {
         return in.equals(digitsOnly(senderPhone)) || in.equals(digitsOnly(receiverPhone));
     }
 
-    static boolean phoneMatchesSenderOrReceiver(String input, String senderPhone, String receiverPhone) {
+    public static boolean phoneMatchesSenderOrReceiver(String input, String senderPhone, String receiverPhone) {
         String in = digitsOnly(input);
         if (in.isEmpty()) {
             return false;
