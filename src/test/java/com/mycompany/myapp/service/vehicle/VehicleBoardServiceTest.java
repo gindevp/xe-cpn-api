@@ -21,12 +21,14 @@ import com.mycompany.myapp.domain.Vehicle;
 import com.mycompany.myapp.domain.VehicleEventPhoto;
 import com.mycompany.myapp.domain.VehicleOfficeEvent;
 import com.mycompany.myapp.domain.VehicleOfficeEvent.EventType;
+import com.mycompany.myapp.domain.VehiclePlanTrip;
 import com.mycompany.myapp.repository.ItineraryRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
 import com.mycompany.myapp.repository.OfficeVehicleItineraryRepository;
 import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.repository.VehicleEventPhotoRepository;
 import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
+import com.mycompany.myapp.repository.VehiclePlanTripRepository;
 import com.mycompany.myapp.repository.VehicleReportPolicyRepository;
 import com.mycompany.myapp.security.StaffAccessService;
 import com.mycompany.myapp.service.dto.trip.AvailableTripDTO;
@@ -81,6 +83,9 @@ class VehicleBoardServiceTest {
     @Mock
     private VehicleReportPolicyRepository policyRepository;
 
+    @Mock
+    private VehiclePlanTripRepository planTripRepository;
+
     private VehicleBoardService service;
     private Office ga;
     private Office yb;
@@ -97,7 +102,8 @@ class VehicleBoardServiceTest {
             officeItineraryRepository,
             officeRepository,
             photoRepository,
-            policyRepository
+            policyRepository,
+            planTripRepository
         );
         ga = office(1L, "GA");
         yb = office(2L, "YB");
@@ -689,6 +695,41 @@ class VehicleBoardServiceTest {
         assertThat(plan.trips()).extracting(VehicleBoardDtos.PlanTrip::externalTripId).containsExactly("CH1", "CH2");
         assertThat(plan.trips()).extracting(VehicleBoardDtos.PlanTrip::routeLabel).containsOnly("GA - YB");
         assertThat(plan.warning()).contains("GA - TB");
+    }
+
+    @Test
+    void planPastDayReadsSnapshotAndDoesNotCallCrm() {
+        when(staffAccessService.isSystemAdmin()).thenReturn(true);
+        Itinerary gaTb = itinerary("GA-TB", "GA - TB");
+        when(itineraryRepository.findFiltered(null, true)).thenReturn(List.of(gaTb));
+        LocalDate yesterday = LocalDate.now(VN).minusDays(1);
+        VehiclePlanTrip saved = new VehiclePlanTrip();
+        saved.setServiceDate(yesterday);
+        saved.setExternalTripId("CH9");
+        saved.setItineraryCode("GA-TB");
+        saved.setVehiclePlate("29H-1");
+        saved.setRouteLabel("GA - TB");
+        saved.setDepartAt(yesterday.atTime(8, 0).atZone(VN).toInstant());
+        when(planTripRepository.findByServiceDateBetween(yesterday, yesterday)).thenReturn(List.of(saved));
+
+        VehicleBoardDtos.Plan plan = service.plan(yesterday, yesterday, null);
+
+        assertThat(plan.trips()).extracting(VehicleBoardDtos.PlanTrip::externalTripId).containsExactly("CH9");
+        assertThat(plan.warning()).isNull();
+        verify(availableTripSearchService, never()).searchWindow(any(), any(), any());
+    }
+
+    @Test
+    void capturePlanReplacesTheDay() {
+        when(vthkClient.isEnabled()).thenReturn(true);
+        Itinerary gaTb = itinerary("GA-TB", "GA - TB");
+        when(itineraryRepository.findFiltered(null, true)).thenReturn(List.of(gaTb));
+        when(availableTripSearchService.searchWindow(eq(gaTb), any(), any())).thenReturn(List.of(crmTrip("CH1", "30H-1")));
+        LocalDate day = LocalDate.now(VN);
+
+        assertThat(service.capturePlan(day)).isEqualTo(1);
+        verify(planTripRepository).deleteByServiceDate(day);
+        verify(planTripRepository).saveAll(any());
     }
 
     @Test

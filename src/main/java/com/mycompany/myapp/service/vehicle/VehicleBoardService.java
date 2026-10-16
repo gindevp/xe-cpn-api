@@ -10,6 +10,7 @@ import com.mycompany.myapp.domain.VehicleEventPhoto;
 import com.mycompany.myapp.domain.VehicleOfficeEvent;
 import com.mycompany.myapp.domain.VehicleOfficeEvent.EventType;
 import com.mycompany.myapp.domain.VehicleOfficeEvent.Source;
+import com.mycompany.myapp.domain.VehiclePlanTrip;
 import com.mycompany.myapp.domain.VehicleReportPolicy;
 import com.mycompany.myapp.repository.ItineraryRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
@@ -17,6 +18,7 @@ import com.mycompany.myapp.repository.OfficeVehicleItineraryRepository;
 import com.mycompany.myapp.repository.TripRepository;
 import com.mycompany.myapp.repository.VehicleEventPhotoRepository;
 import com.mycompany.myapp.repository.VehicleOfficeEventRepository;
+import com.mycompany.myapp.repository.VehiclePlanTripRepository;
 import com.mycompany.myapp.repository.VehicleReportPolicyRepository;
 import com.mycompany.myapp.security.ScreenKey;
 import com.mycompany.myapp.security.SecurityUtils;
@@ -79,6 +81,7 @@ public class VehicleBoardService {
     private final OfficeRepository officeRepository;
     private final VehicleEventPhotoRepository photoRepository;
     private final VehicleReportPolicyRepository policyRepository;
+    private final VehiclePlanTripRepository planTripRepository;
     private StoredMedia storedMedia;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -104,12 +107,14 @@ public class VehicleBoardService {
         OfficeVehicleItineraryRepository officeItineraryRepository,
         OfficeRepository officeRepository,
         VehicleEventPhotoRepository photoRepository,
-        VehicleReportPolicyRepository policyRepository
+        VehicleReportPolicyRepository policyRepository,
+        VehiclePlanTripRepository planTripRepository
     ) {
         this.officeItineraryRepository = officeItineraryRepository;
         this.officeRepository = officeRepository;
         this.photoRepository = photoRepository;
         this.policyRepository = policyRepository;
+        this.planTripRepository = planTripRepository;
         this.tripRepository = tripRepository;
         this.itineraryRepository = itineraryRepository;
         this.eventRepository = eventRepository;
@@ -686,8 +691,8 @@ public class VehicleBoardService {
     }
 
     /**
-     * Bảng tài: chuyến CRM xuất bến trong [from, to] (giờ VN) của các lộ trình VP báo giờ; không chọn VP = mọi lộ trình.
-     * Lộ trình nào CRM lỗi thì bỏ qua và báo trong {@code warning}.
+     * Bảng tài trong [from, to] (giờ VN). Ngày đã qua đọc ảnh lưu lúc 23:50 — portal không xem lại quá khứ.
+     * Hôm nay và ngày tới vẫn gọi CRM. Không chọn VP = mọi lộ trình.
      */
     @Transactional(readOnly = true)
     public VehicleBoardDtos.Plan plan(LocalDate from, LocalDate to, String officeCode) {
@@ -698,28 +703,124 @@ public class VehicleBoardService {
         if (ChronoUnit.DAYS.between(from, to) >= MAX_PLAN_DAYS) {
             return new VehicleBoardDtos.Plan(List.of(), "Bảng tài chỉ xem tối đa " + MAX_PLAN_DAYS + " ngày mỗi lần");
         }
-        if (!vthkClient.isEnabled()) {
-            return new VehicleBoardDtos.Plan(List.of(), "Chưa bật kết nối CRM — không có bảng tài");
-        }
         String code = trimToNull(officeCode);
         if (!staffAccessService.isSystemAdmin()) {
             code = staffAccessService.scopedOfficeCode().orElse(code);
         }
-        List<Itinerary> itineraries;
-        if (code == null) {
-            itineraries = itineraryRepository.findFiltered(null, true);
-        } else {
-            Office office = officeRepository
-                .findOneByCode(code)
-                .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy văn phòng", ENTITY, "officeNotFound"));
-            Set<String> configured = configuredCodes(office);
-            itineraries = pointItineraries(office)
-                .stream()
-                .filter(it -> configured.isEmpty() || configured.contains(it.getCode()))
-                .toList();
+        List<Itinerary> itineraries = planItineraries(code);
+        Set<String> allowed = new HashSet<>();
+        for (Itinerary it : itineraries) {
+            if (it.getCode() != null) {
+                allowed.add(it.getCode());
+            }
         }
-        Set<String> seen = new HashSet<>();
+        LocalDate today = LocalDate.now(VN);
         List<VehicleBoardDtos.PlanTrip> trips = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        List<String> notes = new ArrayList<>();
+        if (!from.isAfter(today.minusDays(1))) {
+            LocalDate historyTo = to.isBefore(today) ? to : today.minusDays(1);
+            List<VehiclePlanTrip> saved = planTripRepository.findByServiceDateBetween(from, historyTo);
+            if (saved.isEmpty()) {
+                notes.add("Chưa có lịch sử bảng tài các ngày đã qua — hệ thống lưu lúc 23:50 mỗi ngày");
+            }
+            for (VehiclePlanTrip row : saved) {
+                if (code != null && (row.getItineraryCode() == null || !allowed.contains(row.getItineraryCode()))) {
+                    continue;
+                }
+                if (row.getExternalTripId() == null || !seen.add(row.getServiceDate() + "|" + row.getExternalTripId())) {
+                    continue;
+                }
+                trips.add(
+                    new VehicleBoardDtos.PlanTrip(
+                        row.getExternalTripId(),
+                        row.getVehiclePlate(),
+                        row.getDriverName(),
+                        row.getRouteLabel(),
+                        row.getDepartAt()
+                    )
+                );
+            }
+        }
+        if (!to.isBefore(today)) {
+            if (!vthkClient.isEnabled()) {
+                notes.add("Chưa bật kết nối CRM — không có bảng tài hôm nay");
+            } else {
+                LocalDate liveFrom = from.isAfter(today) ? from : today;
+                notes.addAll(appendLivePlan(trips, seen, itineraries, liveFrom, to));
+            }
+        }
+        String warning = notes.isEmpty() ? null : String.join(". ", notes);
+        return new VehicleBoardDtos.Plan(trips, warning);
+    }
+
+    /**
+     * Chụp bảng tài CRM của một ngày (mọi lộ trình) để xem lại sau. CRM lỗi hết thì giữ ảnh cũ.
+     * @return số chuyến đã lưu, hoặc 0 nếu không ghi.
+     */
+    public int capturePlan(LocalDate day) {
+        if (day == null || !vthkClient.isEnabled()) {
+            return 0;
+        }
+        List<Itinerary> itineraries = itineraryRepository.findFiltered(null, true);
+        List<VehiclePlanTrip> rows = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        int failed = 0;
+        Instant capturedAt = Instant.now();
+        for (Itinerary it : itineraries) {
+            List<AvailableTripDTO> found;
+            try {
+                found = availableTripSearchService.searchWindow(it, day.atStartOfDay(), day.atTime(23, 59, 59));
+            } catch (RuntimeException e) {
+                failed++;
+                LOG.warn("Vehicle plan snapshot skipped itinerary {}: {}", it.getCode(), e.getMessage());
+                continue;
+            }
+            for (AvailableTripDTO t : found) {
+                String id = cut(t.getExternalTripId(), 60);
+                if (id == null || !seen.add(id)) {
+                    continue;
+                }
+                VehiclePlanTrip row = new VehiclePlanTrip();
+                row.setServiceDate(day);
+                row.setExternalTripId(id);
+                row.setItineraryCode(cut(it.getCode(), 60));
+                row.setVehiclePlate(cut(firstNonBlank(t.getVehiclePlate(), t.getAssignVehiclePlate()), 30));
+                row.setDriverName(cut(firstNonBlank(t.getDriverName(), t.getAssignDriverName()), 120));
+                row.setRouteLabel(cut(firstNonBlank(it.getName(), t.getRouteLabel()), 120));
+                row.setDepartAt(t.getDepartAt());
+                row.setCapturedAt(capturedAt);
+                rows.add(row);
+            }
+        }
+        if (!itineraries.isEmpty() && failed == itineraries.size()) {
+            LOG.warn("Vehicle plan snapshot {} not saved because every itinerary failed", day);
+            return 0;
+        }
+        planTripRepository.deleteByServiceDate(day);
+        planTripRepository.saveAll(rows);
+        return rows.size();
+    }
+
+    private List<Itinerary> planItineraries(String officeCode) {
+        if (officeCode == null) {
+            return itineraryRepository.findFiltered(null, true);
+        }
+        Office office = officeRepository
+            .findOneByCode(officeCode)
+            .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy văn phòng", ENTITY, "officeNotFound"));
+        Set<String> configured = configuredCodes(office);
+        return pointItineraries(office).stream().filter(it -> configured.isEmpty() || configured.contains(it.getCode())).toList();
+    }
+
+    /** Gọi CRM cho hôm nay / ngày tới. Trả về tên lộ trình lỗi. */
+    private List<String> appendLivePlan(
+        List<VehicleBoardDtos.PlanTrip> trips,
+        Set<String> seen,
+        List<Itinerary> itineraries,
+        LocalDate from,
+        LocalDate to
+    ) {
         List<String> failed = new ArrayList<>();
         for (Itinerary it : itineraries) {
             List<AvailableTripDTO> found;
@@ -731,12 +832,13 @@ public class VehicleBoardService {
                 continue;
             }
             for (AvailableTripDTO t : found) {
-                if (!seen.add(t.getExternalTripId())) {
+                String id = cut(t.getExternalTripId(), 60);
+                if (id == null || !seen.add(from + "|" + id)) {
                     continue;
                 }
                 trips.add(
                     new VehicleBoardDtos.PlanTrip(
-                        cut(t.getExternalTripId(), 60),
+                        id,
                         firstNonBlank(t.getVehiclePlate(), t.getAssignVehiclePlate()),
                         firstNonBlank(t.getDriverName(), t.getAssignDriverName()),
                         firstNonBlank(it.getName(), t.getRouteLabel()),
@@ -745,8 +847,10 @@ public class VehicleBoardService {
                 );
             }
         }
-        String warning = failed.isEmpty() ? null : "Không tải được bảng tài CRM của lộ trình: " + String.join(", ", failed);
-        return new VehicleBoardDtos.Plan(trips, warning);
+        if (failed.isEmpty()) {
+            return List.of();
+        }
+        return List.of("Không tải được bảng tài CRM của lộ trình: " + String.join(", ", failed));
     }
 
     private void appendCrm(List<Candidate> candidates, Set<String> points, Set<String> configured, LocalDate today) {

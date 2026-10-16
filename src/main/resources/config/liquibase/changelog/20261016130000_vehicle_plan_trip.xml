@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261016130000-1" author="cpn">
+        <comment>Ảnh bảng tài CRM cuối ngày — portal không xem lại ngày đã qua.</comment>
+        <createTable tableName="vehicle_plan_trip">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="service_date" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="external_trip_id" type="varchar(60)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="itinerary_code" type="varchar(60)"/>
+            <column name="vehicle_plate" type="varchar(30)"/>
+            <column name="driver_name" type="varchar(120)"/>
+            <column name="route_label" type="varchar(120)"/>
+            <column name="depart_at" type="${datetimeType}"/>
+            <column name="captured_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="vehicle_plan_trip" columnNames="service_date, external_trip_id"
+                             constraintName="ux_vehicle_plan_trip__day_trip"/>
+        <createIndex tableName="vehicle_plan_trip" indexName="ix_vehicle_plan_trip__service_date">
+            <column name="service_date"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>
