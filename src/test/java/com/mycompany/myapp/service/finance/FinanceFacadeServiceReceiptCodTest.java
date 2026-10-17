@@ -178,6 +178,32 @@ class FinanceFacadeServiceReceiptCodTest {
     }
 
     @Test
+    void createReceipt_cancelledAhamoveCounterPod_allowed() {
+        order.setFareAmount(new BigDecimal("120000"));
+        order.setPaidAmount(new BigDecimal("120000"));
+        order.setCodAmount(BigDecimal.ZERO);
+        order.setPartnerCode("AHAMOVE");
+        order.setPartnerOrderId("26TSXVH1");
+        order.setPartnerStatus("CANCELLED");
+        order.setPartnerCodAmount(new BigDecimal("240000"));
+        when(orderPaymentRepository.sumGroupedByOrderIds(any())).thenReturn(
+            List.<Object[]>of(new Object[] { 1L, PaymentKind.SAU, "POD COUNTER", new BigDecimal("120000") })
+        );
+
+        ReceiptDTO dto = service.createReceipt(
+            new CreateReceiptRequest(
+                "NV quầy",
+                "xe01640",
+                null,
+                List.of(new ReceiptLineRequest("GP-COD-001", new BigDecimal("120000"), ReceiptSettlement.DELIVERY))
+            )
+        );
+
+        assertThat(dto.totalAmount()).isEqualByComparingTo("120000");
+        verify(receiptRepository).save(any());
+    }
+
+    @Test
     void createReceipt_splitsFareAndCod_paidOnlyFare() {
         CreateReceiptRequest req = new CreateReceiptRequest(
             "NV A",

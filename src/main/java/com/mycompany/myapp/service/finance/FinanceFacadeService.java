@@ -719,12 +719,9 @@ public class FinanceFacadeService {
         return toReceiptDto(receipt, lines);
     }
 
-    /** Đơn Ahamove người giao chưa xác nhận bù: không lập phiếu cho khoản nợ chịu thay. */
+    /** Đơn Ahamove người giao chưa xác nhận bù: không lập phiếu cho khoản nợ chịu thay. Chuyến đã hủy thì không còn bàn giao ship. */
     private static void assertNoSubstituteShipDebt(ShipmentOrder o, boolean feeLine) {
-        if (o == null || (o.getPartnerShipConfirmedBy() != null && !o.getPartnerShipConfirmedBy().isBlank())) {
-            return;
-        }
-        if (!"AHAMOVE".equals(o.getPartnerCode()) || o.getPartnerOrderId() == null || o.getPartnerOrderId().isBlank()) {
+        if (!shipHandoverOpen(o)) {
             return;
         }
         boolean standingIn =
@@ -1808,15 +1805,24 @@ public class FinanceFacadeService {
         Boolean shipDebtSubstitute
     ) {}
 
-    /** Đơn Ahamove chưa có người giao xác nhận, và {@code owner} đang giữ nợ ship. */
-    private static boolean shipSubstitute(ShipmentOrder o, String owner, boolean feeLine) {
-        if (o == null || owner == null || owner.isBlank()) {
-            return false;
-        }
-        if (o.getPartnerShipConfirmedBy() != null && !o.getPartnerShipConfirmedBy().isBlank()) {
+    /**
+     * Còn phải quét xác nhận giao ship. Đã xác nhận, không phải Ahamove, hoặc chuyến đã hủy (khách đổi nhận tại VP)
+     * thì không còn.
+     */
+    private static boolean shipHandoverOpen(ShipmentOrder o) {
+        if (o == null || (o.getPartnerShipConfirmedBy() != null && !o.getPartnerShipConfirmedBy().isBlank())) {
             return false;
         }
         if (!"AHAMOVE".equals(o.getPartnerCode()) || o.getPartnerOrderId() == null || o.getPartnerOrderId().isBlank()) {
+            return false;
+        }
+        String status = o.getPartnerStatus();
+        return status == null || !"CANCELLED".equalsIgnoreCase(status.trim());
+    }
+
+    /** Đơn Ahamove chưa có người giao xác nhận, và {@code owner} đang giữ nợ ship. */
+    private static boolean shipSubstitute(ShipmentOrder o, String owner, boolean feeLine) {
+        if (o == null || owner == null || owner.isBlank() || !shipHandoverOpen(o)) {
             return false;
         }
         if (feeLine) {

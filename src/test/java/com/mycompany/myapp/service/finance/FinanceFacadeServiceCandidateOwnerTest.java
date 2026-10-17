@@ -238,6 +238,38 @@ class FinanceFacadeServiceCandidateOwnerTest {
     }
 
     @Test
+    void cancelledAhamoveThenCounterPod_isNotShipSubstitute() {
+        order.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        order.setStatus(OrderStatus.DELIVERED);
+        order.setForwardStage(null);
+        order.setHomeDelivery(false);
+        order.setFareAmount(new BigDecimal("120000"));
+        order.setPaidAmount(new BigDecimal("120000"));
+        order.setPartnerCode("AHAMOVE");
+        order.setPartnerOrderId("26TSXVH1");
+        order.setPartnerStatus("CANCELLED");
+        order.setPartnerCodAmount(new BigDecimal("240000"));
+        OrderPayment pod = new OrderPayment();
+        pod.setAmount(new BigDecimal("120000"));
+        pod.setPaymentKind(PaymentKind.SAU);
+        pod.setNote("POD COUNTER");
+        pod.setCollectorUsername("xe01640");
+        pod.setPaymentAt(Instant.parse("2026-10-16T04:40:07Z"));
+        when(orderPaymentRepository.findByOrder_IdOrderByPaymentAtDesc(7L)).thenReturn(List.of(pod));
+        when(orderPaymentRepository.sumGroupedByOrderIds(any())).thenReturn(
+            List.<Object[]>of(new Object[] { 7L, PaymentKind.SAU, "POD COUNTER", new BigDecimal("120000") })
+        );
+
+        List<CandidateDTO> rows = service.candidates(null, null);
+        assertThat(rows).anySatisfy(r -> {
+            assertThat(r.portion()).isEqualTo(ReceiptSettlement.DELIVERY);
+            assertThat(r.dueAmount()).isEqualByComparingTo("120000");
+            assertThat(r.debtOwnerUsername()).isEqualTo("xe01640");
+            assertThat(r.shipDebtSubstitute()).isNull();
+        });
+    }
+
+    @Test
     void adminCatchUpPod_codOwnerIsAssignedStaffNotAdmin() {
         order.setStatus(OrderStatus.DELIVERED);
         order.setForwardStage(null);
