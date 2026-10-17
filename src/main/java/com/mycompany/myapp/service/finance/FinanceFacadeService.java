@@ -576,7 +576,6 @@ public class FinanceFacadeService {
                 .findOneByOrderCodeOrDraftCode(line.orderCode().trim())
                 .orElseThrow(() -> new BadRequestAlertException("Order not found: " + line.orderCode(), ENTITY, "orderNotFound"));
             dayClosureGuard.assertCollectionMutable(order);
-            PartnerAdvance.assertNotPending(order, ENTITY);
             BigDecimal amount = line.amountCollected();
             if (amount == null) {
                 amount = BigDecimal.ZERO;
@@ -630,6 +629,10 @@ public class FinanceFacadeService {
             BigDecimal deliveryRest = toDelivery.subtract(toDelivery.min(s.deliveryHeldOut()));
             BigDecimal deliveryFare = deliveryRest.min(s.deliveryFareDue());
             BigDecimal toCod = deliveryRest.subtract(deliveryFare).min(s.codDue());
+            // Nợ ứng chưa quét bàn giao chỉ ghi dòng phiếu. Thu thêm cước hoặc COD thì vẫn chặn.
+            if (senderFare.add(deliveryFare).add(toCod).signum() > 0) {
+                PartnerAdvance.assertNotPending(order, ENTITY);
+            }
 
             savePayment(order, senderFare, PaymentKind.SAU, ReceiptSettlement.NOTE_RECEIPT_SENDER, actor, now);
             savePayment(order, deliveryFare, PaymentKind.SAU, ReceiptSettlement.NOTE_RECEIPT_DELIVERY, actor, now);
