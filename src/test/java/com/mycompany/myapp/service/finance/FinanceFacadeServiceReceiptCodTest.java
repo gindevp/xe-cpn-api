@@ -151,37 +151,13 @@ class FinanceFacadeServiceReceiptCodTest {
     }
 
     @Test
-    void createReceipt_pendingAhamoveAdvance_recordsLineWithoutCollectingFare() {
+    void createReceipt_pendingAhamoveAdvance_rejectedUntilCatchUpConfirm() {
         order.setFareAmount(new BigDecimal("200000"));
         order.setPaidAmount(BigDecimal.ZERO);
         order.setCodAmount(BigDecimal.ZERO);
         order.setPartnerCode("AHAMOVE");
         order.setPartnerOrderId("26FUMUT9");
         order.setPartnerCodAmount(new BigDecimal("200000"));
-
-        ReceiptDTO dto = service.createReceipt(
-            new CreateReceiptRequest(
-                "Người book",
-                "xe01646",
-                null,
-                List.of(new ReceiptLineRequest("GP-COD-001", new BigDecimal("200000"), ReceiptSettlement.DELIVERY))
-            )
-        );
-
-        assertThat(dto.totalAmount()).isEqualByComparingTo("200000");
-        assertThat(order.getPaidAmount()).isEqualByComparingTo("0");
-        verify(orderPaymentRepository, never()).save(any());
-        verify(receiptRepository).save(any(Receipt.class));
-    }
-
-    @Test
-    void createReceipt_pendingAhamoveAdvance_stillBlocksExtraFareCollection() {
-        order.setFareAmount(new BigDecimal("200000"));
-        order.setPaidAmount(BigDecimal.ZERO);
-        order.setCodAmount(BigDecimal.ZERO);
-        order.setPartnerCode("AHAMOVE");
-        order.setPartnerOrderId("26FUMUT9");
-        order.setPartnerCodAmount(new BigDecimal("100000"));
 
         assertThatThrownBy(() ->
             service.createReceipt(
@@ -194,9 +170,11 @@ class FinanceFacadeServiceReceiptCodTest {
             )
         )
             .isInstanceOf(BadRequestAlertException.class)
+            .hasMessageContaining("xác nhận bù")
             .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
-            .isEqualTo("partnerAdvancePending");
+            .isEqualTo("shipConfirmRequired");
         verify(receiptRepository, never()).save(any());
+        verify(orderPaymentRepository, never()).save(any());
     }
 
     @Test

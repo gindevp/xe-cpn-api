@@ -576,6 +576,7 @@ public class FinanceFacadeService {
                 .findOneByOrderCodeOrDraftCode(line.orderCode().trim())
                 .orElseThrow(() -> new BadRequestAlertException("Order not found: " + line.orderCode(), ENTITY, "orderNotFound"));
             dayClosureGuard.assertCollectionMutable(order);
+            assertNoSubstituteShipDebt(order, false);
             BigDecimal amount = line.amountCollected();
             if (amount == null) {
                 amount = BigDecimal.ZERO;
@@ -718,6 +719,28 @@ public class FinanceFacadeService {
         return toReceiptDto(receipt, lines);
     }
 
+    /** Đơn Ahamove người giao chưa xác nhận bù: không lập phiếu cho khoản nợ chịu thay. */
+    private static void assertNoSubstituteShipDebt(ShipmentOrder o, boolean feeLine) {
+        if (o == null || (o.getPartnerShipConfirmedBy() != null && !o.getPartnerShipConfirmedBy().isBlank())) {
+            return;
+        }
+        if (!"AHAMOVE".equals(o.getPartnerCode()) || o.getPartnerOrderId() == null || o.getPartnerOrderId().isBlank()) {
+            return;
+        }
+        boolean standingIn =
+            feeLine || PartnerAdvance.pending(o) || (o.getPartnerCodCollectedBy() != null && !o.getPartnerCodCollectedBy().isBlank());
+        if (!standingIn) {
+            return;
+        }
+        throw new BadRequestAlertException(
+            "Đơn " +
+            o.getOrderCode() +
+            " đang chịu nợ thay vì người giao chưa xác nhận bù. Điều phối phải xác nhận bù trước khi lập phiếu thu.",
+            ENTITY,
+            "shipConfirmRequired"
+        );
+    }
+
     /**
      * Dòng {@link #PARTNER_FEE}: lấy toàn bộ phí Ahamove chưa trừ của người nộp trên đơn đó. amountCollected (nếu gửi) phải bằng
      * âm tổng phí — FE hiển thị lệch thì chặn để không trừ sai số.
@@ -738,6 +761,7 @@ public class FinanceFacadeService {
             ShipmentOrder order = shipmentOrderRepository
                 .findOneByOrderCodeOrDraftCode(line.orderCode().trim())
                 .orElseThrow(() -> new BadRequestAlertException("Order not found: " + line.orderCode(), ENTITY, "orderNotFound"));
+            assertNoSubstituteShipDebt(order, true);
             if (!seen.add(order.getId())) {
                 throw new BadRequestAlertException("Duplicate order on receipt: " + order.getOrderCode(), ENTITY, "duplicateOrderLine");
             }
