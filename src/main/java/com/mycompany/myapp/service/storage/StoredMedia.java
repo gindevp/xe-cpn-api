@@ -5,7 +5,6 @@ import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Locale;
@@ -27,7 +26,6 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class StoredMedia {
 
     static final String PREFIX = "minio:";
-    private static final long LINK_TTL_SECONDS = 7L * 24 * 3600;
 
     private final IntegrationConfigRepository integrationConfigRepository;
     private final String envEndpoint;
@@ -55,13 +53,20 @@ public class StoredMedia {
         this.linkKey = jwtSecret == null ? new byte[0] : jwtSecret.getBytes(StandardCharsets.UTF_8);
     }
 
-    /** Ghi data-URL lên MinIO. Giá trị khác (link, key, text) giữ nguyên. */
+    /** Ghi data-URL lên MinIO. Link /api/media của chính hệ thống lưu lại thành {@code minio:key}. */
     public String store(String value, String folder) {
         if (value == null || value.isBlank()) {
             return value;
         }
         String trimmed = value.trim();
-        if (trimmed.startsWith(PREFIX) || trimmed.startsWith("http:") || trimmed.startsWith("https:")) {
+        if (trimmed.startsWith(PREFIX)) {
+            return trimmed;
+        }
+        String ownKey = ownMediaKey(trimmed);
+        if (ownKey != null) {
+            return PREFIX + ownKey;
+        }
+        if (trimmed.startsWith("http:") || trimmed.startsWith("https:")) {
             return trimmed;
         }
         int marker = trimmed.indexOf(";base64,");
@@ -84,9 +89,12 @@ public class StoredMedia {
         return PREFIX + key;
     }
 
-    /** Nhiều data-URL cách nhau bởi xuống dòng (ảnh xác nhận phiếu thu). */
+    /** Nhiều ảnh cách nhau bởi xuống dòng (ảnh xác nhận phiếu thu). */
     public String storeLines(String value, String folder) {
-        if (value == null || value.isBlank() || !value.contains("data:")) {
+        if (value == null || value.isBlank()) {
+            return value;
+        }
+        if (!value.contains("data:") && !value.contains("/api/media/") && !value.contains(PREFIX)) {
             return value;
         }
         String[] lines = value.split("\n", -1);
@@ -100,15 +108,37 @@ public class StoredMedia {
         return out.toString();
     }
 
-    /** Link xem được trên web/app. data-URL và http(s) giữ nguyên. */
+    /** Link xem được trên web/app. data-URL giữ nguyên. Link không có hạn. */
     public String expose(String stored) {
-        if (stored == null || stored.isBlank() || !stored.startsWith(PREFIX)) {
+        if (stored == null || stored.isBlank()) {
             return stored;
         }
-        String key = stored.substring(PREFIX.length());
-        long exp = Instant.now().getEpochSecond() + LINK_TTL_SECONDS;
-        String sig = sign(key, exp);
-        return publicBase() + "/api/media/" + key + "?e=" + exp + "&s=" + sig;
+        String key = stored.startsWith(PREFIX) ? stored.substring(PREFIX.length()) : ownMediaKey(stored);
+        if (key == null || key.isBlank()) {
+            return stored;
+        }
+        return publicBase() + "/api/media/" + key + "?s=" + sign(key);
+    }
+
+    /** {@code minio:} không xử lý ở đây. Chỉ nhận URL {@code /api/media/{key}}. */
+    static String ownMediaKey(String value) {
+        if (value == null) {
+            return null;
+        }
+        int marker = value.indexOf("/api/media/");
+        if (marker < 0) {
+            return null;
+        }
+        String rest = value.substring(marker + "/api/media/".length());
+        int query = rest.indexOf('?');
+        if (query >= 0) {
+            rest = rest.substring(0, query);
+        }
+        rest = rest.trim();
+        if (rest.isEmpty() || rest.contains("..") || !rest.matches("[a-z0-9][a-z0-9/_\\.-]{0,180}")) {
+            return null;
+        }
+        return rest;
     }
 
     public String exposeLines(String stored) {
@@ -130,16 +160,18 @@ public class StoredMedia {
         if (key == null || !key.matches("[a-z0-9][a-z0-9/_\\.-]{0,180}") || key.contains("..")) {
             throw new IllegalArgumentException("invalid media key");
         }
-        long exp;
-        try {
-            exp = Long.parseLong(expRaw);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("invalid media expiry");
+        String expected;
+        if (expRaw == null || expRaw.isBlank()) {
+            expected = sign(key);
+        } else {
+            long exp;
+            try {
+                exp = Long.parseLong(expRaw);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("invalid media expiry");
+            }
+            expected = sign(key, exp);
         }
-        if (exp < Instant.now().getEpochSecond()) {
-            throw new IllegalArgumentException("media link expired");
-        }
-        String expected = sign(key, exp);
         if (sig == null || !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), sig.getBytes(StandardCharsets.UTF_8))) {
             throw new IllegalArgumentException("invalid media signature");
         }
@@ -210,11 +242,19 @@ public class StoredMedia {
         return new MinioObjectStore(settings.endpoint, settings.bucket, settings.region, settings.accessKey, settings.secretKey);
     }
 
+    private String sign(String key) {
+        return macHex(key);
+    }
+
     private String sign(String key, long exp) {
+        return macHex(key + "\n" + exp);
+    }
+
+    private String macHex(String payload) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(linkKey, "HmacSHA256"));
-            byte[] raw = mac.doFinal((key + "\n" + exp).getBytes(StandardCharsets.UTF_8));
+            byte[] raw = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(raw);
         } catch (Exception e) {
             throw new IllegalStateException("media signature failed", e);
