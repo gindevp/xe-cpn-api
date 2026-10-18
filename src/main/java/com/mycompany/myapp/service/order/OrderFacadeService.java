@@ -474,8 +474,16 @@ public class OrderFacadeService {
         return best;
     }
 
+    /** Khách tự tạo: mốc CREATE không phải nhập kho gửi. Chỉ WAREHOUSE_RECEIVE / CONFIRM mới tính. */
+    static List<String> warehouseInActions(String createdBy) {
+        if (createdBy != null && "customer".equalsIgnoreCase(createdBy.trim())) {
+            return List.of("WAREHOUSE_RECEIVE", "WH_IN", "CONFIRM", "TRANSIT_HUB_IN");
+        }
+        return WAREHOUSE_IN_ACTIONS;
+    }
+
     private static void applyStageTimes(OrderSummaryDTO dto, java.util.Map<String, Instant> times) {
-        dto.setWarehouseInAt(latestOf(times, WAREHOUSE_IN_ACTIONS));
+        dto.setWarehouseInAt(latestOf(times, warehouseInActions(dto.getCreatedBy())));
         dto.setTripAssignedAt(latestOf(times, TRIP_ASSIGN_ACTIONS));
         dto.setDriverSignedAt(latestOf(times, DRIVER_SIGN_ACTIONS));
         dto.setDestWarehouseInAt(latestOf(times, DEST_WAREHOUSE_IN_ACTIONS));
@@ -2262,6 +2270,9 @@ public class OrderFacadeService {
         OrderSummaryDTO dto = new OrderSummaryDTO();
         fillSummary(dto, o);
         applyCreator(dto, o);
+        if (o.getId() != null) {
+            applyStageTimes(dto, stageEventTimes(List.of(o.getId())).getOrDefault(o.getId(), java.util.Map.of()));
+        }
         return dto;
     }
 
@@ -2269,6 +2280,9 @@ public class OrderFacadeService {
         OrderDetailDTO dto = new OrderDetailDTO();
         fillSummary(dto, o);
         applyCreator(dto, o);
+        if (o.getId() != null) {
+            applyStageTimes(dto, stageEventTimes(List.of(o.getId())).getOrDefault(o.getId(), java.util.Map.of()));
+        }
         dto.setCancelReason(o.getCancelReason());
         dto.setReceiverActualName(o.getReceiverActualName());
         dto.setReceiverActualPhone(o.getReceiverActualPhone());
@@ -2297,7 +2311,6 @@ public class OrderFacadeService {
     private void fillSummary(OrderSummaryDTO dto, ShipmentOrder o) {
         fillSummary(dto, o, null);
         if (o.getId() != null) {
-            applyStageTimes(dto, stageEventTimes(List.of(o.getId())).getOrDefault(o.getId(), java.util.Map.of()));
             dto.setHasGoodsPhoto(goodsPhotoRepository != null && goodsPhotoRepository.existsByOrderId(o.getId()));
             dto.setHasPodPhoto(
                 (orderPodPhotoRepository != null && orderPodPhotoRepository.existsByOrder_Id(o.getId())) || !isBlank(o.getPartnerPodUrl())
