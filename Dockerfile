@@ -1,5 +1,5 @@
 # Multi-stage build for Railway (MySQL is a separate Railway plugin).
-# Redeploy trigger: empty commits are ignored by railway.toml watchPatterns.
+# Redeploy trigger: Railway watchPatterns only rebuild when this file changes.
 FROM eclipse-temurin:17-jdk-jammy AS build
 WORKDIR /app
 
