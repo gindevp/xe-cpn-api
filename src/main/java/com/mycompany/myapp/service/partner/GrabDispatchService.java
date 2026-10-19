@@ -3,6 +3,7 @@ package com.mycompany.myapp.service.partner;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.mycompany.myapp.domain.Office;
 import com.mycompany.myapp.domain.OrderDeliveryAttempt;
+import com.mycompany.myapp.domain.PartnerFeeExpense;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.DeliveryAttemptResult;
 import com.mycompany.myapp.domain.enumeration.DeliveryPartner;
@@ -10,6 +11,7 @@ import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import com.mycompany.myapp.repository.OrderDeliveryAttemptRepository;
+import com.mycompany.myapp.repository.PartnerFeeExpenseRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.autocall.AutoCallService;
@@ -50,6 +52,7 @@ public class GrabDispatchService {
     private final ShipmentOrderRepository shipmentOrderRepository;
     private final IntegrationConfigRepository integrationConfigRepository;
     private final OrderDeliveryAttemptRepository deliveryAttemptRepository;
+    private final PartnerFeeExpenseRepository partnerFeeExpenseRepository;
     private final GrabExpressClient grab;
     private final DeliveryFacadeService deliveryFacadeService;
     private final OrderFacadeService orderFacadeService;
@@ -60,6 +63,7 @@ public class GrabDispatchService {
         ShipmentOrderRepository shipmentOrderRepository,
         IntegrationConfigRepository integrationConfigRepository,
         OrderDeliveryAttemptRepository deliveryAttemptRepository,
+        PartnerFeeExpenseRepository partnerFeeExpenseRepository,
         GrabExpressClient grab,
         DeliveryFacadeService deliveryFacadeService,
         OrderFacadeService orderFacadeService,
@@ -69,6 +73,7 @@ public class GrabDispatchService {
         this.shipmentOrderRepository = shipmentOrderRepository;
         this.integrationConfigRepository = integrationConfigRepository;
         this.deliveryAttemptRepository = deliveryAttemptRepository;
+        this.partnerFeeExpenseRepository = partnerFeeExpenseRepository;
         this.grab = grab;
         this.deliveryFacadeService = deliveryFacadeService;
         this.orderFacadeService = orderFacadeService;
@@ -278,6 +283,7 @@ public class GrabDispatchService {
         }
         if (pickedUp(status)) {
             startDelivery(order, status);
+            recordCashFee(code);
             order = require(code);
         }
         try {
@@ -369,7 +375,8 @@ public class GrabDispatchService {
         order.setPartnerSubStatus(null);
         order.setPartnerTrackingUrl(truncate(created.trackingUrl(), 500));
         order.setPartnerFeeAmount(created.amount());
-        order.setPartnerPayMethod("BALANCE");
+        String payMethod = GrabExpressClient.storedPayMethod(paymentMethod());
+        order.setPartnerPayMethod(payMethod);
         order.setPartnerDriverName(null);
         order.setPartnerDriverPhone(null);
         order.setPartnerPodUrl(null);
@@ -394,7 +401,9 @@ public class GrabDispatchService {
         attempt.setReason("ASSIGN_PARTNER");
         attempt.setOrder(order);
         deliveryAttemptRepository.save(attempt);
-        String fee = created.amount() == null ? "" : " · phí " + created.amount().toPlainString() + " (ví Grab)";
+        String fee = created.amount() == null
+            ? ""
+            : " · phí " + created.amount().toPlainString() + ("CASH".equals(payMethod) ? " (tiền mặt)" : " (ví Grab)");
         String tipNote = tip > 0 ? " · tip " + (tip * AhamoveCargo.TIP_UNIT_VND) + "đ sau khi giao" : "";
         String advanceNote = !pickup && advance.signum() > 0 ? " · sẽ ứng " + PartnerAdvance.money(advance) + " khi bàn giao ship" : "";
         orderFacadeService.recordEvent(
@@ -472,6 +481,7 @@ public class GrabDispatchService {
             } catch (RuntimeException e) {
                 LOG.warn("Grab lấy {}: chưa chuyển đang lấy — {}", code, e.getMessage());
             }
+            recordCashFee(code);
         }
     }
 
@@ -540,6 +550,69 @@ public class GrabDispatchService {
             row.setPartnerTipUnits(null);
             shipmentOrderRepository.save(row);
             orderFacadeService.recordEvent(row, "GRAB_TIP", "Tip Grab " + amount + "đ đã cộng vào phí đối tác", "grab");
+        });
+        recordCashFee(code);
+    }
+
+    private String bookerOf(ShipmentOrder order) {
+        String who = null;
+        for (OrderDeliveryAttempt a : deliveryAttemptRepository.findByOrder_IdOrderByAttemptAtAsc(order.getId())) {
+            if (
+                a.getDeliveryPartner() == DeliveryPartner.GRAB &&
+                "ASSIGN_PARTNER".equals(a.getReason()) &&
+                notBlank(a.getHandledByUsername())
+            ) {
+                who = a.getHandledByUsername();
+            }
+        }
+        return who != null ? who : "system";
+    }
+
+    private String paymentMethod() {
+        return integrationConfigRepository.findAll().stream().findFirst().map(cfg -> cfg.getGrabPaymentMethod()).orElse(null);
+    }
+
+    /**
+     * Tiền mặt: người gọi xe trả tài xế lúc lấy hàng. Ghi một khoản để trừ phiếu thu.
+     * Tip cộng sau khi giao thì cập nhật khoản chưa vào phiếu.
+     */
+    private void recordCashFee(String code) {
+        tx.executeWithoutResult(s -> {
+            ShipmentOrder order = require(code);
+            String partnerOrderId = order.getPartnerOrderId();
+            BigDecimal fee = OrderMoney.nz(order.getPartnerFeeAmount());
+            if (!"CASH".equals(order.getPartnerPayMethod()) || !notBlank(partnerOrderId) || fee.signum() <= 0) {
+                return;
+            }
+            PartnerFeeExpense open = partnerFeeExpenseRepository
+                .findByOrder_Id(order.getId())
+                .stream()
+                .filter(e -> partnerOrderId.equals(e.getPartnerOrderId()))
+                .findFirst()
+                .orElse(null);
+            if (open != null) {
+                if (open.getReceipt() == null && fee.compareTo(OrderMoney.nz(open.getAmount())) != 0) {
+                    open.setAmount(fee);
+                    partnerFeeExpenseRepository.save(open);
+                }
+                return;
+            }
+            String confirmed = order.getPartnerShipConfirmedBy();
+            String payer = notBlank(confirmed) ? confirmed.trim() : bookerOf(order);
+            PartnerFeeExpense e = new PartnerFeeExpense();
+            e.setOrder(order);
+            e.setPartnerCode(PARTNER_CODE);
+            e.setPartnerOrderId(partnerOrderId);
+            e.setAmount(fee);
+            e.setPayerUsername(truncate(payer, 50));
+            e.setIncurredAt(Instant.now());
+            partnerFeeExpenseRepository.save(e);
+            orderFacadeService.recordEvent(
+                order,
+                "GRAB_FEE",
+                "Phí Grab " + PartnerAdvance.money(fee) + "đ (" + partnerOrderId + ") · " + payer + " trả tài xế, trừ vào phiếu thu",
+                "grab"
+            );
         });
     }
 

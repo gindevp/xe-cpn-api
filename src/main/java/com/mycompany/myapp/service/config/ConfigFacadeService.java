@@ -121,7 +121,15 @@ public class ConfigFacadeService {
             current.setGrabPartnerId(incoming.getGrabPartnerId().trim());
         }
         if (incoming.getGrabSandbox() != null) {
-            current.setGrabSandbox(incoming.getGrabSandbox());
+            boolean sandbox = Boolean.TRUE.equals(incoming.getGrabSandbox());
+            grabCredsChanged |= sandbox != Boolean.TRUE.equals(current.getGrabSandbox());
+            current.setGrabSandbox(sandbox);
+        }
+        if (incoming.getGrabPaymentMethod() != null) {
+            String pm = incoming.getGrabPaymentMethod().trim().toUpperCase();
+            if ("BALANCE".equals(pm) || "CASH".equals(pm)) {
+                current.setGrabPaymentMethod(pm);
+            }
         }
         if (grabCredsChanged) {
             current.setGrabAccessToken(null);

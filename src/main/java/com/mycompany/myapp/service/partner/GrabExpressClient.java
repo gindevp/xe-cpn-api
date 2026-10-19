@@ -151,7 +151,7 @@ public class GrabExpressClient {
         }
         body.put("serviceType", "INSTANT");
         body.put("vehicleType", vehicle == null || vehicle.isBlank() ? "BIKE" : vehicle);
-        body.put("paymentMethod", "CASHLESS");
+        body.put("paymentMethod", apiPaymentMethod(config().getGrabPaymentMethod()));
         ArrayNode packages = body.putArray("packages");
         if (cargo != null && !cargo.packages().isEmpty()) {
             int i = 1;
@@ -213,6 +213,15 @@ public class GrabExpressClient {
             p.put("instruction", note.length() > 1000 ? note.substring(0, 1000) : note);
         }
         return p;
+    }
+
+    /** BALANCE hoặc trống = ví Grab (CASHLESS). CASH = tài xế nhận tiền mặt. */
+    static String apiPaymentMethod(String raw) {
+        return raw != null && "CASH".equalsIgnoreCase(raw.trim()) ? "CASH" : "CASHLESS";
+    }
+
+    static String storedPayMethod(String raw) {
+        return "CASH".equals(apiPaymentMethod(raw)) ? "CASH" : "BALANCE";
     }
 
     static String phone(String raw) {
@@ -298,7 +307,7 @@ public class GrabExpressClient {
 
     private String apiRoot() {
         IntegrationConfig cfg = config();
-        boolean sandbox = cfg.getGrabSandbox() == null || Boolean.TRUE.equals(cfg.getGrabSandbox());
+        boolean sandbox = Boolean.TRUE.equals(cfg.getGrabSandbox());
         return sandbox ? "https://partner-api.grab.com/grab-express-sandbox/v1" : "https://partner-api.grab.com/grab-express/v1";
     }
 

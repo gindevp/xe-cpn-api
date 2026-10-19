@@ -15,5 +15,10 @@ class GrabExpressClientTest {
         assertThat(GrabDispatchService.normalize("CANCELED")).isEqualTo("CANCELLED");
         assertThat(GrabDispatchService.pickedUp("IN_DELIVERY")).isTrue();
         assertThat(GrabDispatchService.pickedUp("ALLOCATING")).isFalse();
+        assertThat(GrabExpressClient.apiPaymentMethod("CASH")).isEqualTo("CASH");
+        assertThat(GrabExpressClient.apiPaymentMethod("BALANCE")).isEqualTo("CASHLESS");
+        assertThat(GrabExpressClient.apiPaymentMethod(null)).isEqualTo("CASHLESS");
+        assertThat(GrabExpressClient.storedPayMethod("CASH")).isEqualTo("CASH");
+        assertThat(GrabExpressClient.storedPayMethod("BALANCE")).isEqualTo("BALANCE");
     }
 }

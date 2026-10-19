@@ -71,9 +71,14 @@ public class IntegrationConfig implements Serializable {
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private String grabWebhookToken;
 
-    /** true = sandbox GrabExpress. null coi như staging. */
+    /** true = sandbox GrabExpress. null hoặc false = production. */
     @Column(name = "grab_sandbox", nullable = false)
-    private Boolean grabSandbox = true;
+    private Boolean grabSandbox = false;
+
+    /** BALANCE = trừ ví Grab (CASHLESS). CASH = trả tiền mặt cho tài xế. */
+    @Size(max = 32)
+    @Column(name = "grab_payment_method", length = 32)
+    private String grabPaymentMethod = "BALANCE";
 
     @Size(max = 255)
     @Column(name = "xanhsm_token", length = 255)
@@ -399,6 +404,14 @@ public class IntegrationConfig implements Serializable {
 
     public void setGrabSandbox(Boolean grabSandbox) {
         this.grabSandbox = grabSandbox;
+    }
+
+    public String getGrabPaymentMethod() {
+        return grabPaymentMethod;
+    }
+
+    public void setGrabPaymentMethod(String grabPaymentMethod) {
+        this.grabPaymentMethod = grabPaymentMethod;
     }
 
     public String getXanhsmToken() {
