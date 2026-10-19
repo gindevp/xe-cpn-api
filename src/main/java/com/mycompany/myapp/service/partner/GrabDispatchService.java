@@ -30,7 +30,6 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -766,25 +765,11 @@ public class GrabDispatchService {
         if (addr.length() < 8) {
             throw new BadRequestAlertException("Nhập địa chỉ hoặc ghim GPS để Grab báo giá", ENTITY, "grabPin");
         }
-        for (Map<String, String> row : osmNominatimService.autocomplete(addr)) {
-            Double foundLat = parseCoord(row.get("lat"));
-            Double foundLng = parseCoord(row.get("lng"));
-            if (foundLat != null && foundLng != null) {
-                return new double[] { foundLat, foundLng };
-            }
+        double[] found = osmNominatimService.locate(addr);
+        if (found != null) {
+            return found;
         }
         throw new BadRequestAlertException("Không định vị được địa chỉ để Grab báo giá", ENTITY, "grabGeocode");
-    }
-
-    private static Double parseCoord(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        try {
-            return Double.valueOf(raw.trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 
     private static boolean blank(String s) {

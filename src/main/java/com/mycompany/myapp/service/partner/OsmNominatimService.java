@@ -51,6 +51,54 @@ public class OsmNominatimService {
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     }
 
+    /**
+     * Toạ độ cho Grab. Photon lỗi hoặc không ra điểm thì thử Nominatim, vì Ahamove tự định vị còn Photon thì không.
+     */
+    public double[] locate(String query) {
+        String q = query == null ? "" : query.trim();
+        if (q.length() < 3) {
+            return null;
+        }
+        try {
+            for (Map<String, String> row : autocomplete(q)) {
+                Double lat = coord(row.get("lat"));
+                Double lng = coord(row.get("lng"));
+                if (lat != null && lng != null) {
+                    return new double[] { lat, lng };
+                }
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("Photon locate failed: {}", e.getMessage());
+        }
+        try {
+            String url =
+                "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=vn&q=" +
+                URLEncoder.encode(q, StandardCharsets.UTF_8);
+            JsonNode root = getJson(url);
+            if (root != null && root.isArray() && !root.isEmpty()) {
+                Double lat = coord(root.get(0).path("lat").asText(null));
+                Double lng = coord(root.get(0).path("lon").asText(null));
+                if (lat != null && lng != null) {
+                    return new double[] { lat, lng };
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("Nominatim locate failed: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private static Double coord(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Double.valueOf(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     public List<Map<String, String>> autocomplete(String query) {
         String q = query == null ? "" : query.trim();
         if (q.length() < 2) {
@@ -62,7 +110,7 @@ public class OsmNominatimService {
             if (!lower.contains("việt nam") && !lower.contains("vietnam")) {
                 qForSearch = q + ", Việt Nam";
             }
-            String url = photonBaseUrl + "/api/?limit=8&lang=default&q=" + URLEncoder.encode(qForSearch, StandardCharsets.UTF_8);
+            String url = photonBaseUrl + "/api/?limit=8&q=" + URLEncoder.encode(qForSearch, StandardCharsets.UTF_8);
             JsonNode root = getJson(url);
             JsonNode features = root.get("features");
             List<Map<String, String>> out = new ArrayList<>();
@@ -99,8 +147,7 @@ public class OsmNominatimService {
                 "/reverse?lat=" +
                 URLEncoder.encode(Double.toString(lat), StandardCharsets.UTF_8) +
                 "&lon=" +
-                URLEncoder.encode(Double.toString(lng), StandardCharsets.UTF_8) +
-                "&lang=default";
+                URLEncoder.encode(Double.toString(lng), StandardCharsets.UTF_8);
             JsonNode root = getJson(url);
             JsonNode features = root.get("features");
             if (features == null || !features.isArray() || features.isEmpty()) {
@@ -140,8 +187,11 @@ public class OsmNominatimService {
         String osmId = text(props, "osm_id");
         String placeId = encodePlaceId(osmTypeLetterToName(osmType), osmId);
         String description = buildPhotonDescription(props);
-        if (description == null || lat == null || lng == null) {
+        if (lat == null || lng == null || lat.isBlank() || lng.isBlank()) {
             return null;
+        }
+        if (description == null) {
+            description = lat + ", " + lng;
         }
         if (placeId == null) {
             placeId = "photon:" + lat + "," + lng;

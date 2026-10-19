@@ -71,7 +71,7 @@ public class GrabExpressClient {
     }
 
     public Quote quote(Stop origin, Stop destination, String vehicle, AhamoveCargo cargo) {
-        ObjectNode body = baseBody(origin, destination, vehicle, cargo, null, null);
+        ObjectNode body = baseBody(origin, destination, vehicle, cargo, null, null, true);
         JsonNode res = post("/deliveries/quotes", body);
         JsonNode quotes = res.get("quotes");
         JsonNode q = quotes != null && quotes.isArray() && !quotes.isEmpty() ? quotes.get(0) : res.get("quote");
@@ -82,7 +82,7 @@ public class GrabExpressClient {
     }
 
     public Created create(Stop origin, Stop destination, String vehicle, AhamoveCargo cargo, String merchantOrderId, Long codAmount) {
-        ObjectNode body = baseBody(origin, destination, vehicle, cargo, merchantOrderId, codAmount);
+        ObjectNode body = baseBody(origin, destination, vehicle, cargo, merchantOrderId, codAmount, false);
         JsonNode res = post("/deliveries", body);
         JsonNode quote = res.get("quote");
         BigDecimal amount = quote != null ? money(quote.get("amount")) : money(res.get("amount"));
@@ -144,14 +144,24 @@ public class GrabExpressClient {
         }
     }
 
-    private ObjectNode baseBody(Stop origin, Stop destination, String vehicle, AhamoveCargo cargo, String merchantOrderId, Long cod) {
+    private ObjectNode baseBody(
+        Stop origin,
+        Stop destination,
+        String vehicle,
+        AhamoveCargo cargo,
+        String merchantOrderId,
+        Long cod,
+        boolean quote
+    ) {
         ObjectNode body = json.createObjectNode();
-        if (merchantOrderId != null) {
+        if (!quote && merchantOrderId != null) {
             body.put("merchantOrderID", merchantOrderId);
         }
         body.put("serviceType", "INSTANT");
         body.put("vehicleType", vehicle == null || vehicle.isBlank() ? "BIKE" : vehicle);
-        body.put("paymentMethod", apiPaymentMethod(config().getGrabPaymentMethod()));
+        if (!quote) {
+            body.put("paymentMethod", apiPaymentMethod(config().getGrabPaymentMethod()));
+        }
         ArrayNode packages = body.putArray("packages");
         if (cargo != null && !cargo.packages().isEmpty()) {
             int i = 1;
@@ -161,10 +171,10 @@ public class GrabExpressClient {
                 p.put("description", "Hàng CPN");
                 p.put("quantity", 1);
                 ObjectNode dim = p.putObject("dimensions");
-                dim.put("height", cm(pkg.heightCm()));
-                dim.put("width", cm(pkg.widthCm()));
-                dim.put("depth", cm(pkg.lengthCm()));
-                dim.put("weight", grams(pkg.weightKg()));
+                dim.put("height", Math.max(1, cm(pkg.heightCm())));
+                dim.put("width", Math.max(1, cm(pkg.widthCm())));
+                dim.put("depth", Math.max(1, cm(pkg.lengthCm())));
+                dim.put("weight", Math.max(1, grams(pkg.weightKg())));
                 i++;
             }
         } else {
@@ -173,15 +183,17 @@ public class GrabExpressClient {
             p.put("description", "Hàng CPN");
             p.put("quantity", 1);
             ObjectNode dim = p.putObject("dimensions");
-            dim.put("height", 0);
-            dim.put("width", 0);
-            dim.put("depth", 0);
-            dim.put("weight", 0);
+            dim.put("height", 10);
+            dim.put("width", 10);
+            dim.put("depth", 10);
+            dim.put("weight", 1000);
         }
         putStop(body.putObject("origin"), origin);
         putStop(body.putObject("destination"), destination);
-        body.set("sender", person(origin));
-        body.set("recipient", person(destination));
+        if (!quote) {
+            body.set("sender", person(origin));
+            body.set("recipient", person(destination));
+        }
         if (cod != null && cod > 0) {
             body.put("codType", "ADVANCED");
             body.putObject("cashOnDelivery").put("amount", cod);
@@ -193,8 +205,8 @@ public class GrabExpressClient {
         node.put("address", stop.address() == null ? "" : stop.address());
         if (stop.lat() != null && stop.lng() != null) {
             ObjectNode c = node.putObject("coordinates");
-            c.put("latitude", stop.lat());
-            c.put("longitude", stop.lng());
+            c.put("latitude", coord(stop.lat()));
+            c.put("longitude", coord(stop.lng()));
         }
     }
 
@@ -367,6 +379,11 @@ public class GrabExpressClient {
             return null;
         }
         return BigDecimal.valueOf(metres.asDouble() / 1000d);
+    }
+
+    /** Grab từ chối toạ độ dưới 6 chữ số thập phân. */
+    private static BigDecimal coord(double value) {
+        return new BigDecimal(String.format(java.util.Locale.US, "%.6f", value));
     }
 
     private static int cm(Double value) {
