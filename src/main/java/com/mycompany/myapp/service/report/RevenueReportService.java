@@ -194,7 +194,11 @@ public class RevenueReportService {
 
     /** Phí giao tận nơi của đơn giao nội bộ. Đơn Ahamove để 0, phí đối tác nằm ở {@link #ahamoveFee}. */
     static BigDecimal internalDeliveryFee(ShipmentOrder o) {
-        if (o == null || (o.getPartnerCode() != null && "AHAMOVE".equalsIgnoreCase(o.getPartnerCode().trim()))) {
+        if (o == null || o.getPartnerCode() == null) {
+            return o == null ? BigDecimal.ZERO : OrderMoney.nz(o.getDeliveryFeeAmount());
+        }
+        String partner = o.getPartnerCode().trim();
+        if ("AHAMOVE".equalsIgnoreCase(partner) || "GRAB".equalsIgnoreCase(partner)) {
             return BigDecimal.ZERO;
         }
         return OrderMoney.nz(o.getDeliveryFeeAmount());

@@ -1696,7 +1696,9 @@ public class FinanceFacadeService {
             ) {
                 podStaff = actor;
             }
-            if (shipStaff == null && ("PUSH_SHIP".equals(action) || "AHAMOVE_ADVANCE_IN".equals(action))) {
+            if (
+                shipStaff == null && ("PUSH_SHIP".equals(action) || "AHAMOVE_ADVANCE_IN".equals(action) || "GRAB_ADVANCE_IN".equals(action))
+            ) {
                 shipStaff = actor;
             }
         }
@@ -1711,7 +1713,7 @@ public class FinanceFacadeService {
             for (int i = events.size() - 1; i >= 0; i--) {
                 OrderEvent event = events.get(i);
                 String action = event.getAction() == null ? "" : event.getAction().trim().toUpperCase();
-                if (!"AHAMOVE_BOOK".equals(action)) {
+                if (!"AHAMOVE_BOOK".equals(action) && !"GRAB_BOOK".equals(action)) {
                     continue;
                 }
                 String booker = staffActor(event);
@@ -1813,7 +1815,11 @@ public class FinanceFacadeService {
         if (o == null || (o.getPartnerShipConfirmedBy() != null && !o.getPartnerShipConfirmedBy().isBlank())) {
             return false;
         }
-        if (!"AHAMOVE".equals(o.getPartnerCode()) || o.getPartnerOrderId() == null || o.getPartnerOrderId().isBlank()) {
+        if (
+            (!"AHAMOVE".equals(o.getPartnerCode()) && !"GRAB".equals(o.getPartnerCode())) ||
+            o.getPartnerOrderId() == null ||
+            o.getPartnerOrderId().isBlank()
+        ) {
             return false;
         }
         String status = o.getPartnerStatus();

@@ -86,6 +86,7 @@ public class SecurityConfiguration {
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/vtech/webhook")).permitAll()
                     // Webhook Ahamove: token CPN sinh (?token= hoặc header apikey) — AhamoveDispatchResource
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/ahamove/webhook")).permitAll()
+                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/grab/webhook")).permitAll()
                     // BIDV thu hộ getbill / paybill: IP + API key + checksum — BidvCollectionService
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/public/bidv/**")).permitAll()
                     .requestMatchers(mvc.pattern(HttpMethod.POST, "/api/payment/bidv/getbill")).permitAll()

@@ -60,7 +60,7 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             staffAccessService.requireScreenWrite(ScreenKey.POD_QUAY, ScreenKey.GIAO_TAN_NHA);
             return;
         }
-        if (path.matches(".*/api/orders/[^/]+/ahamove/(dispatch|cancel|advance-in|advance-refund)/?$")) {
+        if (path.matches(".*/api/orders/[^/]+/(ahamove|grab)/(dispatch|dispatch-pickup|cancel|advance-in|advance-refund)/?$")) {
             staffAccessService.requireScreenWrite(ScreenKey.NHAP_KHO_LUAN_CHUYEN, ScreenKey.GIAO_TAN_NHA);
             return;
         }
@@ -180,7 +180,7 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         ) {
             return true;
         }
-        if ("POST".equals(method) && "/api/ahamove/estimate-pickup-km".equals(path)) {
+        if ("POST".equals(method) && ("/api/ahamove/estimate-pickup-km".equals(path) || "/api/grab/estimate".equals(path))) {
             return true;
         }
         if ("POST".equals(method) && ("/api/orders/track".equals(path) || path.startsWith("/api/orders/track/invoice"))) {
@@ -193,7 +193,8 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
             "POST".equals(method) &&
             ("/api/public/hhvn/webhook".equals(path) ||
                 "/api/public/vtech/webhook".equals(path) ||
-                "/api/public/ahamove/webhook".equals(path))
+                "/api/public/ahamove/webhook".equals(path) ||
+                "/api/public/grab/webhook".equals(path))
         ) {
             return true;
         }

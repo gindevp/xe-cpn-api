@@ -146,9 +146,13 @@ public class AhamoveDispatchService {
     /** Tài xế đã lấy hàng — phí Ahamove phát sinh (huỷ trước lúc này thì không mất phí). */
     static final java.util.Set<String> PARTNER_PICKED_UP = java.util.Set.of("IN PROCESS", "IN_PROCESS", "COMPLETED", "FAILED");
 
+    static boolean courierPartner(String code) {
+        return "AHAMOVE".equals(code) || "GRAB".equals(code);
+    }
+
     /** Đơn Ahamove còn chạy bên đối tác (chưa huỷ / giao xong / thất bại) — không được chuyển giao thất bại thủ công. */
     public static boolean partnerActive(ShipmentOrder order) {
-        if (order == null || !PARTNER_CODE.equals(order.getPartnerCode()) || !notBlank(order.getPartnerOrderId())) {
+        if (order == null || !courierPartner(order.getPartnerCode()) || !notBlank(order.getPartnerOrderId())) {
             return false;
         }
         String st = order.getPartnerStatus();
@@ -158,7 +162,7 @@ public class AhamoveDispatchService {
     public static void assertNoActivePartner(ShipmentOrder order) {
         if (partnerActive(order)) {
             throw new BadRequestAlertException(
-                "Đơn đang giao Ahamove (" + order.getPartnerOrderId() + ") — bấm Hủy Ahamove trước khi báo giao không thành công",
+                "Đơn đang giao đối tác (" + order.getPartnerOrderId() + ") — hủy chuyến đối tác trước khi báo giao không thành công",
                 ENTITY,
                 "ahamoveActive"
             );
@@ -770,7 +774,7 @@ public class AhamoveDispatchService {
         tx.executeWithoutResult(status -> {
             ShipmentOrder order = requireOrder(orderCode);
             BigDecimal amount = PartnerAdvance.amount(order);
-            if (!PARTNER_CODE.equals(order.getPartnerCode()) || amount.signum() <= 0) {
+            if (!courierPartner(order.getPartnerCode()) || amount.signum() <= 0) {
                 throw new BadRequestAlertException("Đơn không có tiền tài xế Ahamove ứng", ENTITY, "ahamoveNoAdvance");
             }
             if (order.getPartnerCodCollectedAt() != null) {
@@ -939,8 +943,8 @@ public class AhamoveDispatchService {
     }
 
     private static void assertAhamoveOrder(ShipmentOrder order) {
-        if (!PARTNER_CODE.equals(order.getPartnerCode()) || !notBlank(order.getPartnerOrderId())) {
-            throw new BadRequestAlertException("Đơn không giao qua Ahamove", ENTITY, "ahamoveNotDispatched");
+        if (!courierPartner(order.getPartnerCode()) || !notBlank(order.getPartnerOrderId())) {
+            throw new BadRequestAlertException("Đơn không giao qua đối tác", ENTITY, "ahamoveNotDispatched");
         }
     }
 

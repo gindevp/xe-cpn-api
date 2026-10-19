@@ -44,6 +44,37 @@ public class IntegrationConfig implements Serializable {
     @Column(name = "grab_token", length = 255)
     private String grabToken;
 
+    @Size(max = 128)
+    @Column(name = "grab_client_id", length = 128)
+    private String grabClientId;
+
+    /** Không trả về API. Ô trống khi lưu = giữ secret cũ. */
+    @Size(max = 512)
+    @Column(name = "grab_client_secret", length = 512)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String grabClientSecret;
+
+    @Size(max = 64)
+    @Column(name = "grab_partner_id", length = 64)
+    private String grabPartnerId;
+
+    @Size(max = 2000)
+    @Column(name = "grab_access_token", length = 2000)
+    @JsonIgnore
+    private String grabAccessToken;
+
+    @Column(name = "grab_token_expires_at")
+    private Instant grabTokenExpiresAt;
+
+    @Size(max = 64)
+    @Column(name = "grab_webhook_token", length = 64)
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String grabWebhookToken;
+
+    /** true = sandbox GrabExpress. null coi như staging. */
+    @Column(name = "grab_sandbox", nullable = false)
+    private Boolean grabSandbox = true;
+
     @Size(max = 255)
     @Column(name = "xanhsm_token", length = 255)
     private String xanhsmToken;
@@ -307,6 +338,67 @@ public class IntegrationConfig implements Serializable {
 
     public void setGrabToken(String grabToken) {
         this.grabToken = grabToken;
+    }
+
+    public String getGrabClientId() {
+        return grabClientId;
+    }
+
+    public void setGrabClientId(String grabClientId) {
+        this.grabClientId = grabClientId;
+    }
+
+    public String getGrabClientSecret() {
+        return grabClientSecret;
+    }
+
+    public void setGrabClientSecret(String grabClientSecret) {
+        this.grabClientSecret = grabClientSecret;
+    }
+
+    @JsonProperty("grabClientSecretConfigured")
+    public boolean isGrabClientSecretConfigured() {
+        return grabClientSecret != null && !grabClientSecret.isBlank();
+    }
+
+    public String getGrabPartnerId() {
+        return grabPartnerId;
+    }
+
+    public void setGrabPartnerId(String grabPartnerId) {
+        this.grabPartnerId = grabPartnerId;
+    }
+
+    public String getGrabAccessToken() {
+        return grabAccessToken;
+    }
+
+    public void setGrabAccessToken(String grabAccessToken) {
+        this.grabAccessToken = grabAccessToken;
+    }
+
+    public Instant getGrabTokenExpiresAt() {
+        return grabTokenExpiresAt;
+    }
+
+    public void setGrabTokenExpiresAt(Instant grabTokenExpiresAt) {
+        this.grabTokenExpiresAt = grabTokenExpiresAt;
+    }
+
+    public String getGrabWebhookToken() {
+        return grabWebhookToken;
+    }
+
+    public void setGrabWebhookToken(String grabWebhookToken) {
+        this.grabWebhookToken = grabWebhookToken;
+    }
+
+    public Boolean getGrabSandbox() {
+        return grabSandbox;
+    }
+
+    public void setGrabSandbox(Boolean grabSandbox) {
+        this.grabSandbox = grabSandbox;
     }
 
     public String getXanhsmToken() {
@@ -816,7 +908,9 @@ public class IntegrationConfig implements Serializable {
             ", ahamoveApiKey='" + (getAhamoveApiKey() != null ? "***" : null) + "'" +
             ", ahamoveMobile='" + getAhamoveMobile() + "'" +
             ", ahamoveTokenFetchedAt='" + getAhamoveTokenFetchedAt() + "'" +
-            ", grabToken='" + getGrabToken() + "'" +
+            ", grabClientId='" + getGrabClientId() + "'" +
+            ", grabClientSecret='" + (getGrabClientSecret() != null ? "***" : null) + "'" +
+            ", grabPartnerId='" + getGrabPartnerId() + "'" +
             ", xanhsmToken='" + getXanhsmToken() + "'" +
             ", distanceApiToken='" + getDistanceApiToken() + "'" +
             ", mapProvider='" + getMapProvider() + "'" +

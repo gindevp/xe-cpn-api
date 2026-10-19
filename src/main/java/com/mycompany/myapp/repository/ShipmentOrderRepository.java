@@ -197,7 +197,7 @@ public interface ShipmentOrderRepository extends JpaRepository<ShipmentOrder, Lo
     @Query(
         """
         select o from ShipmentOrder o
-        where o.partnerCode = 'AHAMOVE'
+        where o.partnerCode in ('AHAMOVE', 'GRAB')
         and o.partnerCodCollectedAt is null
         and o.partnerCodAmount > 0
         and o.status in (

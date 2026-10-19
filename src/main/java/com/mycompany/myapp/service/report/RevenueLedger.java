@@ -192,7 +192,11 @@ public class RevenueLedger {
 
     /** Phí Ahamove còn phải trừ. Đơn không book Ahamove, hoặc đã hủy, thì bằng 0. */
     static BigDecimal ahamoveCost(String partnerCode, String partnerStatus, BigDecimal partnerFee) {
-        if (partnerCode == null || !"AHAMOVE".equalsIgnoreCase(partnerCode.trim())) {
+        if (partnerCode == null) {
+            return BigDecimal.ZERO;
+        }
+        String code = partnerCode.trim();
+        if (!"AHAMOVE".equalsIgnoreCase(code) && !"GRAB".equalsIgnoreCase(code)) {
             return BigDecimal.ZERO;
         }
         if (partnerStatus != null && "CANCELLED".equalsIgnoreCase(partnerStatus.trim())) {

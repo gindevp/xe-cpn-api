@@ -38,6 +38,7 @@ import com.mycompany.myapp.service.order.ExceptionFacadeService;
 import com.mycompany.myapp.service.order.OrderFacadeService;
 import com.mycompany.myapp.service.order.PublicSenderLookupService;
 import com.mycompany.myapp.service.partner.AhamoveDispatchService;
+import com.mycompany.myapp.service.partner.GrabDispatchService;
 import com.mycompany.myapp.service.payment.onepay.OnePayOrderCollectService;
 import com.mycompany.myapp.service.trip.TripFacadeService;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
@@ -95,6 +96,13 @@ public class OrderFacadeResource {
     private final PublicInvoiceService publicInvoiceService;
     private final PublicSenderLookupService publicSenderLookupService;
     private final AhamoveDispatchService ahamoveDispatchService;
+    private GrabDispatchService grabDispatchService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setGrabDispatchService(@org.springframework.context.annotation.Lazy GrabDispatchService grabDispatchService) {
+        this.grabDispatchService = grabDispatchService;
+    }
+
     private final OnePayOrderCollectService onePayOrderCollectService;
 
     public OrderFacadeResource(
@@ -201,6 +209,9 @@ public class OrderFacadeResource {
     ) {
         if (ahamovePhotos) {
             ahamoveDispatchService.pullPhotos(orderCode);
+            if (grabDispatchService != null) {
+                grabDispatchService.pullPhotos(orderCode);
+            }
         }
         return ResponseEntity.ok(orderFacadeService.getByCode(orderCode));
     }

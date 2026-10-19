@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261019110000-1" author="cpn">
+        <addColumn tableName="integration_config">
+            <column name="grab_client_id" type="varchar(128)"/>
+            <column name="grab_client_secret" type="varchar(512)"/>
+            <column name="grab_partner_id" type="varchar(64)"/>
+            <column name="grab_access_token" type="varchar(2000)"/>
+            <column name="grab_token_expires_at" type="${datetimeType}"/>
+            <column name="grab_webhook_token" type="varchar(64)"/>
+            <column name="grab_sandbox" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <addColumn tableName="shipment_order">
+            <column name="partner_tip_units" type="integer"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

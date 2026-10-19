@@ -8,6 +8,7 @@ import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.partner.AhamoveAuthClient;
 import com.mycompany.myapp.service.partner.AhamoveAuthClient.AhamoveAuthException;
 import com.mycompany.myapp.service.partner.AhamoveTokenService;
+import com.mycompany.myapp.service.partner.GrabExpressClient;
 import com.mycompany.myapp.service.partner.HhvnAutoCallClient;
 import com.mycompany.myapp.service.partner.VtechAutoCallClient;
 import com.mycompany.myapp.service.storage.MinioBlobMigration;
@@ -36,6 +37,12 @@ public class ConfigFacadeService {
     private final AhamoveTokenService ahamoveTokenService;
     private final StoredMedia storedMedia;
     private final MinioBlobMigration minioBlobMigration;
+    private GrabExpressClient grabExpressClient;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setGrabExpressClient(GrabExpressClient grabExpressClient) {
+        this.grabExpressClient = grabExpressClient;
+    }
 
     public ConfigFacadeService(
         SurchargePolicyRepository surchargePolicyRepository,
@@ -99,6 +106,30 @@ public class ConfigFacadeService {
         }
         // Không nhận ahamoveToken từ client — token do BE tự quản lý.
         if (incoming.getGrabToken() != null) current.setGrabToken(incoming.getGrabToken());
+        boolean grabCredsChanged = false;
+        if (notBlank(incoming.getGrabClientId())) {
+            String id = incoming.getGrabClientId().trim();
+            grabCredsChanged |= !id.equals(blankToNull(current.getGrabClientId()));
+            current.setGrabClientId(id);
+        }
+        if (notBlank(incoming.getGrabClientSecret())) {
+            String secret = incoming.getGrabClientSecret().trim();
+            grabCredsChanged |= !secret.equals(blankToNull(current.getGrabClientSecret()));
+            current.setGrabClientSecret(secret);
+        }
+        if (notBlank(incoming.getGrabPartnerId())) {
+            current.setGrabPartnerId(incoming.getGrabPartnerId().trim());
+        }
+        if (incoming.getGrabSandbox() != null) {
+            current.setGrabSandbox(incoming.getGrabSandbox());
+        }
+        if (grabCredsChanged) {
+            current.setGrabAccessToken(null);
+            current.setGrabTokenExpiresAt(null);
+        }
+        if (!notBlank(current.getGrabWebhookToken())) {
+            current.setGrabWebhookToken(newWebhookToken());
+        }
         if (incoming.getXanhsmToken() != null) current.setXanhsmToken(incoming.getXanhsmToken());
         if (notBlank(incoming.getDistanceApiToken())) {
             current.setDistanceApiToken(incoming.getDistanceApiToken().trim());
@@ -161,7 +192,7 @@ public class ConfigFacadeService {
     public Map<String, Object> testIntegration() {
         IntegrationConfig cfg = getIntegrationConfig();
         Map<String, Object> out = new HashMap<>();
-        out.put("grabConfigured", notBlank(cfg.getGrabToken()));
+        out.put("grabConfigured", notBlank(cfg.getGrabClientId()) && cfg.isGrabClientSecretConfigured());
         out.put("xanhsmConfigured", notBlank(cfg.getXanhsmToken()));
         out.put("telegramConfigured", notBlank(cfg.getTelegramToken()));
         out.put("webhookConfigured", notBlank(cfg.getWebhookUrl()));
@@ -182,8 +213,38 @@ public class ConfigFacadeService {
             }
         }
         out.put("ok", ok);
+        if (grabExpressClient != null && notBlank(cfg.getGrabClientId()) && cfg.isGrabClientSecretConfigured()) {
+            try {
+                grabExpressClient.refreshToken();
+                out.put("grabTokenOk", true);
+            } catch (Exception e) {
+                out.put("ok", false);
+                out.put("grabTokenOk", false);
+                out.put("grabError", e.getMessage());
+            }
+        }
         out.put("testedBy", SecurityUtils.getCurrentUserLogin().orElse("system"));
         out.put("testedAt", Instant.now().toString());
+        return out;
+    }
+
+    public Map<String, Object> testGrab() {
+        Map<String, Object> out = new HashMap<>();
+        IntegrationConfig cfg = getIntegrationConfig();
+        if (grabExpressClient == null || !notBlank(cfg.getGrabClientId()) || !cfg.isGrabClientSecretConfigured()) {
+            out.put("ok", false);
+            out.put("grabError", "Chưa lưu Client ID và Client Secret");
+            return out;
+        }
+        try {
+            grabExpressClient.refreshToken();
+            out.put("ok", true);
+            out.put("grabTokenOk", true);
+        } catch (Exception e) {
+            out.put("ok", false);
+            out.put("grabTokenOk", false);
+            out.put("grabError", e.getMessage());
+        }
         return out;
     }
 
