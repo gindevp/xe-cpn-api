@@ -56,11 +56,12 @@ public class GrabDispatchResource {
         Double pinLat = num(body, "pinLat");
         Double pinLng = num(body, "pinLng");
         String address = body.get("pinAddress") == null ? null : String.valueOf(body.get("pinAddress"));
+        String officeAddress = body.get("officeAddress") == null ? null : String.valueOf(body.get("officeAddress"));
         String bulky = body.get("bulkyTier") == null ? null : String.valueOf(body.get("bulkyTier"));
         String orderCode = body.get("orderCode") == null ? null : String.valueOf(body.get("orderCode"));
         GrabExpressClient.Quote quote = grabExpressClient == null
             ? null
-            : grabDispatchService.estimate(officeLat, officeLng, pinLat, pinLng, address, bulky, orderCode);
+            : grabDispatchService.estimate(officeLat, officeLng, pinLat, pinLng, address, officeAddress, bulky, orderCode);
         return Map.of(
             "totalPrice",
             quote.amount() == null ? 0 : quote.amount(),

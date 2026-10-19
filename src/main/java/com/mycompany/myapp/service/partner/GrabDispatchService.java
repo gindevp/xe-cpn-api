@@ -30,6 +30,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,7 @@ public class GrabDispatchService {
     private final OrderDeliveryAttemptRepository deliveryAttemptRepository;
     private final PartnerFeeExpenseRepository partnerFeeExpenseRepository;
     private final GrabExpressClient grab;
+    private final OsmNominatimService osmNominatimService;
     private final DeliveryFacadeService deliveryFacadeService;
     private final OrderFacadeService orderFacadeService;
     private final DayClosureGuard dayClosureGuard;
@@ -65,6 +67,7 @@ public class GrabDispatchService {
         OrderDeliveryAttemptRepository deliveryAttemptRepository,
         PartnerFeeExpenseRepository partnerFeeExpenseRepository,
         GrabExpressClient grab,
+        OsmNominatimService osmNominatimService,
         DeliveryFacadeService deliveryFacadeService,
         OrderFacadeService orderFacadeService,
         DayClosureGuard dayClosureGuard,
@@ -75,6 +78,7 @@ public class GrabDispatchService {
         this.deliveryAttemptRepository = deliveryAttemptRepository;
         this.partnerFeeExpenseRepository = partnerFeeExpenseRepository;
         this.grab = grab;
+        this.osmNominatimService = osmNominatimService;
         this.deliveryFacadeService = deliveryFacadeService;
         this.orderFacadeService = orderFacadeService;
         this.dayClosureGuard = dayClosureGuard;
@@ -87,26 +91,23 @@ public class GrabDispatchService {
         Double pinLat,
         Double pinLng,
         String address,
+        String officeAddress,
         String bulkyTier,
         String orderCode
     ) {
-        if (officeLat == null || officeLng == null || pinLat == null || pinLng == null) {
-            throw new BadRequestAlertException("Grab cần GPS văn phòng và GPS điểm giao/lấy", ENTITY, "grabPin");
+        if (officeLat == null || officeLng == null) {
+            throw new BadRequestAlertException("VP chưa có toạ độ GPS", ENTITY, "grabOfficeGps");
         }
+        String drop = blank(address) ? "" : address.trim();
+        double[] pin = coords(pinLat, pinLng, drop);
         ShipmentOrder order = orderCode == null || orderCode.isBlank()
             ? null
             : shipmentOrderRepository.findOneByOrderCodeOrDraftCode(orderCode.trim()).orElse(null);
         AhamoveCargo cargo = AhamoveCargo.from(order);
-        GrabExpressClient.Stop office = new GrabExpressClient.Stop(officeLat, officeLng, "Văn phòng", "CPN", null, null);
-        GrabExpressClient.Stop pin = new GrabExpressClient.Stop(
-            pinLat,
-            pinLng,
-            blank(address) ? "Điểm giao" : address.trim(),
-            "Khách",
-            null,
-            null
-        );
-        return grab.quote(office, pin, GrabExpressClient.vehicleOf(bulkyTier), cargo);
+        String officeText = blank(officeAddress) ? "Văn phòng" : officeAddress.trim();
+        GrabExpressClient.Stop office = new GrabExpressClient.Stop(officeLat, officeLng, officeText, "CPN", null, null);
+        GrabExpressClient.Stop point = new GrabExpressClient.Stop(pin[0], pin[1], blank(drop) ? "Điểm giao" : drop, "Khách", null, null);
+        return grab.quote(office, point, GrabExpressClient.vehicleOf(bulkyTier), cargo);
     }
 
     public OrderDetailDTO dispatch(String orderCode, AhamoveDispatchService.DispatchRequest request) {
@@ -132,9 +133,6 @@ public class GrabDispatchService {
         if (office == null || office.getLatitude() == null || office.getLongitude() == null) {
             throw new BadRequestAlertException("VP nhận chưa có toạ độ GPS", ENTITY, "grabOfficeGps");
         }
-        if (req.getLat() == null || req.getLng() == null) {
-            throw new BadRequestAlertException("Grab cần GPS điểm giao — dán link map hoặc ghim bản đồ", ENTITY, "grabPin");
-        }
         String dropAddress = blank(req.getAddress()) ? order.getDeliveryAddress() : req.getAddress().trim();
         if (blank(dropAddress)) {
             throw new BadRequestAlertException("Đơn chưa có địa chỉ giao", ENTITY, "grabAddress");
@@ -157,14 +155,10 @@ public class GrabDispatchService {
             senderPhone(),
             null
         );
-        GrabExpressClient.Stop dest = new GrabExpressClient.Stop(
-            req.getLat(),
-            req.getLng(),
-            dropAddress,
-            order.getReceiverName(),
-            phone,
-            note
-        );
+        double[] dropPin = coords(req.getLat(), req.getLng(), dropAddress);
+        req.setLat(dropPin[0]);
+        req.setLng(dropPin[1]);
+        GrabExpressClient.Stop dest = new GrabExpressClient.Stop(dropPin[0], dropPin[1], dropAddress, order.getReceiverName(), phone, note);
         String merchantId = merchantId(order.getOrderCode());
         GrabExpressClient.Created created = grab.create(
             origin,
@@ -189,9 +183,6 @@ public class GrabDispatchService {
         AhamoveDispatchService.DispatchRequest req = request != null ? request : new AhamoveDispatchService.DispatchRequest();
         ShipmentOrder order = require(orderCode);
         Office office = assertPickup(order);
-        if (req.getLat() == null || req.getLng() == null) {
-            throw new BadRequestAlertException("Grab cần GPS điểm lấy — dán link map hoặc ghim bản đồ", ENTITY, "grabPin");
-        }
         String pickupAddress = blank(req.getAddress()) ? order.getPickupAddress() : req.getAddress().trim();
         if (blank(pickupAddress)) {
             throw new BadRequestAlertException("Đơn chưa có địa chỉ lấy", ENTITY, "grabAddress");
@@ -202,9 +193,10 @@ public class GrabDispatchService {
         }
         int tip = tipUnits(req);
         AhamoveCargo cargo = AhamoveCargo.from(order);
+        double[] pickupPin = coords(req.getLat(), req.getLng(), pickupAddress);
         GrabExpressClient.Stop origin = new GrabExpressClient.Stop(
-            req.getLat(),
-            req.getLng(),
+            pickupPin[0],
+            pickupPin[1],
             pickupAddress,
             order.getSenderName(),
             phone,
@@ -763,6 +755,36 @@ public class GrabDispatchService {
         }
         String v = node.get(field).asText();
         return v == null || v.isBlank() ? null : v.trim();
+    }
+
+    /** Có GPS thì dùng GPS. Chỉ có địa chỉ thì định vị rồi gửi Grab, cùng lối Ahamove nhận địa chỉ. */
+    private double[] coords(Double lat, Double lng, String address) {
+        if (lat != null && lng != null) {
+            return new double[] { lat, lng };
+        }
+        String addr = address == null ? "" : address.trim();
+        if (addr.length() < 8) {
+            throw new BadRequestAlertException("Nhập địa chỉ hoặc ghim GPS để Grab báo giá", ENTITY, "grabPin");
+        }
+        for (Map<String, String> row : osmNominatimService.autocomplete(addr)) {
+            Double foundLat = parseCoord(row.get("lat"));
+            Double foundLng = parseCoord(row.get("lng"));
+            if (foundLat != null && foundLng != null) {
+                return new double[] { foundLat, foundLng };
+            }
+        }
+        throw new BadRequestAlertException("Không định vị được địa chỉ để Grab báo giá", ENTITY, "grabGeocode");
+    }
+
+    private static Double parseCoord(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Double.valueOf(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static boolean blank(String s) {
