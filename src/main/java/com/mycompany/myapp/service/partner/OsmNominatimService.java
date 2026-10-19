@@ -62,7 +62,7 @@ public class OsmNominatimService {
             if (!lower.contains("việt nam") && !lower.contains("vietnam")) {
                 qForSearch = q + ", Việt Nam";
             }
-            String url = photonBaseUrl + "/api/?limit=8&lang=vi&q=" + URLEncoder.encode(qForSearch, StandardCharsets.UTF_8);
+            String url = photonBaseUrl + "/api/?limit=8&lang=default&q=" + URLEncoder.encode(qForSearch, StandardCharsets.UTF_8);
             JsonNode root = getJson(url);
             JsonNode features = root.get("features");
             List<Map<String, String>> out = new ArrayList<>();
@@ -100,7 +100,7 @@ public class OsmNominatimService {
                 URLEncoder.encode(Double.toString(lat), StandardCharsets.UTF_8) +
                 "&lon=" +
                 URLEncoder.encode(Double.toString(lng), StandardCharsets.UTF_8) +
-                "&lang=vi";
+                "&lang=default";
             JsonNode root = getJson(url);
             JsonNode features = root.get("features");
             if (features == null || !features.isArray() || features.isEmpty()) {
