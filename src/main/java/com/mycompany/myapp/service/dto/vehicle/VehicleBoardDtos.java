@@ -74,7 +74,19 @@ public final class VehicleBoardDtos {
     public record Report(List<ReportItem> events, List<ItineraryOption> itineraries) {}
 
     /** Một chuyến trên bảng tài CRM. */
-    public record PlanTrip(String externalTripId, String vehiclePlate, String driverName, String routeLabel, Instant departAt) {}
+    public record PlanTrip(
+        String externalTripId,
+        String vehiclePlate,
+        String driverName,
+        String routeLabel,
+        Instant departAt,
+        /** Mã lộ trình — để gán lượt chạy theo bảng tài vào từng VP. */
+        String itineraryCode
+    ) {
+        public PlanTrip(String externalTripId, String vehiclePlate, String driverName, String routeLabel, Instant departAt) {
+            this(externalTripId, vehiclePlate, driverName, routeLabel, departAt, null);
+        }
+    }
 
     /** {@code warning} khác null khi không lấy đủ bảng tài từ CRM. */
     public record Plan(List<PlanTrip> trips, String warning) {}

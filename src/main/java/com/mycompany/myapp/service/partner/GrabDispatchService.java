@@ -55,6 +55,7 @@ public class GrabDispatchService {
     private final PartnerFeeExpenseRepository partnerFeeExpenseRepository;
     private final GrabExpressClient grab;
     private final OsmNominatimService osmNominatimService;
+    private final GoongPlacesService goongPlacesService;
     private final DeliveryFacadeService deliveryFacadeService;
     private final OrderFacadeService orderFacadeService;
     private final DayClosureGuard dayClosureGuard;
@@ -67,6 +68,7 @@ public class GrabDispatchService {
         PartnerFeeExpenseRepository partnerFeeExpenseRepository,
         GrabExpressClient grab,
         OsmNominatimService osmNominatimService,
+        GoongPlacesService goongPlacesService,
         DeliveryFacadeService deliveryFacadeService,
         OrderFacadeService orderFacadeService,
         DayClosureGuard dayClosureGuard,
@@ -78,6 +80,7 @@ public class GrabDispatchService {
         this.partnerFeeExpenseRepository = partnerFeeExpenseRepository;
         this.grab = grab;
         this.osmNominatimService = osmNominatimService;
+        this.goongPlacesService = goongPlacesService;
         this.deliveryFacadeService = deliveryFacadeService;
         this.orderFacadeService = orderFacadeService;
         this.dayClosureGuard = dayClosureGuard;
@@ -765,11 +768,36 @@ public class GrabDispatchService {
         if (addr.length() < 8) {
             throw new BadRequestAlertException("Nhập địa chỉ hoặc ghim GPS để Grab báo giá", ENTITY, "grabPin");
         }
+        double[] goong = goongPoint(addr);
+        if (goong != null) {
+            return goong;
+        }
         double[] found = osmNominatimService.locate(addr);
         if (found != null) {
             return found;
         }
-        throw new BadRequestAlertException("Không định vị được địa chỉ để Grab báo giá", ENTITY, "grabGeocode");
+        throw new BadRequestAlertException(
+            "Không định vị được địa chỉ để Grab báo giá. Ghim bản đồ hoặc dán link Google Maps.",
+            ENTITY,
+            "grabGeocode"
+        );
+    }
+
+    private double[] goongPoint(String address) {
+        if (!goongPlacesService.hasApiKey()) {
+            return null;
+        }
+        try {
+            java.util.Map<String, Object> hit = goongPlacesService.geocode(address);
+            Object lat = hit.get("lat");
+            Object lng = hit.get("lng");
+            if (lat instanceof BigDecimal la && lng instanceof BigDecimal ln) {
+                return new double[] { la.doubleValue(), ln.doubleValue() };
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("Goong không định vị được cho Grab: {}", e.getMessage());
+        }
+        return null;
     }
 
     private static boolean blank(String s) {

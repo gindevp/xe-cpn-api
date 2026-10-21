@@ -30,7 +30,7 @@ public class OsmNominatimService {
 
     private static final Logger LOG = LoggerFactory.getLogger(OsmNominatimService.class);
     private static final String ENTITY = "geo";
-    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(25);
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(8);
     private static final Duration MIN_INTERVAL = Duration.ofMillis(400);
 
     private final ObjectMapper objectMapper;

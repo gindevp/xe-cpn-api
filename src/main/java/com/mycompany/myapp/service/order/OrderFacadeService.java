@@ -663,10 +663,13 @@ public class OrderFacadeService {
 
         // App/web đã gửi đủ cước theo kiện. Bỏ ước lượng BE (đọc cả bảng giá) để tạo đơn không chờ thêm.
         boolean clientFare = req.getFareAmount() != null && req.getPickupFeeAmount() != null && req.getDeliveryFeeAmount() != null;
+        ShipmentOrder guestDoorProbe = new ShipmentOrder();
+        guestDoorProbe.setWeightKg(req.getEstimatedWeightKg());
+        guestDoorProbe.setNote(req.getNote());
         SimpleFareCalculator.FareBreakdown fare = clientFare
             ? null
             : fareCalculator.estimate(
-                req.getEstimatedWeightKg(),
+                OrderPackageChargeWeight.doorChargeKg(guestDoorProbe),
                 homePickup,
                 homeDelivery,
                 from,
@@ -1022,8 +1025,12 @@ public class OrderFacadeService {
         Office from = requireOffice(req.getFromOfficeCode());
         Office to = requireOffice(req.getToOfficeCode());
 
+        // Phí tận nơi theo tổng cân tính từng kiện (max thật / DxRxC/5000); cước hàng vẫn ưu tiên fareAmount client.
+        ShipmentOrder doorProbe = new ShipmentOrder();
+        doorProbe.setWeightKg(req.getWeightKg());
+        doorProbe.setNote(req.getNote());
         SimpleFareCalculator.FareBreakdown fare = fareCalculator.estimate(
-            req.getWeightKg(),
+            OrderPackageChargeWeight.doorChargeKg(doorProbe),
             homePickup,
             homeDelivery,
             from,
@@ -1153,9 +1160,10 @@ public class OrderFacadeService {
                 Office dest = order.getFinalToOffice() != null ? order.getFinalToOffice() : order.getToOffice();
                 estimatedDeliveryKm = requireDoorKm(dest, order.getDeliveryAddress(), "giao");
             }
+            BigDecimal doorKg = OrderPackageChargeWeight.doorChargeKg(order);
             doorFees = estimatedPickupKm != null || estimatedDeliveryKm != null
                 ? fareCalculator.estimate(
-                    order.getWeightKg(),
+                    doorKg,
                     hp,
                     hd,
                     order.getFromOffice(),
@@ -1163,7 +1171,7 @@ public class OrderFacadeService {
                     estimatedPickupKm,
                     estimatedDeliveryKm
                 )
-                : fareCalculator.estimate(order.getWeightKg(), hp, hd, order.getFromOffice(), order.getToOffice());
+                : fareCalculator.estimate(doorKg, hp, hd, order.getFromOffice(), order.getToOffice());
             // Phía không đổi km thì giữ phí cũ — null km sẽ bị tính nhầm mức 0–4 km.
             order.setPickupFeeAmount(hp ? (estimatedPickupKm != null ? doorFees.pickupFee() : prevPickupFee) : BigDecimal.ZERO);
             order.setDeliveryFeeAmount(hd ? (estimatedDeliveryKm != null ? doorFees.deliveryFee() : prevDeliveryFee) : BigDecimal.ZERO);

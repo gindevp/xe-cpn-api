@@ -737,7 +737,8 @@ public class VehicleBoardService {
                         row.getVehiclePlate(),
                         row.getDriverName(),
                         row.getRouteLabel(),
-                        row.getDepartAt()
+                        row.getDepartAt(),
+                        row.getItineraryCode()
                     )
                 );
             }
@@ -842,7 +843,8 @@ public class VehicleBoardService {
                         firstNonBlank(t.getVehiclePlate(), t.getAssignVehiclePlate()),
                         firstNonBlank(t.getDriverName(), t.getAssignDriverName()),
                         firstNonBlank(it.getName(), t.getRouteLabel()),
-                        t.getDepartAt()
+                        t.getDepartAt(),
+                        it.getCode()
                     )
                 );
             }
