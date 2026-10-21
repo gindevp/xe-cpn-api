@@ -82,7 +82,6 @@ public class OnePayAdminService {
         String baseUrl,
         String partnerId,
         boolean partnerKeyConfigured,
-        String bankSwift,
         String ipnUrl,
         int invoiceTtlHours,
         boolean signatureRequired,
@@ -90,13 +89,12 @@ public class OnePayAdminService {
         Instant updatedAt
     ) {}
 
-    /** null = giữ nguyên. partnerKey trống = giữ key cũ. */
+    /** null = giữ nguyên. partnerKey trống = giữ key cũ. Ngân hàng VA do OnePay quyết định — không gửi bank_id. */
     public record ConfigUpdate(
         Boolean enabled,
         String environment,
         String partnerId,
         String partnerKey,
-        String bankSwift,
         String ipnUrl,
         Integer invoiceTtlHours,
         Boolean signatureRequired,
@@ -133,13 +131,8 @@ public class OnePayAdminService {
             }
             c.setPartnerKey(in.partnerKey().trim());
         }
-        if (in.bankSwift() != null) {
-            String v = trimToNull(in.bankSwift());
-            if (v != null && !v.matches("[A-Za-z0-9]{4,20}")) {
-                throw bad("Mã SWIFT ngân hàng chỉ gồm chữ và số");
-            }
-            c.setBankSwift(v == null ? null : v.toUpperCase(Locale.ROOT));
-        }
+        // OnePay chọn ngân hàng VA — không còn cấu hình / gửi bank_id.
+        c.setBankSwift(null);
         if (in.ipnUrl() != null) {
             String v = trimToNull(in.ipnUrl());
             if (v != null && (v.length() > 255 || !v.matches("https?://\\S+"))) {
@@ -226,7 +219,6 @@ public class OnePayAdminService {
             OnePayClient.baseUrl(c),
             c.getPartnerId(),
             notBlank(c.getPartnerKey()),
-            c.getBankSwift(),
             c.getIpnUrl(),
             c.getInvoiceTtlHours() == null ? 24 : c.getInvoiceTtlHours(),
             !Boolean.FALSE.equals(c.getSignatureRequired()),
@@ -294,9 +286,6 @@ public class OnePayAdminService {
 
         ObjectNode user = objectMapper.createObjectNode();
         user.put("name", name);
-        if (notBlank(c.getBankSwift())) {
-            user.put("bank_id", c.getBankSwift());
-        }
         user.put("description", desc);
         user.put("expired_time", EXPIRED_TIME.format(expiresAt));
         ObjectNode invoice = objectMapper.createObjectNode();
@@ -371,9 +360,6 @@ public class OnePayAdminService {
 
         ObjectNode user = objectMapper.createObjectNode();
         user.put("name", holder);
-        if (notBlank(c.getBankSwift())) {
-            user.put("bank_id", c.getBankSwift());
-        }
         user.put("description", desc);
         user.put("expired_time", EXPIRED_TIME.format(expiresAt));
         ObjectNode invoice = objectMapper.createObjectNode();
@@ -597,16 +583,7 @@ public class OnePayAdminService {
         body.put("user", Map.of("id", nz(inv.getOnepayUserId()), "reference", inv.getUserReference(), "name", inv.getPayerName()));
         body.put(
             "account",
-            Map.of(
-                "id",
-                "",
-                "account_number",
-                nz(inv.getAccountNumber()),
-                "bank_name",
-                nz(inv.getBankName()),
-                "swift_code",
-                nz(c.getBankSwift())
-            )
+            Map.of("id", "", "account_number", nz(inv.getAccountNumber()), "bank_name", nz(inv.getBankName()), "swift_code", "")
         );
         body.put("merchant_id", c.getPartnerId().trim());
         String raw;

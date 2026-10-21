@@ -39,7 +39,10 @@ public class OnePayConfig implements Serializable {
     @Column(name = "partner_key", length = 255)
     private String partnerKey;
 
-    /** Mã SWIFT ngân hàng mở tài khoản ảo (bank_id), VD BIDVVNVX. */
+    /**
+     * Cột cũ — không còn dùng. OnePay quyết định ngân hàng VA; CPN không gửi {@code bank_id}.
+     * Giữ cột để tránh migration destructive trên demo/PROD.
+     */
     @Size(max = 20)
     @Column(name = "bank_swift", length = 20)
     private String bankSwift;
