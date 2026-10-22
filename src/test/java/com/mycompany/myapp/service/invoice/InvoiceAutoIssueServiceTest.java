@@ -118,6 +118,30 @@ class InvoiceAutoIssueServiceTest {
         assertThat(row.late()).isTrue();
         assertThat(row.invoiceType()).isEqualTo(InvoicePolicy.TYPE_PERSONAL);
         assertThat(row.invoiceAmount()).isEqualByComparingTo("110000");
+        assertThat(row.pendingReason()).isNull();
+    }
+
+    @Test
+    void row_pendingReason_waitingWindow_onCredit_pastDeadline() {
+        ShipmentOrder o = new ShipmentOrder();
+        o.setOrderCode("P1");
+        o.setStatus(OrderStatus.DELIVERED);
+        o.setPaymentTerm(PaymentTerm.NHAN_TRA);
+        o.setFareAmount(new BigDecimal("100000"));
+        o.setPaidAmount(new BigDecimal("100000"));
+        Instant paid = Instant.parse("2026-10-02T01:00:00Z");
+        Instant deadline = paid.plus(Duration.ofHours(3));
+
+        assertThat(InvoiceAutoIssueService.toRow(o, paid, paid, paid.plus(Duration.ofHours(1))).pendingReason()).contains(
+            "Chờ hết 3 tiếng"
+        );
+
+        assertThat(InvoiceAutoIssueService.toRow(o, paid, paid, deadline.plus(Duration.ofMinutes(1))).pendingReason()).isEqualTo(
+            "Đã quá hạn tự xuất — dùng Xuất bù HĐ"
+        );
+
+        o.setOnCredit(true);
+        assertThat(InvoiceAutoIssueService.toRow(o, paid, paid, deadline.plusSeconds(1)).pendingReason()).contains("Công nợ");
     }
 
     @Test

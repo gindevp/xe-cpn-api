@@ -55,6 +55,14 @@ class RevenueLedgerTest {
         assertThat(RevenueLedger.netFare(BigDecimal.valueOf(100_000), null, null, BigDecimal.valueOf(20_000))).isEqualByComparingTo(
             "100000"
         );
+        assertThat(RevenueLedger.ahamoveCost("EXTERNAL", "ASSIGNED", BigDecimal.valueOf(15_000))).isEqualByComparingTo("15000");
+        assertThat(
+            RevenueLedger.netFare(BigDecimal.valueOf(55_000), "EXTERNAL", "ASSIGNED", BigDecimal.valueOf(40_000))
+        ).isEqualByComparingTo("15000");
+        assertThat(RevenueLedger.ahamoveCost("INTERNAL", "ASSIGNED", BigDecimal.valueOf(38_500))).isEqualByComparingTo("38500");
+        assertThat(
+            RevenueLedger.netFare(BigDecimal.valueOf(55_000), "INTERNAL", "ASSIGNED", BigDecimal.valueOf(38_500))
+        ).isEqualByComparingTo("16500");
     }
 
     @Test

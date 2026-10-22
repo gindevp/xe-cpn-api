@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 
 public class AssignShipperRequest {
 
-    /** INTERNAL (staff take-job) or partner enum name. */
+    /** INTERNAL | EXTERNAL (thuê ship ngoài) | PARTNER (Ahamove/Grab…). */
     private String mode = "INTERNAL";
 
     private DeliveryPartner partner;

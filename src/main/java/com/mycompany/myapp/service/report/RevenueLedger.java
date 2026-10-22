@@ -190,13 +190,21 @@ public class RevenueLedger {
         return out;
     }
 
-    /** Phí Ahamove còn phải trừ. Đơn không book Ahamove, hoặc đã hủy, thì bằng 0. */
+    /**
+     * Chi phí đối tác/ship ngoài còn phải trừ doanh thu.
+     * Ahamove/Grab đã hủy, hoặc không phải đối tác chi phí → 0.
+     */
     static BigDecimal ahamoveCost(String partnerCode, String partnerStatus, BigDecimal partnerFee) {
         if (partnerCode == null) {
             return BigDecimal.ZERO;
         }
         String code = partnerCode.trim();
-        if (!"AHAMOVE".equalsIgnoreCase(code) && !"GRAB".equalsIgnoreCase(code)) {
+        if (
+            !"AHAMOVE".equalsIgnoreCase(code) &&
+            !"GRAB".equalsIgnoreCase(code) &&
+            !"EXTERNAL".equalsIgnoreCase(code) &&
+            !"INTERNAL".equalsIgnoreCase(code)
+        ) {
             return BigDecimal.ZERO;
         }
         if (partnerStatus != null && "CANCELLED".equalsIgnoreCase(partnerStatus.trim())) {
@@ -205,7 +213,7 @@ public class RevenueLedger {
         return OrderMoney.nz(partnerFee);
     }
 
-    /** Cước tính doanh thu: cước khách trả trừ phí Ahamove còn hiệu lực, không âm. */
+    /** Cước tính doanh thu: cước khách trả trừ phí đối tác / ship ngoài còn hiệu lực, không âm. */
     static BigDecimal netFare(BigDecimal fare, String partnerCode, String partnerStatus, BigDecimal partnerFee) {
         return OrderMoney.nz(fare).subtract(ahamoveCost(partnerCode, partnerStatus, partnerFee)).max(BigDecimal.ZERO);
     }

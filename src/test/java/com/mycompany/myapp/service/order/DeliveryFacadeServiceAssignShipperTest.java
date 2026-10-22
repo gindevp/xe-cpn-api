@@ -106,6 +106,22 @@ class DeliveryFacadeServiceAssignShipperTest {
     }
 
     @Test
+    void internalHomeDeliveryKeepsSeventyPercentAsShipCost() {
+        order.setHomeDelivery(true);
+        order.setDeliveryFeeAmount(new java.math.BigDecimal("55000"));
+        when(shipperRepo.findById(5L)).thenReturn(Optional.of(shipper(5, 2, true)));
+
+        service.assignShipper("GP0001", internal(5L));
+
+        assertThat(order.getPartnerCode()).isEqualTo("INTERNAL");
+        assertThat(order.getPartnerStatus()).isEqualTo("ASSIGNED");
+        assertThat(order.getPartnerFeeAmount()).isEqualByComparingTo("38500");
+        ArgumentCaptor<OrderTransitionRequest> tr = ArgumentCaptor.forClass(OrderTransitionRequest.class);
+        verify(orderFacade).transition(eq("GP0001"), tr.capture());
+        assertThat(tr.getValue().getDetail()).contains("38500").contains("70%");
+    }
+
+    @Test
     void finalToOfficeIsTheReceivingOffice() {
         order.setFinalToOffice(office(3));
         when(shipperRepo.findById(5L)).thenReturn(Optional.of(shipper(5, 2, true)));
@@ -210,5 +226,36 @@ class DeliveryFacadeServiceAssignShipperTest {
         service.assignShipper("GP0001", r);
 
         assertThat(order.getShipper()).isNull();
+    }
+
+    @Test
+    void externalShipperRecordsFeeAndTakeJob() {
+        AssignShipperRequest r = new AssignShipperRequest();
+        r.setMode("EXTERNAL");
+        r.setPartnerFeeAmount(new java.math.BigDecimal("40000"));
+        r.setNote("Anh Tuấn 0909");
+
+        service.assignShipper("GP0001", r);
+
+        assertThat(order.getShipper()).isNull();
+        assertThat(order.getPartnerCode()).isEqualTo("EXTERNAL");
+        assertThat(order.getPartnerStatus()).isEqualTo("ASSIGNED");
+        assertThat(order.getPartnerFeeAmount()).isEqualByComparingTo("40000");
+        ArgumentCaptor<OrderTransitionRequest> tr = ArgumentCaptor.forClass(OrderTransitionRequest.class);
+        verify(orderFacade).transition(eq("GP0001"), tr.capture());
+        assertThat(tr.getValue().getAction()).isEqualTo("TAKE_JOB");
+        assertThat(tr.getValue().getToStatus()).isEqualTo(OrderStatus.OUT_FOR_DELIVERY);
+        assertThat(tr.getValue().getDetail()).contains("Shipper ngoài").contains("40000").contains("Anh Tuấn");
+    }
+
+    @Test
+    void externalWithoutFeeIsRejected() {
+        AssignShipperRequest r = new AssignShipperRequest();
+        r.setMode("EXTERNAL");
+
+        assertThatThrownBy(() -> service.assignShipper("GP0001", r))
+            .extracting(ex -> ((BadRequestAlertException) ex).getErrorKey())
+            .isEqualTo("externalShipFeeRequired");
+        verify(orderFacade, never()).transition(any(), any());
     }
 }

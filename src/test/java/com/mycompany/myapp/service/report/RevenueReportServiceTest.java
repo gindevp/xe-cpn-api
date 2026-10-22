@@ -67,19 +67,24 @@ class RevenueReportServiceTest {
     }
 
     @Test
-    void ahamoveOrderShowsPartnerFeeNotInternalDelivery() {
-        ShipmentOrder o = order();
-        o.setPartnerCode("AHAMOVE");
-        o.setPartnerFeeAmount(d(35_000));
-        assertThat(RevenueReportService.ahamoveFee(o)).isEqualByComparingTo("35000");
-        assertThat(RevenueReportService.internalDeliveryFee(o)).isEqualByComparingTo("0");
-    }
+    void shippingFee_oneOfPartnerExternalOrInternal() {
+        ShipmentOrder aha = order();
+        aha.setPartnerCode("AHAMOVE");
+        aha.setPartnerFeeAmount(d(35_000));
+        assertThat(RevenueReportService.shippingFee(aha)).isEqualByComparingTo("35000");
 
-    @Test
-    void internalDeliveryShowsDoorFeeWhenNotAhamove() {
-        ShipmentOrder o = order();
-        assertThat(RevenueReportService.ahamoveFee(o)).isEqualByComparingTo("0");
-        assertThat(RevenueReportService.internalDeliveryFee(o)).isEqualByComparingTo("20000");
+        ShipmentOrder external = order();
+        external.setPartnerCode("EXTERNAL");
+        external.setPartnerFeeAmount(d(15_000));
+        assertThat(RevenueReportService.shippingFee(external)).isEqualByComparingTo("15000");
+
+        ShipmentOrder internal = order();
+        internal.setPartnerCode("INTERNAL");
+        internal.setPartnerFeeAmount(d(14_000));
+        assertThat(RevenueReportService.shippingFee(internal)).isEqualByComparingTo("14000");
+
+        ShipmentOrder none = order();
+        assertThat(RevenueReportService.shippingFee(none)).isEqualByComparingTo("0");
     }
 
     @Test

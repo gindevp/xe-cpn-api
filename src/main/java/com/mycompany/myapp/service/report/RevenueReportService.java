@@ -26,8 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Báo cáo doanh thu theo đơn — cùng logic và tổng với Báo cáo kinh doanh ({@link RevenueLedger#createdOrders}):
  * <ul>
  *   <li>Mỗi dòng một đơn tạo trong khoảng (theo ngày tạo), trừ nháp và đơn huỷ, tính cho VP gửi.</li>
- *   <li>Doanh thu = cước khách trả − phí Ahamove. Các khoản phí của dòng = khoản phí của đơn × (doanh thu / tổng các khoản),
- *       làm tròn đồng; chênh làm tròn dồn vào cước hàng.</li>
+ *   <li>Doanh thu = cước khách trả − phí giao (Ahamove/Grab / giao ngoài / ship nội bộ). Các khoản phí của dòng =
+ *       khoản phí của đơn × (doanh thu / tổng các khoản), làm tròn đồng; chênh làm tròn dồn vào cước hàng.</li>
  *   <li>Lọc: RECEIPT = đã thu đủ, BACKLOG = còn phải thu.</li>
  * </ul>
  */
@@ -64,10 +64,11 @@ public class RevenueReportService {
         BigDecimal returnFee,
         BigDecimal discount,
         BigDecimal total,
-        /** Phí trả Ahamove (lấy hoặc giao). Đã trừ khỏi tổng doanh thu. */
-        BigDecimal ahamoveFee,
-        /** Phí giao tận nơi khi giao nội bộ. 0 nếu đơn book Ahamove. Đã nằm trong tổng doanh thu, chỉ để xem. */
-        BigDecimal internalDeliveryFee
+        /**
+         * Phí giao (một trong ba): phí đối tác Ahamove/Grab, phí giao ngoài (EXTERNAL), hoặc phí ship nội bộ
+         * (INTERNAL, 70% cước giao). Đã trừ khỏi tổng doanh thu. 0 nếu không có.
+         */
+        BigDecimal shippingFee
     ) {}
 
     public record Totals(
@@ -178,30 +179,20 @@ public class RevenueReportService {
                 s.returnFee(),
                 s.discount(),
                 s.total(),
-                ahamoveFee(o),
-                internalDeliveryFee(o)
+                shippingFee(o)
             )
         );
     }
 
-    /** Chi phí Ahamove đã lưu trên đơn. Không chia theo phiếu thu; tổng doanh thu đã trừ khoản này một lần. */
-    static BigDecimal ahamoveFee(ShipmentOrder o) {
+    /**
+     * Phí giao đã trừ khỏi doanh thu: Ahamove/Grab, thuê ship ngoài (EXTERNAL), hoặc ship nội bộ (INTERNAL).
+     * Không chia theo phiếu thu — trừ một lần theo đơn.
+     */
+    static BigDecimal shippingFee(ShipmentOrder o) {
         if (o == null) {
             return BigDecimal.ZERO;
         }
         return RevenueLedger.ahamoveCost(o.getPartnerCode(), o.getPartnerStatus(), o.getPartnerFeeAmount());
-    }
-
-    /** Phí giao tận nơi của đơn giao nội bộ. Đơn Ahamove để 0, phí đối tác nằm ở {@link #ahamoveFee}. */
-    static BigDecimal internalDeliveryFee(ShipmentOrder o) {
-        if (o == null || o.getPartnerCode() == null) {
-            return o == null ? BigDecimal.ZERO : OrderMoney.nz(o.getDeliveryFeeAmount());
-        }
-        String partner = o.getPartnerCode().trim();
-        if ("AHAMOVE".equalsIgnoreCase(partner) || "GRAB".equalsIgnoreCase(partner)) {
-            return BigDecimal.ZERO;
-        }
-        return OrderMoney.nz(o.getDeliveryFeeAmount());
     }
 
     static Fees feesOf(ShipmentOrder o) {

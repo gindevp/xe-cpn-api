@@ -332,7 +332,31 @@ public class DeliveryFacadeService {
         String mode = req.getMode() == null ? "INTERNAL" : req.getMode().trim().toUpperCase();
         String action;
         String detail;
-        if ("PARTNER".equals(mode) || req.getPartner() != null) {
+        if ("EXTERNAL".equals(mode)) {
+            // Thuê shipper ngoài: cùng bước OUT_FOR_DELIVERY như nội bộ; ghi phí trả ship (partnerFee) để trừ doanh thu.
+            if (req.getPartnerFeeAmount() == null || req.getPartnerFeeAmount().signum() < 0) {
+                throw new BadRequestAlertException("Nhập cước ship thực tế (số tiền trả shipper ngoài)", ENTITY, "externalShipFeeRequired");
+            }
+            order.setShipper(null);
+            order.setPartnerCode("EXTERNAL");
+            order.setPartnerStatus("ASSIGNED");
+            order.setPartnerFeeAmount(req.getPartnerFeeAmount());
+            shipmentOrderRepository.save(order);
+            action = "TAKE_JOB";
+            detail = "Shipper ngoài · trả " + req.getPartnerFeeAmount().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + "đ";
+            if (req.getNote() != null && !req.getNote().isBlank()) {
+                detail = detail + " — " + req.getNote().trim();
+            }
+            OrderDeliveryAttempt attempt = new OrderDeliveryAttempt();
+            attempt.setAttemptNo((int) deliveryAttemptRepository.countByOrder_Id(order.getId()) + 1);
+            attempt.setAttemptAt(Instant.now());
+            attempt.setResult(DeliveryAttemptResult.SUCCESS);
+            attempt.setHandledByUsername(currentActor());
+            String reason = "TAKE_JOB · EXTERNAL · " + req.getPartnerFeeAmount().toPlainString();
+            attempt.setReason(reason.length() > 255 ? reason.substring(0, 255) : reason);
+            attempt.setOrder(order);
+            deliveryAttemptRepository.save(attempt);
+        } else if ("PARTNER".equals(mode) || req.getPartner() != null) {
             if (req.getPartner() != null) {
                 // store partner code on order
             }
@@ -367,11 +391,20 @@ public class DeliveryFacadeService {
             if (req.getShipperId() != null) {
                 Shipper shipper = requireAssignableShipper(order, req.getShipperId());
                 order.setShipper(shipper);
-                shipmentOrderRepository.save(order);
                 String who = shipper.getFullName() + (shipper.getPhone() != null ? " · " + shipper.getPhone() : "");
                 detail = "Shipper nội bộ: " + who;
                 reason = "TAKE_JOB · " + who;
             }
+            // Giao tận nơi nội bộ: chi phí ship = 70% cước giao (doanh thu còn 30%).
+            applyInternalHomeDeliveryShipCost(order);
+            if (Boolean.TRUE.equals(order.getHomeDelivery()) && order.getPartnerFeeAmount() != null) {
+                detail =
+                    detail +
+                    " · phí ship " +
+                    order.getPartnerFeeAmount().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() +
+                    "đ (70%)";
+            }
+            shipmentOrderRepository.save(order);
             if (req.getNote() != null && !req.getNote().isBlank()) {
                 detail = detail + " — " + req.getNote().trim();
             }
@@ -605,6 +638,28 @@ public class DeliveryFacadeService {
             );
         }
         return shipper;
+    }
+
+    /**
+     * Giao tận nơi bằng ship nội bộ: ghi chi phí ship = 70% cước giao (doanh thu còn 30%).
+     * Không GTN / không có cước giao → xóa đánh dấu INTERNAL cũ (không đụng AHAMOVE/GRAB/EXTERNAL).
+     */
+    static void applyInternalHomeDeliveryShipCost(ShipmentOrder order) {
+        if (Boolean.TRUE.equals(order.getHomeDelivery())) {
+            BigDecimal listed = OrderMoney.nz(order.getDeliveryFeeAmount());
+            if (listed.signum() > 0) {
+                BigDecimal cost = listed.multiply(new BigDecimal("70")).divide(new BigDecimal("100"), 0, java.math.RoundingMode.HALF_UP);
+                order.setPartnerCode("INTERNAL");
+                order.setPartnerStatus("ASSIGNED");
+                order.setPartnerFeeAmount(cost);
+                return;
+            }
+        }
+        if (order.getPartnerCode() != null && "INTERNAL".equalsIgnoreCase(order.getPartnerCode().trim())) {
+            order.setPartnerCode(null);
+            order.setPartnerStatus(null);
+            order.setPartnerFeeAmount(null);
+        }
     }
 
     private ShipmentOrder requireOrder(String code) {

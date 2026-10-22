@@ -6,6 +6,7 @@ import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
+import com.mycompany.myapp.service.order.OrderMoney;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
@@ -232,6 +233,10 @@ public class InvoiceAutoIssueService {
     }
 
     static InvoiceRow toRow(ShipmentOrder o, Instant paidAt, Instant doneAt) {
+        return toRow(o, paidAt, doneAt, Instant.now());
+    }
+
+    static InvoiceRow toRow(ShipmentOrder o, Instant paidAt, Instant doneAt, Instant now) {
         Office to = o.getFinalToOffice() != null ? o.getFinalToOffice() : o.getToOffice();
         Instant deadline = InvoicePolicy.deadline(o, doneAt);
         String st = o.getInvoiceStatus();
@@ -266,8 +271,60 @@ public class InvoiceAutoIssueService {
             o.getInvoiceIssuedAt(),
             o.getInvoiceError(),
             late,
-            MeInvoiceIssueService.openIssueType(o)
+            MeInvoiceIssueService.openIssueType(o),
+            pendingIssueReason(o, paidAt, deadline, now)
         );
+    }
+
+    /**
+     * Lý do chưa xuất / cần xuất bù (tiếng Việt, hiện trên màn kế toán). Null khi đã xuất hoặc đã tích bỏ xuất tự động.
+     */
+    static String pendingIssueReason(ShipmentOrder o, Instant paidAt, Instant deadline, Instant now) {
+        String st = o.getInvoiceStatus();
+        if (MeInvoiceIssueService.isIssued(o) || MeInvoiceIssueService.STATUS_MANUAL.equals(st)) {
+            return null;
+        }
+        if (MeInvoiceIssueService.STATUS_PENDING.equals(st)) {
+            return "Đang gửi MISA — chờ kết quả";
+        }
+        if (MeInvoiceIssueService.STATUS_FAILED.equals(st)) {
+            String err = o.getInvoiceError();
+            if (err != null && !err.isBlank()) {
+                return "Xuất MISA lỗi: " + err.trim();
+            }
+            return "Xuất MISA lỗi — cần xuất bù hoặc xử lý tay";
+        }
+        String blocked = MeInvoiceIssueService.autoBlockReason(o);
+        if ("CANCELLED".equals(blocked)) {
+            return "Đơn huỷ — không xuất hoá đơn";
+        }
+        if ("EXCEPTION".equals(blocked)) {
+            return "Đơn đang ngoại lệ — không xuất hoá đơn";
+        }
+        if (o.getStatus() == OrderStatus.RETURNING) {
+            return "Đơn đang hoàn — chờ hoàn xong mới xuất";
+        }
+        if (!InvoicePolicy.isDone(o)) {
+            return "Chưa hoàn tất (chưa giao thành công / chưa hoàn xong)";
+        }
+        if (Boolean.TRUE.equals(o.getOnCredit())) {
+            return "Công nợ — hệ thống không tự xuất; chọn đơn rồi Xuất bù HĐ";
+        }
+        if (OrderMoney.hasUnpaidResidue(o)) {
+            return "Còn nợ cước — thu đủ rồi mới xuất";
+        }
+        if (paidAt == null) {
+            return InvoicePolicy.paidAtWarehouseIn(o)
+                ? "Chưa nhập kho gửi — chưa tới mốc thanh toán"
+                : "Chưa tới mốc thanh toán (chưa giao thành công)";
+        }
+        if (deadline == null) {
+            return "Chưa đủ điều kiện tự xuất";
+        }
+        if (now.isBefore(deadline)) {
+            return "Chờ hết 3 tiếng sau mốc thanh toán — hệ thống sẽ tự xuất";
+        }
+        return "Đã quá hạn tự xuất — dùng Xuất bù HĐ";
     }
 
     /** Một dòng màn Quản lý hoá đơn / file Excel. */
@@ -300,7 +357,8 @@ public class InvoiceAutoIssueService {
         Instant invoiceIssuedAt,
         String invoiceError,
         boolean late,
-        String openIssueType
+        String openIssueType,
+        String pendingReason
     ) {}
 
     // ---------------------------------------------------------------- trạng thái xuất bù
