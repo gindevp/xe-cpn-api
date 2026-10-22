@@ -27,14 +27,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Kiểm soát đăng nhập: web DH/KT phải dùng IP đã duyệt, app (mọi tài khoản trừ admin) phải dùng thiết bị đã duyệt.
+ * Kiểm soát đăng nhập theo thiết bị (deviceId): web DH/KT và app (mọi tài khoản trừ admin) phải dùng máy đã duyệt.
+ * Không khóa theo IP — IP WAN VP thường động; IP chỉ ghi nhận trên phiên / trust để admin xem.
  * Mỗi tài khoản giữ tối đa 1 phiên web + 1 phiên app — đăng nhập nơi mới thì phiên cũ bị thu hồi.
  * Riêng Admin / Điều phối được mở nhiều phiên web cùng lúc (app vẫn 1 phiên).
  */
 @Service
 public class LoginControlService {
 
-    private static final Set<RoleCode> IP_CONTROLLED_ROLES = Set.of(RoleCode.DH, RoleCode.KT);
+    /** Web: chỉ DH/KT bắt duyệt trình duyệt (deviceId). App: mọi role trừ admin. */
+    private static final Set<RoleCode> WEB_DEVICE_ROLES = Set.of(RoleCode.DH, RoleCode.KT);
     private static final Set<RoleCode> MULTI_WEB_ROLES = Set.of(RoleCode.AD, RoleCode.DH);
     private static final long CACHE_MS = 10_000;
     private static final Duration TOUCH_EVERY = Duration.ofSeconds(60);
@@ -95,27 +97,19 @@ public class LoginControlService {
         String channel = legacyApp || UserSession.APP.equals(info.channel()) ? UserSession.APP : UserSession.WEB;
         Instant now = Instant.now();
 
-        if (!admin) {
-            if (UserSession.APP.equals(channel) && !legacyApp) {
+        if (!admin && !legacyApp) {
+            boolean needDevice =
+                UserSession.APP.equals(channel) ||
+                (UserSession.WEB.equals(channel) && roleOf(login).map(WEB_DEVICE_ROLES::contains).orElse(false));
+            if (needDevice) {
                 String deviceId = trimTo(info.deviceId(), 100);
                 if (deviceId == null) {
-                    return LoginDecision.blocked(
-                        "error.deviceIdRequired",
-                        "Phiên bản app chưa hỗ trợ duyệt thiết bị — cập nhật app để đăng nhập",
-                        LoginTrust.KIND_DEVICE,
-                        null
-                    );
+                    String msg = UserSession.APP.equals(channel)
+                        ? "Phiên bản app chưa hỗ trợ duyệt thiết bị — cập nhật app để đăng nhập"
+                        : "Trình duyệt chưa gửi mã thiết bị — tải lại trang rồi đăng nhập";
+                    return LoginDecision.blocked("error.deviceIdRequired", msg, LoginTrust.KIND_DEVICE, null);
                 }
                 LoginDecision d = requireTrust(login, LoginTrust.KIND_DEVICE, deviceId, info.deviceName(), info.ip(), now);
-                if (d != null) {
-                    return d;
-                }
-            } else if (!legacyApp && roleOf(login).map(IP_CONTROLLED_ROLES::contains).orElse(false)) {
-                String ip = trimTo(info.ip(), 100);
-                if (ip == null) {
-                    return LoginDecision.blocked("error.loginIpUnknown", "Không xác định được IP máy đăng nhập", LoginTrust.KIND_IP, null);
-                }
-                LoginDecision d = requireTrust(login, LoginTrust.KIND_IP, ip, info.userAgent(), ip, now);
                 if (d != null) {
                     return d;
                 }
@@ -345,9 +339,13 @@ public class LoginControlService {
     private void revokeSessionsUsing(LoginTrust t, String reason) {
         Instant now = Instant.now();
         for (UserSession s : sessionRepository.findByUserLoginIgnoreCaseAndRevokedAtIsNull(t.getUserLogin())) {
-            boolean match = LoginTrust.KIND_IP.equals(t.getKind())
-                ? UserSession.WEB.equals(s.getChannel()) && t.getTrustValue().equals(s.getIp())
-                : t.getTrustValue().equals(s.getDeviceId());
+            boolean match;
+            if (LoginTrust.KIND_IP.equals(t.getKind())) {
+                // Trust IP cũ (trước khi chuyển sang deviceId) — vẫn thu hồi được phiên web cùng IP.
+                match = UserSession.WEB.equals(s.getChannel()) && t.getTrustValue().equals(s.getIp());
+            } else {
+                match = t.getTrustValue().equals(s.getDeviceId());
+            }
             if (match) {
                 revoke(s, actor(), reason, now);
             }

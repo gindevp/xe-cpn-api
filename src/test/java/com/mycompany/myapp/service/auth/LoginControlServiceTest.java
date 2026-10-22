@@ -69,35 +69,51 @@ class LoginControlServiceTest {
         lenient().when(staffProfileRepository.findOneByUserLoginIgnoreCase(login)).thenReturn(Optional.of(p));
     }
 
-    private static LoginRequestInfo web(String ip) {
-        return new LoginRequestInfo("WEB", ip, null, null, "Chrome");
+    private static LoginRequestInfo web(String ip, String deviceId) {
+        return new LoginRequestInfo("WEB", ip, deviceId, "Chrome · Windows", "Mozilla/5.0 Chrome");
     }
 
     @Test
-    void dispatcherFromNewIp_isBlockedAndPendingSaved() {
+    void dispatcherFromNewBrowser_isBlockedAndPendingSaved() {
         role("dh1", RoleCode.DH);
 
-        LoginDecision d = service.decide(user("dh1", "ROLE_USER"), web("1.2.3.4"), exp);
+        LoginDecision d = service.decide(user("dh1", "ROLE_USER"), web("1.2.3.4", "browser-1"), exp);
 
         assertThat(d.allowed()).isFalse();
         assertThat(d.code()).isEqualTo("error.loginPendingApproval");
+        assertThat(d.kind()).isEqualTo(LoginTrust.KIND_DEVICE);
         ArgumentCaptor<LoginTrust> cap = ArgumentCaptor.forClass(LoginTrust.class);
         verify(trustRepository).save(cap.capture());
         assertThat(cap.getValue().getStatus()).isEqualTo(LoginTrust.PENDING);
-        assertThat(cap.getValue().getTrustValue()).isEqualTo("1.2.3.4");
+        assertThat(cap.getValue().getTrustValue()).isEqualTo("browser-1");
         verify(sessionRepository, never()).save(any());
     }
 
     @Test
-    void dispatcherFromApprovedIp_opensSessionAndKeepsOtherWebSessions() {
+    void dispatcherIpChange_sameBrowser_stillAllowed() {
         role("dh1", RoleCode.DH);
         LoginTrust t = new LoginTrust();
         t.setStatus(LoginTrust.APPROVED);
-        when(trustRepository.findOneByUserLoginIgnoreCaseAndKindAndTrustValue("dh1", LoginTrust.KIND_IP, "1.2.3.4")).thenReturn(
+        when(trustRepository.findOneByUserLoginIgnoreCaseAndKindAndTrustValue("dh1", LoginTrust.KIND_DEVICE, "browser-1")).thenReturn(
             Optional.of(t)
         );
 
-        LoginDecision d = service.decide(user("dh1", "ROLE_USER"), web("1.2.3.4"), exp);
+        LoginDecision d = service.decide(user("dh1", "ROLE_USER"), web("9.9.9.9", "browser-1"), exp);
+
+        assertThat(d.allowed()).isTrue();
+        assertThat(d.sid()).isNotBlank();
+    }
+
+    @Test
+    void dispatcherFromApprovedBrowser_opensSessionAndKeepsOtherWebSessions() {
+        role("dh1", RoleCode.DH);
+        LoginTrust t = new LoginTrust();
+        t.setStatus(LoginTrust.APPROVED);
+        when(trustRepository.findOneByUserLoginIgnoreCaseAndKindAndTrustValue("dh1", LoginTrust.KIND_DEVICE, "browser-1")).thenReturn(
+            Optional.of(t)
+        );
+
+        LoginDecision d = service.decide(user("dh1", "ROLE_USER"), web("1.2.3.4", "browser-1"), exp);
 
         assertThat(d.allowed()).isTrue();
         assertThat(d.sid()).isNotBlank();
@@ -108,7 +124,7 @@ class LoginControlServiceTest {
     void adminRoleOnWeb_keepsOtherWebSessions() {
         role("dh", RoleCode.AD);
 
-        LoginDecision d = service.decide(user("dh", "ROLE_USER"), web("5.6.7.8"), exp);
+        LoginDecision d = service.decide(user("dh", "ROLE_USER"), web("5.6.7.8", "browser-ad"), exp);
 
         assertThat(d.allowed()).isTrue();
         verify(sessionRepository, never()).findByUserLoginIgnoreCaseAndChannelAndRevokedAtIsNull(any(), any());
@@ -132,14 +148,14 @@ class LoginControlServiceTest {
         role("kt1", RoleCode.KT);
         LoginTrust t = new LoginTrust();
         t.setStatus(LoginTrust.APPROVED);
-        when(trustRepository.findOneByUserLoginIgnoreCaseAndKindAndTrustValue("kt1", LoginTrust.KIND_IP, "1.2.3.4")).thenReturn(
+        when(trustRepository.findOneByUserLoginIgnoreCaseAndKindAndTrustValue("kt1", LoginTrust.KIND_DEVICE, "browser-kt")).thenReturn(
             Optional.of(t)
         );
         UserSession old = new UserSession();
         old.setSid("old");
         when(sessionRepository.findByUserLoginIgnoreCaseAndChannelAndRevokedAtIsNull("kt1", UserSession.WEB)).thenReturn(List.of(old));
 
-        LoginDecision d = service.decide(user("kt1", "ROLE_USER"), web("1.2.3.4"), exp);
+        LoginDecision d = service.decide(user("kt1", "ROLE_USER"), web("1.2.3.4", "browser-kt"), exp);
 
         assertThat(d.allowed()).isTrue();
         assertThat(old.getRevokedAt()).isNotNull();
@@ -147,28 +163,38 @@ class LoginControlServiceTest {
     }
 
     @Test
-    void rejectedIp_staysBlocked() {
+    void rejectedBrowser_staysBlocked() {
         role("kt1", RoleCode.KT);
         LoginTrust t = new LoginTrust();
         t.setStatus(LoginTrust.REJECTED);
-        when(trustRepository.findOneByUserLoginIgnoreCaseAndKindAndTrustValue("kt1", LoginTrust.KIND_IP, "5.5.5.5")).thenReturn(
+        when(trustRepository.findOneByUserLoginIgnoreCaseAndKindAndTrustValue("kt1", LoginTrust.KIND_DEVICE, "bad-browser")).thenReturn(
             Optional.of(t)
         );
 
-        LoginDecision d = service.decide(user("kt1", "ROLE_USER"), web("5.5.5.5"), exp);
+        LoginDecision d = service.decide(user("kt1", "ROLE_USER"), web("5.5.5.5", "bad-browser"), exp);
 
         assertThat(d.allowed()).isFalse();
         assertThat(d.code()).isEqualTo("error.loginRejected");
     }
 
     @Test
-    void counterStaffOnWeb_isNotIpControlled() {
+    void counterStaffOnWeb_isNotDeviceControlled() {
         role("q1", RoleCode.Q);
 
-        LoginDecision d = service.decide(user("q1", "ROLE_USER"), web("9.9.9.9"), exp);
+        LoginDecision d = service.decide(user("q1", "ROLE_USER"), web("9.9.9.9", null), exp);
 
         assertThat(d.allowed()).isTrue();
         verify(trustRepository, never()).save(any());
+    }
+
+    @Test
+    void webDispatcherWithoutDeviceId_isBlocked() {
+        role("dh1", RoleCode.DH);
+
+        LoginDecision d = service.decide(user("dh1", "ROLE_USER"), web("1.2.3.4", null), exp);
+
+        assertThat(d.allowed()).isFalse();
+        assertThat(d.code()).isEqualTo("error.deviceIdRequired");
     }
 
     @Test
@@ -233,7 +259,7 @@ class LoginControlServiceTest {
     }
 
     @Test
-    void legacyApp_dispatcherSkipsIpApproval() {
+    void legacyApp_dispatcherSkipsDeviceApproval() {
         role("dh1", RoleCode.DH);
 
         LoginDecision d = service.decide(
@@ -250,17 +276,17 @@ class LoginControlServiceTest {
     }
 
     @Test
-    void web_dispatcherStillNeedsApprovedIp() {
+    void web_dispatcherStillNeedsApprovedDevice() {
         role("dh1", RoleCode.DH);
 
         LoginDecision d = service.decide(
             user("dh1", "ROLE_USER"),
-            new LoginRequestInfo(UserSession.WEB, "1.2.3.4", null, null, "Mozilla/5.0"),
+            new LoginRequestInfo(UserSession.WEB, "1.2.3.4", "new-browser", "Chrome", "Mozilla/5.0"),
             exp
         );
 
         assertThat(d.allowed()).isFalse();
         assertThat(d.code()).isEqualTo("error.loginPendingApproval");
-        assertThat(d.kind()).isEqualTo(LoginTrust.KIND_IP);
+        assertThat(d.kind()).isEqualTo(LoginTrust.KIND_DEVICE);
     }
 }
