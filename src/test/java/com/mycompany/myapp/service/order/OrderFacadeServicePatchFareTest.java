@@ -593,6 +593,33 @@ class OrderFacadeServicePatchFareTest {
             .isEqualTo("extraFarePayer");
     }
 
+    @Test
+    void reduceCodFeeAfterPaid_keepsPaid_zerosCod_recordsRefund() {
+        stubLoadAndDetail();
+        order.setPaymentTerm(PaymentTerm.GUI_TRA);
+        order.setFareAmount(new BigDecimal("120000"));
+        order.setPaidAmount(new BigDecimal("120000"));
+        order.setCodAmount(new BigDecimal("500000"));
+        order.setCodFeeAmount(new BigDecimal("40000"));
+        order.setGoodsFareAmount(new BigDecimal("80000"));
+        PatchOrderRequest req = new PatchOrderRequest();
+        req.setFareAmount(new BigDecimal("80000"));
+        req.setCodFeeAmount(BigDecimal.ZERO);
+        req.setCodAmount(BigDecimal.ZERO);
+
+        service.patch("XE-H1-001", req);
+
+        assertThat(order.getFareAmount()).isEqualByComparingTo("80000");
+        assertThat(order.getPaidAmount()).isEqualByComparingTo("120000");
+        assertThat(order.getCodFeeAmount()).isEqualByComparingTo("0");
+        assertThat(order.getCodAmount()).isEqualByComparingTo("0");
+        assertThat(order.getCodFeeRefundAmount()).isEqualByComparingTo("40000");
+        verify(orderPaymentRepository, never()).save(any());
+        ArgumentCaptor<OrderEvent> ev = ArgumentCaptor.forClass(OrderEvent.class);
+        verify(orderEventRepository, org.mockito.Mockito.atLeastOnce()).save(ev.capture());
+        assertThat(ev.getAllValues()).anySatisfy(e -> assertThat(e.getAction()).isEqualTo("COD_FEE_REFUND"));
+    }
+
     private void prepaidAtSenderWarehouse() {
         service.setOrderPaymentRepository(orderPaymentRepository);
         service.setReceiptOrderLineRepository(receiptOrderLineRepository);

@@ -153,6 +153,7 @@
     <include file="config/liquibase/changelog/20261016130000_vehicle_plan_trip.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261019110000_grab_express.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261019160000_grab_production.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261022180000_cod_fee_refund.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
 

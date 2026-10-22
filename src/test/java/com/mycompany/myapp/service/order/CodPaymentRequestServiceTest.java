@@ -53,6 +53,18 @@ class CodPaymentRequestServiceTest {
     }
 
     @Test
+    void html_codFeeRefundOnly() {
+        ShipmentOrder o = order();
+        o.setCodAmount(BigDecimal.ZERO);
+        o.setCodFeeRefundAmount(new BigDecimal("40000"));
+        String html = CodPaymentRequestService.html(o, new CodPaymentRequestService.Requester("A", "KT"), LocalDate.of(2026, 10, 22), "");
+        assertThat(html).contains("Hoàn phí COD đơn BC0310IEMH");
+        assertThat(html).contains("Tiền hoàn phí COD đơn BC0310IEMH");
+        assertThat(html).contains(">40.000<");
+        assertThat(html).doesNotContain("Thanh toán tiền thu hộ COD cho người gửi");
+    }
+
+    @Test
     void moneyFormatAndWords() {
         assertThat(CodPaymentRequestService.money(new BigDecimal("2440000.00"))).isEqualTo("2.440.000");
         assertThat(CodPaymentRequestService.money(new BigDecimal("1500.50"))).isEqualTo("1.500,5");

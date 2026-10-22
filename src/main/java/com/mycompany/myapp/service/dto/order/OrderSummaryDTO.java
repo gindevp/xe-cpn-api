@@ -88,6 +88,8 @@ public class OrderSummaryDTO {
 
     private BigDecimal codAmount;
     private BigDecimal codFeeAmount;
+    /** Tiền hoàn phí COD (đã thu phí rồi bỏ/giảm; giữ paidAmount). */
+    private BigDecimal codFeeRefundAmount;
     private BigDecimal storageFeeAmount;
     private BigDecimal returnFeeAmount;
     /** Thành phần của fareAmount (đơn cũ = null) — fareAmount vẫn là tổng phải thu. */
@@ -672,6 +674,14 @@ public class OrderSummaryDTO {
 
     public void setCodFeeAmount(BigDecimal codFeeAmount) {
         this.codFeeAmount = codFeeAmount;
+    }
+
+    public BigDecimal getCodFeeRefundAmount() {
+        return codFeeRefundAmount;
+    }
+
+    public void setCodFeeRefundAmount(BigDecimal codFeeRefundAmount) {
+        this.codFeeRefundAmount = codFeeRefundAmount;
     }
 
     public BigDecimal getStorageFeeAmount() {

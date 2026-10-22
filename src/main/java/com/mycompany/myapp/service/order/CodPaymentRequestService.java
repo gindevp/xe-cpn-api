@@ -95,8 +95,10 @@ public class CodPaymentRequestService {
         ShipmentOrder order = shipmentOrderRepository
             .findOneByOrderCodeOrDraftCode(orderCode == null ? "" : orderCode.trim())
             .orElseThrow(() -> new BadRequestAlertException("Không tìm thấy đơn", "order", "notfound"));
-        if (!OrderFacadeService.isCodOrder(order) || OrderMoney.nz(order.getCodAmount()).signum() <= 0) {
-            throw new BadRequestAlertException("Đơn không có tiền thu hộ COD", "order", "notCod");
+        BigDecimal cod = OrderMoney.nz(order.getCodAmount());
+        BigDecimal refund = OrderMoney.nz(order.getCodFeeRefundAmount());
+        if (!OrderFacadeService.isCodOrder(order) || (cod.signum() <= 0 && refund.signum() <= 0)) {
+            throw new BadRequestAlertException("Đơn không có tiền thu hộ COD / hoàn phí COD", "order", "notCod");
         }
         if (order.getStatus() != OrderStatus.DELIVERED) {
             throw new BadRequestAlertException("Đơn chưa giao thành công", "order", "notDelivered");
@@ -116,10 +118,51 @@ public class CodPaymentRequestService {
 
     static String html(ShipmentOrder order, Requester requester, LocalDate day, String logo) {
         BigDecimal cod = OrderMoney.nz(order.getCodAmount());
+        BigDecimal refund = OrderMoney.nz(order.getCodFeeRefundAmount());
+        boolean refundOnly = refund.signum() > 0 && cod.signum() <= 0;
+        BigDecimal total = refundOnly ? refund : cod.add(refund);
         String code = esc(order.getOrderCode());
-        String money = esc(money(cod));
+        String money = esc(money(total));
         String sender = esc(join(" - ", order.getSenderName(), order.getSenderPhone()));
         boolean transfer = notBlank(order.getBankAccountNo());
+        String reason = refundOnly ? "Hoàn phí COD đơn " + code : "Thanh toán tiền thu hộ COD cho người gửi đơn " + code;
+
+        StringBuilder rows = new StringBuilder();
+        int stt = 1;
+        if (cod.signum() > 0) {
+            String m = esc(money(cod));
+            rows
+                .append("<tr><td class=\"c\">")
+                .append(stt++)
+                .append("</td><td>Thanh toán tiền thu hộ COD đơn ")
+                .append(code)
+                .append("</td><td>")
+                .append(code)
+                .append("</td><td class=\"c\">Đơn</td><td class=\"c\">1</td><td class=\"r\">")
+                .append(m)
+                .append("</td><td class=\"r\">")
+                .append(m)
+                .append("</td><td>")
+                .append(sender)
+                .append("</td></tr>");
+        }
+        if (refund.signum() > 0) {
+            String m = esc(money(refund));
+            rows
+                .append("<tr><td class=\"c\">")
+                .append(stt++)
+                .append("</td><td>Tiền hoàn phí COD đơn ")
+                .append(code)
+                .append("</td><td>")
+                .append(code)
+                .append("</td><td class=\"c\">Đơn</td><td class=\"c\">1</td><td class=\"r\">")
+                .append(m)
+                .append("</td><td class=\"r\">")
+                .append(m)
+                .append("</td><td>")
+                .append(sender)
+                .append("</td></tr>");
+        }
 
         StringBuilder blanks = new StringBuilder();
         for (int i = 0; i < 5; i++) {
@@ -152,30 +195,20 @@ public class CodPaymentRequestService {
             "</b></div><div>Chức vụ: " +
             esc(requester.position()) +
             "</div></div>" +
-            "<p>Lý do xin thanh toán: Thanh toán tiền thu hộ COD cho người gửi đơn " +
-            code +
+            "<p>Lý do xin thanh toán: " +
+            esc(reason) +
             "</p>" +
             "<p>Chi tiết theo bảng kê như sau:</p>" +
             "<table class=\"items\"><thead><tr><th style=\"width:6%\">STT</th><th>Nội dung</th><th style=\"width:13%\">Số CT</th>" +
             "<th style=\"width:6%\">ĐVT</th><th style=\"width:7%\">Số lượng</th><th style=\"width:11%\">Đơn giá</th>" +
             "<th style=\"width:12%\">Thành tiền</th><th style=\"width:18%\">Chi tiết đối tượng</th></tr></thead><tbody>" +
-            "<tr><td class=\"c\">1</td><td>Thanh toán tiền thu hộ COD đơn " +
-            code +
-            "</td><td>" +
-            code +
-            "</td><td class=\"c\">Đơn</td><td class=\"c\">1</td><td class=\"r\">" +
-            money +
-            "</td><td class=\"r\">" +
-            money +
-            "</td><td>" +
-            sender +
-            "</td></tr>" +
+            rows +
             blanks +
             "<tr class=\"total\"><td></td><td>Tổng cộng</td><td></td><td></td><td></td><td></td><td class=\"r\">" +
             money +
             "</td><td></td></tr></tbody></table>" +
             "<p>Số tiền bằng chữ: <b><i>" +
-            esc(VietnameseMoneyWords.of(cod)) +
+            esc(VietnameseMoneyWords.of(total)) +
             "</i></b></p>" +
             "<p>Hình thức thanh toán: " +
             (transfer ? "CK" : "TM") +

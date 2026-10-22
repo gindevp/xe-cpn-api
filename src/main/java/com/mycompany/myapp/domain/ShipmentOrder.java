@@ -198,6 +198,14 @@ public class ShipmentOrder implements Serializable {
     @Column(name = "cod_fee_amount", precision = 21, scale = 2)
     private BigDecimal codFeeAmount;
 
+    /**
+     * Tiền hoàn phí COD: đã thu phí thu hộ trong paid_amount rồi bỏ/giảm phí (cước mới &lt; đã thu).
+     * Giữ paid_amount; COD hàng về 0. In biên nhận / DNTT ghi «tiền hoàn phí COD».
+     */
+    @DecimalMin(value = "0")
+    @Column(name = "cod_fee_refund_amount", precision = 21, scale = 2)
+    private BigDecimal codFeeRefundAmount;
+
     /** Phí tồn kho tại kho giao (đã cộng vào fare_amount). */
     @DecimalMin(value = "0")
     @Column(name = "storage_fee_amount", precision = 21, scale = 2)
@@ -979,6 +987,14 @@ public class ShipmentOrder implements Serializable {
 
     public void setCodFeeAmount(BigDecimal codFeeAmount) {
         this.codFeeAmount = codFeeAmount;
+    }
+
+    public BigDecimal getCodFeeRefundAmount() {
+        return this.codFeeRefundAmount;
+    }
+
+    public void setCodFeeRefundAmount(BigDecimal codFeeRefundAmount) {
+        this.codFeeRefundAmount = codFeeRefundAmount;
     }
 
     public BigDecimal getStorageFeeAmount() {

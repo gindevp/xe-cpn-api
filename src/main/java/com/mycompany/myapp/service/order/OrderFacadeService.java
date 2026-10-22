@@ -323,9 +323,13 @@ public class OrderFacadeService {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), status));
         }
         if (Boolean.TRUE.equals(ex.codOnly()) || paymentTerm == PaymentTerm.COD) {
-            // Đơn có thu hộ: nhận theo tiền COD; PaymentTerm.COD chỉ còn ở đơn cũ.
+            // Đơn có thu hộ / hoàn phí COD; PaymentTerm.COD chỉ còn ở đơn cũ.
             spec = spec.and((root, q, cb) ->
-                cb.or(cb.equal(root.get("paymentTerm"), PaymentTerm.COD), cb.greaterThan(root.get("codAmount"), BigDecimal.ZERO))
+                cb.or(
+                    cb.equal(root.get("paymentTerm"), PaymentTerm.COD),
+                    cb.greaterThan(root.get("codAmount"), BigDecimal.ZERO),
+                    cb.greaterThan(root.get("codFeeRefundAmount"), BigDecimal.ZERO)
+                )
             );
         }
         if (paymentTerm != null && paymentTerm != PaymentTerm.COD) {
@@ -507,7 +511,11 @@ public class OrderFacadeService {
      * PaymentTerm.COD chỉ còn ở đơn cũ (coi như người nhận trả cước).
      */
     static boolean isCodOrder(ShipmentOrder order) {
-        return order.getPaymentTerm() == PaymentTerm.COD || OrderMoney.nz(order.getCodAmount()).signum() > 0;
+        return (
+            order.getPaymentTerm() == PaymentTerm.COD ||
+            OrderMoney.nz(order.getCodAmount()).signum() > 0 ||
+            OrderMoney.nz(order.getCodFeeRefundAmount()).signum() > 0
+        );
     }
 
     public int markCodExported(MarkCodExportedRequest req) {
@@ -534,12 +542,11 @@ public class OrderFacadeService {
             order.setCodExportedAt(now);
             order.setCodExportedBy(actor);
             shipmentOrderRepository.save(order);
-            appendEvent(
-                order,
-                "COD_PROCESSED",
-                "Xác nhận đã xử lý COD " + OrderMoney.nz(order.getCodAmount()).toPlainString() + "đ",
-                actor
-            );
+            BigDecimal refund = OrderMoney.nz(order.getCodFeeRefundAmount());
+            String processedDetail = refund.signum() > 0
+                ? "Xác nhận đã xử lý hoàn phí COD " + refund.toPlainString() + "đ"
+                : "Xác nhận đã xử lý COD " + OrderMoney.nz(order.getCodAmount()).toPlainString() + "đ";
+            appendEvent(order, "COD_PROCESSED", processedDetail, actor);
             updated++;
         }
         return updated;
@@ -1090,9 +1097,12 @@ public class OrderFacadeService {
         String endpointsBefore = itineraryEndpointsKey(order);
         java.util.Map<String, String> fieldsBefore = OrderEditDiff.snapshot(order);
         BigDecimal fareBefore = OrderMoney.nz(order.getFareAmount());
+        BigDecimal paidBefore = OrderMoney.nz(order.getPaidAmount());
+        BigDecimal codFeeBefore = OrderMoney.nz(order.getCodFeeAmount());
         String extraPayer = extraFarePayer(req.getExtraFarePayer());
         boolean senderPaidFullBefore = senderPaidFull(order);
         boolean prepaidFollowsFare = senderPrepaidFollowsFare(order) && !passedTransitHub(order);
+        boolean codFeeReduced = req.getCodFeeAmount() != null && OrderMoney.nz(req.getCodFeeAmount()).compareTo(codFeeBefore) < 0;
         if (req.getSenderName() != null) {
             order.setSenderName(req.getSenderName());
         }
@@ -1143,8 +1153,9 @@ public class OrderFacadeService {
         boolean deliveryAddrChanged = !sameText(deliveryAddrBefore, order.getDeliveryAddress());
         boolean recomputeDoor = pickupFlagChanged || deliveryFlagChanged || (hp && pickupAddrChanged) || (hd && deliveryAddrChanged);
         // Đổi địa chỉ/tận nơi thì cước khách do máy tính lại bên dưới — không nhận fare client (có thể đã trừ phí ship mới).
+        // Giảm phí thu hộ COD sau khi đã thu: cho phép cước < đã thu (giữ paid, ghi hoàn phí COD).
         if (req.getFareAmount() != null && !recomputeDoor) {
-            if (!prepaidFollowsFare) {
+            if (!prepaidFollowsFare && !codFeeReduced) {
                 assertFareNotBelowPaid(req.getFareAmount(), order.getPaidAmount());
             }
             order.setFareAmount(req.getFareAmount());
@@ -1225,6 +1236,18 @@ public class OrderFacadeService {
         if (req.getDiscountAmount() != null) {
             order.setDiscountAmount(req.getDiscountAmount());
         }
+        BigDecimal codFeeRefundDelta = BigDecimal.ZERO;
+        if (codFeeReduced) {
+            BigDecimal fareNow = OrderMoney.nz(order.getFareAmount());
+            if (fareNow.compareTo(paidBefore) < 0) {
+                // Đã thu gồm phí thu hộ → bỏ/giảm phí: giữ đã thu, COD hàng = 0, ghi tiền hoàn phí COD.
+                BigDecimal feeCut = codFeeBefore.subtract(OrderMoney.nz(order.getCodFeeAmount())).max(BigDecimal.ZERO);
+                BigDecimal overpay = paidBefore.subtract(fareNow);
+                codFeeRefundDelta = feeCut.min(overpay);
+                order.setCodAmount(BigDecimal.ZERO);
+                order.setCodFeeRefundAmount(OrderMoney.nz(order.getCodFeeRefundAmount()).add(codFeeRefundDelta));
+            }
+        }
         if (doorFees != null) {
             // Phí tận nơi cập nhật theo km Ahamove. Cước khách hạ theo phí mới.
             // Số đã thu giữ nguyên — không hoàn, không chặn khi cước mới thấp hơn số đã thu.
@@ -1289,13 +1312,21 @@ public class OrderFacadeService {
             prepaidDelta = BigDecimal.ZERO;
             order.setPaymentTerm(PaymentTerm.NHAN_TRA);
             receiverTakesExtra = true;
-        } else if (prepaidFollowsFare && fareAfter.compareTo(fareBefore) < 0 && doorFees != null) {
-            // Đổi địa chỉ / bỏ tận nơi làm cước giảm: không ghi khoản âm, không hoàn khách.
+        } else if (prepaidFollowsFare && fareAfter.compareTo(fareBefore) < 0 && (doorFees != null || codFeeRefundDelta.signum() > 0)) {
+            // Đổi địa chỉ / bỏ tận nơi / hoàn phí COD: không ghi khoản âm — giữ đã thu.
             prepaidDelta = BigDecimal.ZERO;
         } else {
             prepaidDelta = prepaidFollowsFare ? syncSenderPrepaidToFare(order) : BigDecimal.ZERO;
         }
         shipmentOrderRepository.save(order);
+        if (codFeeRefundDelta.signum() > 0) {
+            appendEvent(
+                order,
+                "COD_FEE_REFUND",
+                "Hoàn phí COD " + codFeeRefundDelta.toPlainString() + "đ · giữ đã thu " + paidBefore.toPlainString() + "đ · COD = 0",
+                currentActor()
+            );
+        }
         if (receiverTakesExtra) {
             appendEvent(
                 order,
@@ -2388,6 +2419,7 @@ public class OrderFacadeService {
         }
         dto.setCodAmount(o.getCodAmount());
         dto.setCodFeeAmount(o.getCodFeeAmount());
+        dto.setCodFeeRefundAmount(o.getCodFeeRefundAmount());
         dto.setStorageFeeAmount(o.getStorageFeeAmount());
         dto.setReturnFeeAmount(o.getReturnFeeAmount());
         dto.setGoodsFareAmount(o.getGoodsFareAmount());
