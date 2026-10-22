@@ -56,10 +56,12 @@ class CodPaymentRequestServiceTest {
     void html_codFeeRefundOnly() {
         ShipmentOrder o = order();
         o.setCodAmount(BigDecimal.ZERO);
+        o.setCodFeeAmount(new BigDecimal("40000"));
         o.setCodFeeRefundAmount(new BigDecimal("40000"));
         String html = CodPaymentRequestService.html(o, new CodPaymentRequestService.Requester("A", "KT"), LocalDate.of(2026, 10, 22), "");
         assertThat(html).contains("Hoàn phí COD đơn BC0310IEMH");
         assertThat(html).contains("Tiền hoàn phí COD đơn BC0310IEMH");
+        assertThat(html).contains("phí thu hộ 40.000");
         assertThat(html).contains(">40.000<");
         assertThat(html).doesNotContain("Thanh toán tiền thu hộ COD cho người gửi");
     }

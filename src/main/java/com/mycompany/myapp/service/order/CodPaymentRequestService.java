@@ -147,12 +147,16 @@ public class CodPaymentRequestService {
                 .append("</td></tr>");
         }
         if (refund.signum() > 0) {
+            // Số hoàn = refund; nếu đơn còn lưu phí thu hộ thì ghi rõ trên nội dung dòng.
+            BigDecimal feeKept = OrderMoney.nz(order.getCodFeeAmount());
             String m = esc(money(refund));
+            String feeNote = feeKept.signum() > 0 ? " (phí thu hộ " + esc(money(feeKept)) + ")" : "";
             rows
                 .append("<tr><td class=\"c\">")
                 .append(stt++)
                 .append("</td><td>Tiền hoàn phí COD đơn ")
                 .append(code)
+                .append(feeNote)
                 .append("</td><td>")
                 .append(code)
                 .append("</td><td class=\"c\">Đơn</td><td class=\"c\">1</td><td class=\"r\">")

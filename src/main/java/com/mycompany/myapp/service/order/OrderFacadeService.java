@@ -1240,12 +1240,15 @@ public class OrderFacadeService {
         if (codFeeReduced) {
             BigDecimal fareNow = OrderMoney.nz(order.getFareAmount());
             if (fareNow.compareTo(paidBefore) < 0) {
-                // Đã thu gồm phí thu hộ → bỏ/giảm phí: giữ đã thu, COD hàng = 0, ghi tiền hoàn phí COD.
+                // Đã thu gồm phí thu hộ → bỏ khỏi cước: giữ đã thu + giữ số phí thu hộ (để biết hoàn bao nhiêu),
+                // COD hàng = 0, ghi tiền hoàn phí COD. Cước không còn cộng phí (COD=0 → recalc bỏ phí).
                 BigDecimal feeCut = codFeeBefore.subtract(OrderMoney.nz(order.getCodFeeAmount())).max(BigDecimal.ZERO);
                 BigDecimal overpay = paidBefore.subtract(fareNow);
                 codFeeRefundDelta = feeCut.min(overpay);
                 order.setCodAmount(BigDecimal.ZERO);
                 order.setCodFeeRefundAmount(OrderMoney.nz(order.getCodFeeRefundAmount()).add(codFeeRefundDelta));
+                // Giữ cột phí thu hộ = số cần hoàn (không để 0).
+                order.setCodFeeAmount(codFeeBefore);
             }
         }
         if (doorFees != null) {

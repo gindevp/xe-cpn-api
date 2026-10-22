@@ -611,7 +611,7 @@ class OrderFacadeServicePatchFareTest {
 
         assertThat(order.getFareAmount()).isEqualByComparingTo("80000");
         assertThat(order.getPaidAmount()).isEqualByComparingTo("120000");
-        assertThat(order.getCodFeeAmount()).isEqualByComparingTo("0");
+        assertThat(order.getCodFeeAmount()).isEqualByComparingTo("40000");
         assertThat(order.getCodAmount()).isEqualByComparingTo("0");
         assertThat(order.getCodFeeRefundAmount()).isEqualByComparingTo("40000");
         verify(orderPaymentRepository, never()).save(any());

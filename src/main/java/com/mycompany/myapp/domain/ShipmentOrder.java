@@ -199,8 +199,9 @@ public class ShipmentOrder implements Serializable {
     private BigDecimal codFeeAmount;
 
     /**
-     * Tiền hoàn phí COD: đã thu phí thu hộ trong paid_amount rồi bỏ/giảm phí (cước mới &lt; đã thu).
-     * Giữ paid_amount; COD hàng về 0. In biên nhận / DNTT ghi «tiền hoàn phí COD».
+     * Tiền hoàn phí COD: đã thu phí thu hộ trong paid_amount rồi bỏ khỏi cước (cước mới &lt; đã thu).
+     * Giữ paid_amount và {@code cod_fee_amount} (biết hoàn bao nhiêu); COD hàng = 0.
+     * In biên nhận / DNTT ghi «tiền hoàn phí COD».
      */
     @DecimalMin(value = "0")
     @Column(name = "cod_fee_refund_amount", precision = 21, scale = 2)
