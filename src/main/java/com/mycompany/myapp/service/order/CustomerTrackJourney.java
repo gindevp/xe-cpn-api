@@ -40,6 +40,7 @@ public final class CustomerTrackJourney {
         Instant onTrip = null;
         Instant destWhIn = null;
         Instant delivered = null;
+        Instant failed = null;
         Instant cancelled = null;
         Instant returnStart = null;
         boolean customerCreated = false;
@@ -69,6 +70,9 @@ public final class CustomerTrackJourney {
                 case "RETURN_START" -> {
                     if (returnStart == null) returnStart = at;
                 }
+                case "FAILED" -> {
+                    if (failed == null) failed = at;
+                }
                 default -> {
                     if (POD_ACTIONS.contains(action) && delivered == null) delivered = at;
                 }
@@ -86,9 +90,9 @@ public final class CustomerTrackJourney {
         }
 
         List<JourneyStep> steps = new ArrayList<>();
-        steps.add(new JourneyStep("CREATED", "Tạo đơn", created));
-        steps.add(new JourneyStep("WH_IN", "Nhập kho gửi", whIn));
-        steps.add(new JourneyStep("ON_TRIP", "Lên xe", onTrip));
+        steps.add(new JourneyStep("CREATED", "Tạo đơn hàng", created));
+        steps.add(new JourneyStep("WH_IN", "Nhập kho nhận", whIn));
+        steps.add(new JourneyStep("ON_TRIP", "Hàng trên xe", onTrip));
         steps.add(new JourneyStep("DEST_WH_IN", "Nhập kho giao", destWhIn));
 
         if (st == OrderStatus.CANCELLED) {
@@ -102,6 +106,10 @@ public final class CustomerTrackJourney {
             if (st == OrderStatus.RETURNED) {
                 steps.add(new JourneyStep("RETURNED", "Đã hoàn", order.getUpdatedAt()));
             }
+            return steps;
+        }
+        if (st == OrderStatus.FAILED_DELIVERY) {
+            steps.add(new JourneyStep("FAILED", "Giao thất bại", failed != null ? failed : order.getUpdatedAt()));
             return steps;
         }
         steps.add(new JourneyStep("DELIVERED", "Giao thành công", delivered));
