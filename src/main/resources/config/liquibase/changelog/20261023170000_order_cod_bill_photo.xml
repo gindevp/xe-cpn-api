@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261023170000-order-cod-bill-photo" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="order_cod_bill_photo"/>
+            </not>
+        </preConditions>
+        <comment>Ảnh bill / chứng từ chuyển COD — màn Quản lý đơn COD</comment>
+        <createTable tableName="order_cod_bill_photo">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="order_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="photo_url" type="longtext">
+                <constraints nullable="false"/>
+            </column>
+            <column name="captured_at" type="datetime(6)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="captured_by_username" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="sequence_no" type="int"/>
+        </createTable>
+        <createIndex tableName="order_cod_bill_photo" indexName="idx_cod_bill_photo_order">
+            <column name="order_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

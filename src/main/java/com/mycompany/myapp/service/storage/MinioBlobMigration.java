@@ -38,6 +38,7 @@ public class MinioBlobMigration {
         boolean hasMore = false;
         moved += column("order_pod_photo", "photo_url", "pod");
         moved += column("order_goods_photo", "photo_url", "goods");
+        moved += column("order_cod_bill_photo", "photo_url", "cod");
         moved += column("inventory_check_photo", "photo_url", "inventory");
         moved += column("vehicle_event_photo", "photo_url", "vehicle");
         moved += column("attendance_record", "photo", "attendance");
@@ -120,6 +121,7 @@ public class MinioBlobMigration {
         String[] checks = {
             "SELECT 1 FROM order_pod_photo WHERE photo_url LIKE '%data:%' LIMIT 1",
             "SELECT 1 FROM order_goods_photo WHERE photo_url LIKE '%data:%' LIMIT 1",
+            "SELECT 1 FROM order_cod_bill_photo WHERE photo_url LIKE '%data:%' LIMIT 1",
             "SELECT 1 FROM inventory_check_photo WHERE photo_url LIKE '%data:%' LIMIT 1",
             "SELECT 1 FROM vehicle_event_photo WHERE photo_url LIKE '%data:%' LIMIT 1",
             "SELECT 1 FROM attendance_record WHERE photo LIKE '%data:%' LIMIT 1",

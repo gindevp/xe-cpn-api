@@ -82,6 +82,8 @@ public class OrderSummaryDTO {
     private boolean hasGoodsPhoto;
     /** Có ít nhất một ảnh POD (nhận / giao / điều phối giao ship). */
     private boolean hasPodPhoto;
+    /** Ảnh bill / chứng từ chuyển COD — GET /api/orders/{code}/cod-bill-photos. */
+    private boolean hasCodBillPhoto;
     /** Người thực nhận — gắn khi DELIVERED. */
     private String receiverActualName;
     private String receiverActualPhone;
@@ -626,6 +628,14 @@ public class OrderSummaryDTO {
 
     public void setHasPodPhoto(boolean hasPodPhoto) {
         this.hasPodPhoto = hasPodPhoto;
+    }
+
+    public boolean isHasCodBillPhoto() {
+        return hasCodBillPhoto;
+    }
+
+    public void setHasCodBillPhoto(boolean hasCodBillPhoto) {
+        this.hasCodBillPhoto = hasCodBillPhoto;
     }
 
     public List<String> getPodPhotos() {

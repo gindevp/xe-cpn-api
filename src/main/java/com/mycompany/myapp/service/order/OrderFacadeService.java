@@ -82,9 +82,11 @@ public class OrderFacadeService {
     private final ApplicationEventPublisher eventPublisher;
     private ItineraryRepository itineraryRepository;
     private OrderGoodsPhotoRepository goodsPhotoRepository;
+    private com.mycompany.myapp.repository.OrderCodBillPhotoRepository codBillPhotoRepository;
     private com.mycompany.myapp.service.payment.onepay.OnePayOrderCollectService onePayOrderCollectService;
 
     static final int MAX_GOODS_PHOTO_LENGTH = 2_500_000;
+    static final int MAX_COD_BILL_PHOTOS = 5;
 
     public OrderFacadeService(
         ShipmentOrderRepository shipmentOrderRepository,
@@ -438,6 +440,9 @@ public class OrderFacadeService {
         java.util.Set<Long> withPodPhoto = orderPodPhotoRepository == null || pageIds.isEmpty()
             ? java.util.Set.of()
             : new java.util.HashSet<>(orderPodPhotoRepository.findOrderIdsIn(pageIds));
+        java.util.Set<Long> withCodBillPhoto = codBillPhotoRepository == null || pageIds.isEmpty()
+            ? java.util.Set.of()
+            : new java.util.HashSet<>(codBillPhotoRepository.findOrderIdsIn(pageIds));
         java.util.Map<String, String> codProcessorNames = staffNamesByLogin(
             page.getContent().stream().map(ShipmentOrder::getCodExportedBy).toList()
         );
@@ -450,6 +455,7 @@ public class OrderFacadeService {
             applyStageTimes(dto, stageTimes.getOrDefault(o.getId(), java.util.Map.of()));
             dto.setHasGoodsPhoto(withGoodsPhoto.contains(o.getId()));
             dto.setHasPodPhoto(withPodPhoto.contains(o.getId()) || !isBlank(o.getPartnerPodUrl()));
+            dto.setHasCodBillPhoto(withCodBillPhoto.contains(o.getId()));
             if (o.getCodExportedBy() != null) {
                 dto.setCodExportedByName(codProcessorNames.get(o.getCodExportedBy().trim().toLowerCase()));
             }
@@ -1580,6 +1586,11 @@ public class OrderFacadeService {
         this.goodsPhotoRepository = goodsPhotoRepository;
     }
 
+    @Autowired(required = false)
+    void setCodBillPhotoRepository(com.mycompany.myapp.repository.OrderCodBillPhotoRepository codBillPhotoRepository) {
+        this.codBillPhotoRepository = codBillPhotoRepository;
+    }
+
     private TransitHubPolicyService transitHubPolicyService;
 
     @Autowired(required = false)
@@ -1610,6 +1621,71 @@ public class OrderFacadeService {
             return null;
         }
         return goodsPhotoRepository.findOneByOrderId(order.getId()).map(p -> showMedia(p.getPhotoUrl())).orElse(null);
+    }
+
+    /** Ảnh bill COD đã upload (có thể nhiều). */
+    @Transactional(readOnly = true)
+    public List<String> codBillPhotos(String code) {
+        staffAccessService.requireScreenRead(com.mycompany.myapp.security.ScreenKey.QUAN_LY_DON_COD);
+        ShipmentOrder order = requireByCode(code);
+        if (codBillPhotoRepository == null) {
+            return List.of();
+        }
+        return codBillPhotoRepository
+            .findByOrderIdOrderBySequenceNoAscIdAsc(order.getId())
+            .stream()
+            .map(p -> showMedia(p.getPhotoUrl()))
+            .filter(u -> u != null && !u.isBlank())
+            .toList();
+    }
+
+    /**
+     * Thêm ảnh bill COD (data-URL). Tối đa {@link #MAX_COD_BILL_PHOTOS} ảnh / đơn.
+     * @return số ảnh hiện có sau khi lưu
+     */
+    public int uploadCodBillPhotos(String code, List<String> images) {
+        staffAccessService.requireScreenWrite(com.mycompany.myapp.security.ScreenKey.QUAN_LY_DON_COD);
+        if (codBillPhotoRepository == null) {
+            throw new BadRequestAlertException("COD bill photo storage unavailable", ENTITY, "codBillUnavailable");
+        }
+        if (images == null || images.isEmpty()) {
+            throw new BadRequestAlertException("images required", ENTITY, "codBillImagesRequired");
+        }
+        ShipmentOrder order = requireByCode(code);
+        if (!isCodOrder(order)) {
+            throw new BadRequestAlertException("Not a COD order", ENTITY, "notCodOrder");
+        }
+        int existing = codBillPhotoRepository.countByOrderId(order.getId());
+        if (existing >= MAX_COD_BILL_PHOTOS) {
+            throw new BadRequestAlertException("Too many COD bill photos", ENTITY, "codBillTooMany");
+        }
+        String actor = currentActor();
+        Instant now = Instant.now();
+        int seq = existing;
+        int added = 0;
+        for (String raw : images) {
+            if (existing + added >= MAX_COD_BILL_PHOTOS) {
+                break;
+            }
+            String photo = validGoodsPhoto(raw);
+            if (photo == null) {
+                continue;
+            }
+            seq++;
+            com.mycompany.myapp.domain.OrderCodBillPhoto row = new com.mycompany.myapp.domain.OrderCodBillPhoto();
+            row.setOrderId(order.getId());
+            row.setPhotoUrl(storeMedia(photo, "cod"));
+            row.setCapturedAt(now);
+            row.setCapturedByUsername(actor);
+            row.setSequenceNo(seq);
+            codBillPhotoRepository.save(row);
+            added++;
+        }
+        if (added == 0) {
+            throw new BadRequestAlertException("No valid COD bill image", ENTITY, "codBillInvalid");
+        }
+        appendEvent(order, "COD_BILL_UPLOAD", "Upload " + added + " ảnh bill COD", actor);
+        return existing + added;
     }
 
     /** Ảnh từ endpoint công khai: chỉ nhận data-URL ảnh, giới hạn dung lượng. */
@@ -2379,6 +2455,7 @@ public class OrderFacadeService {
             dto.setHasPodPhoto(
                 (orderPodPhotoRepository != null && orderPodPhotoRepository.existsByOrder_Id(o.getId())) || !isBlank(o.getPartnerPodUrl())
             );
+            dto.setHasCodBillPhoto(codBillPhotoRepository != null && codBillPhotoRepository.existsByOrderId(o.getId()));
         }
     }
 

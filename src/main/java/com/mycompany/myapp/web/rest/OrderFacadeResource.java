@@ -222,6 +222,22 @@ public class OrderFacadeResource {
         return photo == null ? Map.of() : Map.of("image", photo);
     }
 
+    /** Ảnh bill / chứng từ chuyển COD — màn Quản lý đơn COD. */
+    @GetMapping("/{orderCode}/cod-bill-photos")
+    public Map<String, Object> codBillPhotos(@PathVariable String orderCode) {
+        return Map.of("images", orderFacadeService.codBillPhotos(orderCode));
+    }
+
+    @PostMapping("/{orderCode}/cod-bill-photos")
+    public Map<String, Object> uploadCodBillPhotos(@PathVariable String orderCode, @RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> images = body != null && body.get("images") instanceof List<?> raw
+            ? raw.stream().filter(String.class::isInstance).map(String.class::cast).toList()
+            : List.of();
+        int total = orderFacadeService.uploadCodBillPhotos(orderCode, images);
+        return Map.of("total", total, "hasCodBillPhoto", total > 0);
+    }
+
     /**
      * Public guest create — always CONFIRMED + real order code (no DRAFT).
      * Preferred path for /tao-don.
