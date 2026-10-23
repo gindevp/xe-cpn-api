@@ -80,7 +80,8 @@ public class BusinessReportService {
      * <ul>
      *   <li>Đơn gửi = lần nhập kho gửi trong ngày (WAREHOUSE_RECEIVE), theo VP gửi;</li>
      *   <li>Đơn nhận = lần nhập kho giao trong ngày (SCAN_IN / DEST_WH_IN / HUB_IN), theo VP nhận;</li>
-     *   <li>Doanh thu = cước các đơn gửi trong ngày (đã trừ phí giao đối tác).</li>
+     *   <li>Doanh thu trên cột = cước đơn <b>tạo</b> trong ngày (đã trừ phí giao đối tác), theo VP gửi
+     *       — cùng {@link RevenueLedger#createdOrders}, độc lập với số gửi/nhận.</li>
      * </ul>
      */
     public record DayRow(LocalDate date, long sent, long received, BigDecimal revenue) {}
@@ -163,7 +164,7 @@ public class BusinessReportService {
             prev.to(),
             previous,
             officeRows(office, delivered, backlog),
-            dayRows(cur, sentHits, receivedHits),
+            dayRows(office, cur, sentHits, receivedHits, created),
             hourBuckets(hourHits)
         );
     }
@@ -273,16 +274,20 @@ public class BusinessReportService {
         return out;
     }
 
-    private List<DayRow> dayRows(Period p, List<WhInHit> sentHits, List<WhInHit> receivedHits) {
+    private List<DayRow> dayRows(
+        String office,
+        Period p,
+        List<WhInHit> sentHits,
+        List<WhInHit> receivedHits,
+        List<RevenueLedger.CreatedOrder> created
+    ) {
         Map<LocalDate, long[]> sent = new TreeMap<>();
-        Map<LocalDate, BigDecimal> revenue = new TreeMap<>();
         for (WhInHit h : sentHits) {
             if (h.at() == null) {
                 continue;
             }
             LocalDate day = h.at().atZone(VN).toLocalDate();
             sent.computeIfAbsent(day, d -> new long[] { 0 })[0]++;
-            revenue.merge(day, h.revenue() == null ? BigDecimal.ZERO : h.revenue(), BigDecimal::add);
         }
 
         Map<LocalDate, Long> received = new TreeMap<>();
@@ -292,6 +297,17 @@ public class BusinessReportService {
             }
             LocalDate day = h.at().atZone(VN).toLocalDate();
             received.merge(day, 1L, Long::sum);
+        }
+
+        // Tiền trên cột: giữ logic cũ — theo ngày tạo đơn / VP gửi (createdOrders).
+        Map<LocalDate, BigDecimal> revenue = new TreeMap<>();
+        for (RevenueLedger.CreatedOrder c : created) {
+            Instant createdAt = c.order().getCreatedAt();
+            if (createdAt == null || (office != null && !office.equalsIgnoreCase(c.officeCode()))) {
+                continue;
+            }
+            LocalDate day = createdAt.atZone(VN).toLocalDate();
+            revenue.merge(day, c.revenue() == null ? BigDecimal.ZERO : c.revenue(), BigDecimal::add);
         }
 
         List<DayRow> out = new ArrayList<>();
