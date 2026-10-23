@@ -2,6 +2,7 @@ package com.mycompany.myapp.service.payment.onepay;
 
 import com.mycompany.myapp.domain.OnePayInvoice;
 import com.mycompany.myapp.domain.ShipmentOrder;
+import com.mycompany.myapp.domain.enumeration.PaymentTerm;
 import com.mycompany.myapp.repository.OnePayInvoiceRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.service.order.CustomerTrackStatus;
@@ -11,6 +12,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,10 +24,14 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * Thu cước đơn app qua tài khoản ảo OnePay. Cấu hình thu hộ tắt thì không tạo VA.
  * QR/VA chỉ khi đơn còn tab Chờ bàn giao (chờ nhận / chờ lấy / đang lấy).
+ * Số VA = phần người gửi còn phải trả (GUI_TRA = cước còn thiếu; NHAN_TRA = trả trước ghi trong note).
  * Rời tab đó thì đóng VA và không trả số TK / QR.
  */
 @Service
 public class OnePayOrderCollectService {
+
+    /** App ghi vào note khi thu cước 1 phần — guest create không tin paidAmount từ client. */
+    private static final Pattern APP_PREPAID = Pattern.compile("\\[XVN_PREPAID:(\\d+)\\]");
 
     private final ShipmentOrderRepository orders;
     private final OnePayInvoiceRepository invoices;
@@ -39,7 +46,8 @@ public class OnePayOrderCollectService {
     @Transactional
     public Map<String, Object> view(String code, String phone, boolean refresh) {
         ShipmentOrder order = requireOrder(code, phone);
-        BigDecimal due = OrderMoney.due(order);
+        BigDecimal fareDue = OrderMoney.due(order);
+        BigDecimal due = senderVaDue(order, fareDue);
         Map<String, Object> out = base(order, due);
         if (!onepay.collectEnabled()) {
             out.put("enabled", false);
@@ -55,6 +63,7 @@ public class OnePayOrderCollectService {
             return out;
         }
         if (due.signum() <= 0) {
+            closeAliveForOrder(order.getOrderCode());
             out.put("canRefresh", false);
             return out;
         }
@@ -134,6 +143,41 @@ public class OnePayOrderCollectService {
         out.put("codRefundPaid", order.getCodExportedAt() != null);
         out.put("canRefresh", false);
         return out;
+    }
+
+    /**
+     * Số tiền QR người gửi cần chuyển: người gửi trả = cước còn thiếu; người nhận trả = 0
+     * (trừ khoản trả trước app ghi trong note); thu 1 phần = phần trả trước còn thiếu.
+     */
+    static BigDecimal senderVaDue(ShipmentOrder order, BigDecimal fareDue) {
+        BigDecimal remaining = fareDue == null ? BigDecimal.ZERO : fareDue.max(BigDecimal.ZERO);
+        if (order.getPaymentTerm() == PaymentTerm.NHAN_TRA) {
+            BigDecimal prepaid = parseAppPrepaid(order.getNote());
+            if (prepaid.signum() <= 0) {
+                return BigDecimal.ZERO;
+            }
+            BigDecimal still = prepaid.subtract(OrderMoney.nz(order.getPaidAmount()));
+            if (still.signum() <= 0) {
+                return BigDecimal.ZERO;
+            }
+            return still.min(remaining);
+        }
+        return remaining;
+    }
+
+    static BigDecimal parseAppPrepaid(String note) {
+        if (note == null || note.isBlank()) {
+            return BigDecimal.ZERO;
+        }
+        Matcher m = APP_PREPAID.matcher(note);
+        if (!m.find()) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            return new BigDecimal(m.group(1));
+        } catch (NumberFormatException ex) {
+            return BigDecimal.ZERO;
+        }
     }
 
     private static boolean alive(OnePayInvoice inv) {
