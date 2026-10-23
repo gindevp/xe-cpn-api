@@ -57,4 +57,14 @@ public interface AttendanceRecordRepository extends JpaRepository<AttendanceReco
 
     @Query("select a.photo from AttendanceRecord a where a.id = :id")
     Optional<String> findPhotoById(@Param("id") Long id);
+
+    /** Ảnh chấm công hết hạn — giữ bản ghi, chỉ lấy id + photo để dọn MinIO. */
+    @Query(
+        "select a.id, a.photo from AttendanceRecord a where a.checkedAt < :cutoff and a.photo is not null and a.photo <> '' order by a.id"
+    )
+    List<Object[]> findExpiredPhotos(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("update AttendanceRecord a set a.photo = null where a.id in :ids")
+    int clearPhotosByIdIn(@Param("ids") java.util.Collection<Long> ids);
 }

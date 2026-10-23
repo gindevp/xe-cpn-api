@@ -186,6 +186,31 @@ public class StoredMedia {
         return settings().complete();
     }
 
+    /**
+     * Xóa object trên MinIO nếu {@code stored} là {@code minio:key} hoặc URL {@code /api/media/...}.
+     * Data-URL / URL ngoài → bỏ qua (return false). Lỗi MinIO không ném ra ngoài.
+     */
+    public boolean deleteStored(String stored) {
+        if (stored == null || stored.isBlank()) {
+            return false;
+        }
+        String trimmed = stored.trim();
+        String key = trimmed.startsWith(PREFIX) ? trimmed.substring(PREFIX.length()).trim() : ownMediaKey(trimmed);
+        if (key == null || key.isBlank() || key.contains("..") || !key.matches("[a-z0-9][a-z0-9/_\\.-]{0,180}")) {
+            return false;
+        }
+        Settings settings = settings();
+        if (!settings.complete()) {
+            return false;
+        }
+        try {
+            open(settings).delete(key);
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     /** Ghi/đọc/xóa một file thử. Secret trống thì dùng secret đã lưu. */
     public String probe(String endpoint, String bucket, String region, String accessKey, String secretKey) {
         Settings saved = settings();
