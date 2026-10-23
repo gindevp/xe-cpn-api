@@ -1,6 +1,8 @@
 package com.mycompany.myapp.service.storage;
 
+import com.mycompany.myapp.domain.IntegrationConfig;
 import com.mycompany.myapp.repository.AttendanceRecordRepository;
+import com.mycompany.myapp.repository.IntegrationConfigRepository;
 import com.mycompany.myapp.repository.InventoryCheckPhotoRepository;
 import com.mycompany.myapp.repository.VehicleEventPhotoRepository;
 import java.time.Duration;
@@ -9,15 +11,14 @@ import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * TTL ảnh vận hành trên MinIO: chấm công / chấm xe (mặc định 60 ngày), kiểm kho (mặc định 30 ngày).
- * Xóa object MinIO rồi dọn DB: giữ bản ghi chấm công (null ảnh), xóa dòng ảnh xe / kiểm kho.
+ * TTL ảnh vận hành trên MinIO theo cấu hình Tích hợp → TTL ảnh.
+ * Null / ≤0 ngày = không xóa loại đó. Xóa MinIO rồi dọn DB.
  */
 @Component
 public class OperationalMediaRetentionJob {
@@ -27,48 +28,57 @@ public class OperationalMediaRetentionJob {
     private static final int MAX_BATCHES = 40;
 
     private final StoredMedia storedMedia;
+    private final IntegrationConfigRepository integrationConfigRepository;
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final VehicleEventPhotoRepository vehicleEventPhotoRepository;
     private final InventoryCheckPhotoRepository inventoryCheckPhotoRepository;
     private final TransactionTemplate tx;
-    private final int retentionDays;
-    private final int inventoryRetentionDays;
 
     public OperationalMediaRetentionJob(
         StoredMedia storedMedia,
+        IntegrationConfigRepository integrationConfigRepository,
         AttendanceRecordRepository attendanceRecordRepository,
         VehicleEventPhotoRepository vehicleEventPhotoRepository,
         InventoryCheckPhotoRepository inventoryCheckPhotoRepository,
-        TransactionTemplate tx,
-        @Value("${cpn.media.operational-retention-days:60}") int retentionDays,
-        @Value("${cpn.media.inventory-retention-days:30}") int inventoryRetentionDays
+        TransactionTemplate tx
     ) {
         this.storedMedia = storedMedia;
+        this.integrationConfigRepository = integrationConfigRepository;
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.vehicleEventPhotoRepository = vehicleEventPhotoRepository;
         this.inventoryCheckPhotoRepository = inventoryCheckPhotoRepository;
         this.tx = tx;
-        this.retentionDays = Math.max(1, retentionDays);
-        this.inventoryRetentionDays = Math.max(1, inventoryRetentionDays);
     }
 
     @Scheduled(cron = "0 30 3 * * *", zone = "Asia/Ho_Chi_Minh")
     public void run() {
-        Instant cutoff = Instant.now().minus(Duration.ofDays(retentionDays));
-        Instant inventoryCutoff = Instant.now().minus(Duration.ofDays(inventoryRetentionDays));
-        int attendance = purgeAttendance(cutoff);
-        int vehicle = purgeVehicle(cutoff);
-        int inventory = purgeInventory(inventoryCutoff);
+        IntegrationConfig cfg = integrationConfigRepository.findAll().stream().findFirst().orElse(null);
+        Integer attendanceDays = cfg == null ? null : cfg.getMediaRetentionAttendanceDays();
+        Integer vehicleDays = cfg == null ? null : cfg.getMediaRetentionVehicleDays();
+        Integer inventoryDays = cfg == null ? null : cfg.getMediaRetentionInventoryDays();
+
+        int attendance = enabled(attendanceDays) ? purgeAttendance(cutoff(attendanceDays)) : 0;
+        int vehicle = enabled(vehicleDays) ? purgeVehicle(cutoff(vehicleDays)) : 0;
+        int inventory = enabled(inventoryDays) ? purgeInventory(cutoff(inventoryDays)) : 0;
         if (attendance > 0 || vehicle > 0 || inventory > 0) {
             LOG.info(
-                "Operational media retention: attendance/vehicle={}d cleared={},{}; inventory={}d deleted={}",
-                retentionDays,
+                "Operational media retention: attendance={}d→{}, vehicle={}d→{}, inventory={}d→{}",
+                attendanceDays,
                 attendance,
+                vehicleDays,
                 vehicle,
-                inventoryRetentionDays,
+                inventoryDays,
                 inventory
             );
         }
+    }
+
+    private static boolean enabled(Integer days) {
+        return days != null && days > 0;
+    }
+
+    private static Instant cutoff(Integer days) {
+        return Instant.now().minus(Duration.ofDays(days));
     }
 
     int purgeAttendance(Instant cutoff) {

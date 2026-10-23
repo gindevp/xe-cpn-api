@@ -154,6 +154,7 @@
     <include file="config/liquibase/changelog/20261019110000_grab_express.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261019160000_grab_production.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261022180000_cod_fee_refund.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261023150000_media_retention_config.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
 

@@ -237,7 +237,4 @@ cpn:
   mobile-track-key: ${CPN_MOBILE_TRACK_KEY:xvn-cpn-mobile-own-track-20261016}
   mobile-callback-url: ${CPN_MOBILE_CALLBACK_URL:http://113.20.107.44:8666/api/cpn-delivery-orders/payment-callback}
   collect-account-holder: ${CPN_COLLECT_ACCOUNT_HOLDER:DLLXEVIETNAM}
-  # TTL ảnh trên MinIO (ngày). Job 03:30 VN.
-  media:
-    operational-retention-days: ${CPN_MEDIA_OPERATIONAL_RETENTION_DAYS:60}
-    inventory-retention-days: ${CPN_MEDIA_INVENTORY_RETENTION_DAYS:30}
+  # TTL ảnh MinIO cấu hình trên màn Tích hợp → TTL ảnh (null = không xóa). Job 03:30 VN.

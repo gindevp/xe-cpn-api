@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261023150000-media-retention-config" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="integration_config" columnName="media_retention_attendance_days"/>
+            </not>
+        </preConditions>
+        <comment>TTL ảnh MinIO theo loại (null = không xóa tự động). Seed 60/60/30 cho bản ghi hiện có.</comment>
+        <addColumn tableName="integration_config">
+            <column name="media_retention_attendance_days" type="int"/>
+            <column name="media_retention_vehicle_days" type="int"/>
+            <column name="media_retention_inventory_days" type="int"/>
+        </addColumn>
+        <sql>
+            UPDATE integration_config
+            SET media_retention_attendance_days = 60,
+                media_retention_vehicle_days = 60,
+                media_retention_inventory_days = 30
+            WHERE media_retention_attendance_days IS NULL
+        </sql>
+    </changeSet>
+</databaseChangeLog>

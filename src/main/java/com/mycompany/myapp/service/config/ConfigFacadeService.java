@@ -172,6 +172,19 @@ public class ConfigFacadeService {
         if (notBlank(incoming.getMinioRegion())) current.setMinioRegion(incoming.getMinioRegion().trim());
         if (notBlank(incoming.getMinioAccessKey())) current.setMinioAccessKey(incoming.getMinioAccessKey().trim());
         if (notBlank(incoming.getMinioSecretKey())) current.setMinioSecretKey(incoming.getMinioSecretKey().trim());
+        // 0 hoặc âm = tắt TTL (null). FE luôn gửi 3 field khi lưu tab TTL ảnh.
+        if (incoming.getMediaRetentionAttendanceDays() != null) {
+            int d = incoming.getMediaRetentionAttendanceDays();
+            current.setMediaRetentionAttendanceDays(d > 0 ? Math.min(d, 3650) : null);
+        }
+        if (incoming.getMediaRetentionVehicleDays() != null) {
+            int d = incoming.getMediaRetentionVehicleDays();
+            current.setMediaRetentionVehicleDays(d > 0 ? Math.min(d, 3650) : null);
+        }
+        if (incoming.getMediaRetentionInventoryDays() != null) {
+            int d = incoming.getMediaRetentionInventoryDays();
+            current.setMediaRetentionInventoryDays(d > 0 ? Math.min(d, 3650) : null);
+        }
         mergeAutoCall(current, incoming);
 
         if (current.getMapProvider() == null || current.getMapProvider().isBlank()) {

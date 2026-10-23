@@ -261,6 +261,18 @@ public class IntegrationConfig implements Serializable {
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String minioSecretKey;
 
+    /** TTL ảnh chấm công (ngày). {@code null} = không xóa tự động. */
+    @Column(name = "media_retention_attendance_days")
+    private Integer mediaRetentionAttendanceDays;
+
+    /** TTL ảnh chấm xe (ngày). {@code null} = không xóa tự động. */
+    @Column(name = "media_retention_vehicle_days")
+    private Integer mediaRetentionVehicleDays;
+
+    /** TTL ảnh kiểm kho (ngày). {@code null} = không xóa tự động. */
+    @Column(name = "media_retention_inventory_days")
+    private Integer mediaRetentionInventoryDays;
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 
@@ -879,6 +891,30 @@ public class IntegrationConfig implements Serializable {
             !minioAccessKey.isBlank() &&
             isMinioSecretConfigured()
         );
+    }
+
+    public Integer getMediaRetentionAttendanceDays() {
+        return mediaRetentionAttendanceDays;
+    }
+
+    public void setMediaRetentionAttendanceDays(Integer mediaRetentionAttendanceDays) {
+        this.mediaRetentionAttendanceDays = mediaRetentionAttendanceDays;
+    }
+
+    public Integer getMediaRetentionVehicleDays() {
+        return mediaRetentionVehicleDays;
+    }
+
+    public void setMediaRetentionVehicleDays(Integer mediaRetentionVehicleDays) {
+        this.mediaRetentionVehicleDays = mediaRetentionVehicleDays;
+    }
+
+    public Integer getMediaRetentionInventoryDays() {
+        return mediaRetentionInventoryDays;
+    }
+
+    public void setMediaRetentionInventoryDays(Integer mediaRetentionInventoryDays) {
+        this.mediaRetentionInventoryDays = mediaRetentionInventoryDays;
     }
 
     public Instant getUpdatedAt() {
