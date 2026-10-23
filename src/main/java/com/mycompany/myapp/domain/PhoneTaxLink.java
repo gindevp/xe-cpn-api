@@ -55,6 +55,14 @@ public class PhoneTaxLink implements Serializable {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /**
+     * true = MST này vẫn gắn SĐT cho auto xuất HĐ công ty / gợi ý tạo đơn.
+     * false = giữ trên CRM nhưng không còn liên kết tự động (xuất cá nhân nếu mọi MST đều tắt).
+     */
+    @NotNull
+    @Column(name = "auto_issue", nullable = false)
+    private Boolean autoIssue = Boolean.TRUE;
+
     public Long getId() {
         return id;
     }
@@ -125,5 +133,17 @@ public class PhoneTaxLink implements Serializable {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Boolean getAutoIssue() {
+        return autoIssue;
+    }
+
+    public void setAutoIssue(Boolean autoIssue) {
+        this.autoIssue = autoIssue == null || autoIssue;
+    }
+
+    public boolean isAutoIssue() {
+        return autoIssue == null || autoIssue;
     }
 }

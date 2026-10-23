@@ -156,6 +156,7 @@
     <include file="config/liquibase/changelog/20261022180000_cod_fee_refund.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261023150000_media_retention_config.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261023170000_order_cod_bill_photo.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261023180000_phone_tax_auto_issue.xml" relativeToChangelogFile="false"/>
 </databaseChangeLog>
 
 

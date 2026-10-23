@@ -16,6 +16,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -180,7 +181,17 @@ public class InvoiceManagementResource {
         return ResponseEntity.noContent().build();
     }
 
+    /** Tick / bỏ tick MST cho auto xuất HĐ công ty theo SĐT (CRM). */
+    @PatchMapping("/phone-tax/{id}/auto-issue")
+    public Map<String, String> setPhoneTaxAutoIssue(@PathVariable("id") Long id, @RequestBody AutoIssueRequest request) {
+        staffAccessService.requireScreenWrite(ScreenKey.CRM_SDT);
+        boolean enabled = request == null || request.enabled() == null || Boolean.TRUE.equals(request.enabled());
+        return phoneTaxLinkService.setAutoIssue(id, enabled);
+    }
+
     public record PhoneTaxRequest(String phone, String taxCode, String companyName, String address, String email, String contactName) {}
+
+    public record AutoIssueRequest(Boolean enabled) {}
 
     public record MarkRequest(List<String> orderCodes, Boolean marked) {}
 

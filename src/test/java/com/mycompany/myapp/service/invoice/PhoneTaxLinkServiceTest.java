@@ -174,6 +174,23 @@ class PhoneTaxLinkServiceTest {
         assertThat(service.profiles("09")).isEmpty();
     }
 
+    @Test
+    void setAutoIssue_false_hidesFromProfiles_andLatestParty() {
+        service.create("0901234567", TAXES[0], "A", "Dia chi A", null, "An");
+        service.create("0901234567", TAXES[1], "B", "Dia chi B", null, "An");
+        Long firstId = store.stream().filter(r -> r.getTaxCode().equals(TAXES[0])).findFirst().orElseThrow().getId();
+        Long secondId = store.stream().filter(r -> r.getTaxCode().equals(TAXES[1])).findFirst().orElseThrow().getId();
+
+        service.setAutoIssue(firstId, false);
+        assertThat(service.profiles("0901234567")).extracting(m -> m.get("taxCode")).containsExactly(TAXES[1]);
+        assertThat(service.latestPartyProfile("0901234567", null)).get().extracting(PhoneTaxLink::getTaxCode).isEqualTo(TAXES[1]);
+
+        service.setAutoIssue(secondId, false);
+        assertThat(service.profiles("0901234567")).isEmpty();
+        assertThat(service.latestPartyProfile("0901234567", null)).isEmpty();
+        assertThat(store).hasSize(2);
+    }
+
     private static ShipmentOrder issued(String code, String sender, String receiver, String tax, String company, PaymentTerm term) {
         ShipmentOrder o = new ShipmentOrder();
         o.setOrderCode(code);

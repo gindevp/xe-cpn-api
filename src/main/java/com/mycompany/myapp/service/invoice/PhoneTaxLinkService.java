@@ -51,6 +51,10 @@ public class PhoneTaxLinkService {
         return profiles(phone).stream().findFirst();
     }
 
+    /**
+     * MST đang bật auto xuất / gợi ý tạo đơn (đã bỏ tick trên CRM thì không trả về).
+     * CRM dùng {@link #directory} để xem cả dòng đã tắt.
+     */
     @Transactional
     public List<Map<String, String>> profiles(String phone) {
         backfillOnce();
@@ -59,7 +63,12 @@ public class PhoneTaxLinkService {
         if (canonical == null) {
             return List.of();
         }
-        return linkRepository.findByPhoneOrderByUpdatedAtDescIdDesc(canonical).stream().map(PhoneTaxLinkService::toMap).toList();
+        return linkRepository
+            .findByPhoneOrderByUpdatedAtDescIdDesc(canonical)
+            .stream()
+            .filter(PhoneTaxLink::isAutoIssue)
+            .map(PhoneTaxLinkService::toMap)
+            .toList();
     }
 
     @Transactional
@@ -192,6 +201,17 @@ public class PhoneTaxLinkService {
         linkRepository.deleteById(id);
     }
 
+    /** CRM: tick / bỏ tick MST cho auto xuất HĐ công ty theo SĐT. */
+    @Transactional
+    public Map<String, String> setAutoIssue(Long id, boolean enabled) {
+        PhoneTaxLink row = linkRepository
+            .findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không thấy MST này"));
+        row.setAutoIssue(enabled);
+        row.setUpdatedAt(Instant.now());
+        return toMap(linkRepository.save(row));
+    }
+
     /**
      * MST mới nhất của người gửi hoặc người nhận, không xét ai trả cước.
      * Chỉ lấy dòng đủ MST, tên công ty và địa chỉ. Cả hai đều có thì lấy dòng cập nhật sau;
@@ -256,7 +276,7 @@ public class PhoneTaxLinkService {
             return null;
         }
         for (PhoneTaxLink row : linkRepository.findByPhoneOrderByUpdatedAtDescIdDesc(phone)) {
-            if (completeProfile(row)) {
+            if (row.isAutoIssue() && completeProfile(row)) {
                 return row;
             }
         }
@@ -354,6 +374,7 @@ public class PhoneTaxLinkService {
         if (fromOrderCode != null && !fromOrderCode.isBlank()) {
             row.setFromOrderCode(clip(fromOrderCode.trim(), 40));
         }
+        row.setAutoIssue(true);
         row.setUpdatedAt(Instant.now());
         return linkRepository.save(row);
     }
@@ -409,6 +430,7 @@ public class PhoneTaxLinkService {
         m.put("address", row.getAddress());
         m.put("email", row.getEmail());
         m.put("fromOrderCode", row.getFromOrderCode());
+        m.put("autoIssue", row.isAutoIssue() ? "true" : "false");
         if (row.getUpdatedAt() != null) {
             m.put("issuedAt", row.getUpdatedAt().toString());
             m.put("updatedAt", row.getUpdatedAt().toString());
