@@ -75,8 +75,29 @@ public class BusinessReportService {
 
     public record OfficeRow(String officeCode, String officeName, long delivered, long backlog) {}
 
-    /** Một ngày trên biểu đồ: đơn gửi (tạo trong ngày), đơn nhận (giao trong ngày), doanh thu = cước đơn gửi đã trừ phí Ahamove. */
+    /**
+     * Một ngày trên biểu đồ:
+     * <ul>
+     *   <li>Đơn gửi = lần nhập kho gửi trong ngày (WAREHOUSE_RECEIVE), theo VP gửi;</li>
+     *   <li>Đơn nhận = lần nhập kho giao trong ngày (SCAN_IN / DEST_WH_IN / HUB_IN), theo VP nhận;</li>
+     *   <li>Doanh thu = cước các đơn gửi trong ngày (đã trừ phí giao đối tác).</li>
+     * </ul>
+     */
     public record DayRow(LocalDate date, long sent, long received, BigDecimal revenue) {}
+
+    /**
+     * Khung 2 giờ (giờ VN): đơn gửi (giờ nhập kho gửi) + đơn nhận (giờ nhập kho giao).
+     * {@code slot} 0 = 00–02h … 11 = 22–24h. {@code perOffice} = mã VP (gửi hoặc nhận tùy sự kiện).
+     */
+    public record HourBucket(String label, int slot, long count, Map<String, Long> perOffice) {}
+
+    /** Sự kiện nhập kho gửi trong khoảng (để xếp khung giờ / kiểm thử). */
+    record WhInHit(Instant at, String officeCode, BigDecimal revenue) {}
+
+    /** Bấm «Nhập kho gửi» → OrderEvent WAREHOUSE_RECEIVE (không lấy CONFIRM từ nháp). */
+    static final List<String> SENT_WH_ACTIONS = List.of("WAREHOUSE_RECEIVE");
+    /** Bấm «Nhập kho giao» / quét xuống xe tại VP nhận. */
+    static final List<String> RECEIVED_WH_ACTIONS = List.of("SCAN_IN", "DEST_WH_IN", "HUB_IN");
 
     public record Report(
         LocalDate from,
@@ -87,7 +108,8 @@ public class BusinessReportService {
         LocalDate previousTo,
         Totals previous,
         List<OfficeRow> offices,
-        List<DayRow> days
+        List<DayRow> days,
+        List<HourBucket> hours
     ) {}
 
     record Period(LocalDate from, LocalDate to, Instant start, Instant end) {
@@ -118,7 +140,8 @@ public class BusinessReportService {
 
         Map<String, long[]> delivered = deliveredByOffice(cur);
         Map<String, Object[]> backlog = backlogByOffice(cur);
-        Totals current = totals(office, revenueLedger.createdOrders(cur.start(), cur.end()), delivered, backlog);
+        List<RevenueLedger.CreatedOrder> created = revenueLedger.createdOrders(cur.start(), cur.end());
+        Totals current = totals(office, created, delivered, backlog);
         Totals previous = totals(
             office,
             revenueLedger.createdOrders(prev.start(), prev.end()),
@@ -126,6 +149,11 @@ public class BusinessReportService {
             backlogByOffice(prev)
         );
 
+        List<WhInHit> sentHits = warehouseInHits(office, cur, SENT_WH_ACTIONS, true);
+        List<WhInHit> receivedHits = warehouseInHits(office, cur, RECEIVED_WH_ACTIONS, false);
+        List<WhInHit> hourHits = new ArrayList<>(sentHits.size() + receivedHits.size());
+        hourHits.addAll(sentHits);
+        hourHits.addAll(receivedHits);
         return new Report(
             f,
             t,
@@ -135,7 +163,8 @@ public class BusinessReportService {
             prev.to(),
             previous,
             officeRows(office, delivered, backlog),
-            dayRows(office, cur)
+            dayRows(cur, sentHits, receivedHits),
+            hourBuckets(hourHits)
         );
     }
 
@@ -244,42 +273,24 @@ public class BusinessReportService {
         return out;
     }
 
-    private List<DayRow> dayRows(String office, Period p) {
+    private List<DayRow> dayRows(Period p, List<WhInHit> sentHits, List<WhInHit> receivedHits) {
         Map<LocalDate, long[]> sent = new TreeMap<>();
         Map<LocalDate, BigDecimal> revenue = new TreeMap<>();
-        String officeKey = office == null ? "" : office;
-        for (RevenueLedger.CreatedOrder c : revenueLedger.createdOrders(p.start(), p.end())) {
-            Instant createdAt = c.order().getCreatedAt();
-            if (createdAt == null || (office != null && !office.equalsIgnoreCase(c.officeCode()))) {
+        for (WhInHit h : sentHits) {
+            if (h.at() == null) {
                 continue;
             }
-            LocalDate day = createdAt.atZone(VN).toLocalDate();
+            LocalDate day = h.at().atZone(VN).toLocalDate();
             sent.computeIfAbsent(day, d -> new long[] { 0 })[0]++;
-            revenue.merge(day, c.revenue(), BigDecimal::add);
+            revenue.merge(day, h.revenue() == null ? BigDecimal.ZERO : h.revenue(), BigDecimal::add);
         }
 
         Map<LocalDate, Long> received = new TreeMap<>();
-        List<Object[]> pods = em
-            .createQuery(
-                "select o.id, e.eventAt from OrderEvent e join e.order o left join o.finalToOffice ft left join o.toOffice t" +
-                " where o.status = :delivered and upper(e.action) in :acts" +
-                " and e.eventAt >= :start and e.eventAt < :end" +
-                " and (:office = '' or upper(coalesce(ft.code, t.code)) = :office)" +
-                " and not exists (select 1 from OrderEvent e2 where e2.order = o and upper(e2.action) in :acts and e2.eventAt > e.eventAt)",
-                Object[].class
-            )
-            .setParameter("delivered", OrderStatus.DELIVERED)
-            .setParameter("acts", InvoicePolicy.DELIVERED_ACTIONS)
-            .setParameter("start", p.start())
-            .setParameter("end", p.end())
-            .setParameter("office", officeKey)
-            .getResultList();
-        java.util.Set<Object> seen = new java.util.HashSet<>();
-        for (Object[] r : pods) {
-            if (r[0] == null || r[1] == null || !seen.add(r[0])) {
+        for (WhInHit h : receivedHits) {
+            if (h.at() == null) {
                 continue;
             }
-            LocalDate day = ((Instant) r[1]).atZone(VN).toLocalDate();
+            LocalDate day = h.at().atZone(VN).toLocalDate();
             received.merge(day, 1L, Long::sum);
         }
 
@@ -288,6 +299,72 @@ public class BusinessReportService {
             long s = sent.containsKey(d) ? sent.get(d)[0] : 0;
             long rc = received.getOrDefault(d, 0L);
             out.add(new DayRow(d, s, rc, revenue.getOrDefault(d, BigDecimal.ZERO)));
+        }
+        return out;
+    }
+
+    /**
+     * Mỗi đơn một lần trong khoảng: lấy min(eventAt) của các action nhập kho.
+     * {@code byFromOffice=true} → VP gửi; false → VP nhận (finalTo / to).
+     */
+    private List<WhInHit> warehouseInHits(String office, Period p, List<String> actions, boolean byFromOffice) {
+        String officeKey = office == null ? "" : office.trim().toUpperCase(Locale.ROOT);
+        String jpql = byFromOffice
+            ? "select o.id, min(e.eventAt), coalesce(f.code, ''), o.fareAmount, o.partnerCode, o.partnerStatus, o.partnerFeeAmount" +
+            " from OrderEvent e join e.order o left join o.fromOffice f" +
+            " where upper(e.action) in :acts and e.eventAt >= :start and e.eventAt < :end" +
+            " and o.status <> :draft" +
+            " and (:office = '' or upper(coalesce(f.code, '')) = :office)" +
+            " group by o.id, f.code, o.fareAmount, o.partnerCode, o.partnerStatus, o.partnerFeeAmount"
+            : "select o.id, min(e.eventAt), coalesce(ft.code, t.code, ''), o.fareAmount, o.partnerCode, o.partnerStatus, o.partnerFeeAmount" +
+            " from OrderEvent e join e.order o left join o.finalToOffice ft left join o.toOffice t" +
+            " where upper(e.action) in :acts and e.eventAt >= :start and e.eventAt < :end" +
+            " and o.status <> :draft" +
+            " and (:office = '' or upper(coalesce(ft.code, t.code, '')) = :office)" +
+            " group by o.id, ft.code, t.code, o.fareAmount, o.partnerCode, o.partnerStatus, o.partnerFeeAmount";
+        List<Object[]> rows = em
+            .createQuery(jpql, Object[].class)
+            .setParameter("acts", actions)
+            .setParameter("start", p.start())
+            .setParameter("end", p.end())
+            .setParameter("draft", OrderStatus.DRAFT)
+            .setParameter("office", officeKey)
+            .getResultList();
+        List<WhInHit> out = new ArrayList<>(rows.size());
+        for (Object[] r : rows) {
+            if (r[1] == null) {
+                continue;
+            }
+            Instant at = (Instant) r[1];
+            String code = key(r[2]);
+            BigDecimal rev = RevenueLedger.netFare((BigDecimal) r[3], (String) r[4], (String) r[5], (BigDecimal) r[6]);
+            out.add(new WhInHit(at, code, rev));
+        }
+        return out;
+    }
+
+    /** 12 khung 2 giờ (giờ VN) — nhập kho gửi + nhập kho giao. */
+    static List<HourBucket> hourBuckets(List<WhInHit> hits) {
+        @SuppressWarnings("unchecked")
+        Map<String, Long>[] perSlot = new Map[12];
+        long[] totals = new long[12];
+        for (int i = 0; i < 12; i++) {
+            perSlot[i] = new LinkedHashMap<>();
+        }
+        for (WhInHit h : hits) {
+            if (h.at() == null) {
+                continue;
+            }
+            int hour = h.at().atZone(VN).getHour();
+            int slot = Math.min(11, Math.max(0, hour / 2));
+            String code = h.officeCode() == null ? "" : h.officeCode().trim().toUpperCase(Locale.ROOT);
+            perSlot[slot].merge(code, 1L, Long::sum);
+            totals[slot]++;
+        }
+        List<HourBucket> out = new ArrayList<>(12);
+        for (int i = 0; i < 12; i++) {
+            String label = String.format("%02d-%02dh", i * 2, i * 2 + 2);
+            out.add(new HourBucket(label, i, totals[i], Map.copyOf(perSlot[i])));
         }
         return out;
     }
