@@ -82,6 +82,7 @@ public class OrderFacadeService {
     private final ApplicationEventPublisher eventPublisher;
     private ItineraryRepository itineraryRepository;
     private OrderGoodsPhotoRepository goodsPhotoRepository;
+    private com.mycompany.myapp.service.payment.onepay.OnePayOrderCollectService onePayOrderCollectService;
 
     static final int MAX_GOODS_PHOTO_LENGTH = 2_500_000;
 
@@ -116,6 +117,25 @@ public class OrderFacadeService {
     @org.springframework.beans.factory.annotation.Autowired
     public void setDoorKmEstimator(com.mycompany.myapp.service.partner.DoorKmEstimator doorKmEstimator) {
         this.doorKmEstimator = doorKmEstimator;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setOnePayOrderCollectService(
+        com.mycompany.myapp.service.payment.onepay.OnePayOrderCollectService onePayOrderCollectService
+    ) {
+        this.onePayOrderCollectService = onePayOrderCollectService;
+    }
+
+    /** Đơn rời Chờ bàn giao → đóng VA thu hộ (ẩn QR app). */
+    public void syncCollectVa(ShipmentOrder order) {
+        if (onePayOrderCollectService == null || order == null) {
+            return;
+        }
+        try {
+            onePayOrderCollectService.syncAfterOrderChange(order);
+        } catch (RuntimeException ignored) {
+            /* không chặn thao tác vận hành nếu OnePay lỗi */
+        }
     }
 
     @Transactional(readOnly = true)
@@ -828,6 +848,7 @@ public class OrderFacadeService {
             }
         }
         shipmentOrderRepository.save(order);
+        syncCollectVa(order);
         String action = isBlank(req.getAction()) ? "TRANSITION_" + to.name() : req.getAction();
         appendEvent(order, action, req.getDetail(), currentActor());
         if (to == OrderStatus.DELIVERED) {
@@ -1431,6 +1452,7 @@ public class OrderFacadeService {
             order.setForwardStage(ForwardStage.WH_IN);
         }
         shipmentOrderRepository.save(order);
+        syncCollectVa(order);
         appendEvent(order, "WAREHOUSE_RECEIVE", "Nhập kho gửi", currentActor());
         collectSenderFareOnWarehouseIn(order);
         return getByCode(order.getOrderCode());

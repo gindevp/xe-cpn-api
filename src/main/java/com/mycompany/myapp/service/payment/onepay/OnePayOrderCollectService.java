@@ -4,6 +4,7 @@ import com.mycompany.myapp.domain.OnePayInvoice;
 import com.mycompany.myapp.domain.ShipmentOrder;
 import com.mycompany.myapp.repository.OnePayInvoiceRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
+import com.mycompany.myapp.service.order.CustomerTrackStatus;
 import com.mycompany.myapp.service.order.OrderFacadeService;
 import com.mycompany.myapp.service.order.OrderMoney;
 import java.math.BigDecimal;
@@ -19,7 +20,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Thu cước đơn app qua tài khoản ảo OnePay. Cấu hình thu hộ tắt thì không tạo VA.
- * VA sống theo hạn hoá đơn (mặc định 24 giờ). Hết hạn hoặc OnePay đã đóng thì mới cho tạo mã mới.
+ * QR/VA chỉ khi đơn còn tab Chờ bàn giao (chờ nhận / chờ lấy / đang lấy).
+ * Rời tab đó thì đóng VA và không trả số TK / QR.
  */
 @Service
 public class OnePayOrderCollectService {
@@ -41,9 +43,17 @@ public class OnePayOrderCollectService {
         Map<String, Object> out = base(order, due);
         if (!onepay.collectEnabled()) {
             out.put("enabled", false);
+            out.put("qrAllowed", false);
             return out;
         }
         out.put("enabled", true);
+        boolean qrAllowed = CustomerTrackStatus.pendingHandover(order);
+        out.put("qrAllowed", qrAllowed);
+        if (!qrAllowed) {
+            closeAliveForOrder(order.getOrderCode());
+            out.put("canRefresh", false);
+            return out;
+        }
         if (due.signum() <= 0) {
             out.put("canRefresh", false);
             return out;
@@ -75,6 +85,30 @@ public class OnePayOrderCollectService {
         }
         out.put("canRefresh", true);
         return out;
+    }
+
+    /** Đóng VA còn sống khi đơn đã rời Chờ bàn giao (nhập kho, lên xe, huỷ, …). */
+    @Transactional
+    public void closeAliveForOrder(String orderCode) {
+        if (orderCode == null || orderCode.isBlank()) {
+            return;
+        }
+        OnePayInvoice current = invoices.findFirstByOrderCodeOrderByIdDesc(orderCode.trim()).orElse(null);
+        if (current != null && alive(current)) {
+            closeQuietly(current);
+        }
+    }
+
+    /** Gọi sau khi lưu đơn: còn Chờ bàn giao thì giữ VA, không thì đóng. */
+    @Transactional
+    public void syncAfterOrderChange(ShipmentOrder order) {
+        if (order == null || order.getOrderCode() == null || order.getOrderCode().isBlank()) {
+            return;
+        }
+        if (CustomerTrackStatus.pendingHandover(order)) {
+            return;
+        }
+        closeAliveForOrder(order.getOrderCode());
     }
 
     private ShipmentOrder requireOrder(String code, String phone) {

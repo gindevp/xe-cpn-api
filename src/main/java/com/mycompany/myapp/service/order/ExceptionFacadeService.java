@@ -869,6 +869,7 @@ public class ExceptionFacadeService {
             order.setPickedUpAt(now);
         }
         shipmentOrderRepository.save(order);
+        orderFacadeService.syncCollectVa(order);
         if (stage == ForwardStage.WH_IN) {
             orderFacadeService.collectSenderFareOnWarehouseIn(order);
         }
