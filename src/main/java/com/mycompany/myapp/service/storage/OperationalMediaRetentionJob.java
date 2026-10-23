@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * TTL ảnh vận hành trên MinIO theo cấu hình Tích hợp → TTL ảnh.
+ * TTL ảnh vận hành trên MinIO theo cấu hình Tích hợp → Lưu trữ.
  * Null / ≤0 ngày = không xóa loại đó. Xóa MinIO rồi dọn DB.
  */
 @Component
