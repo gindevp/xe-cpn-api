@@ -13,6 +13,8 @@ import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
@@ -111,20 +113,49 @@ public class OnePayOrderCollectService {
         return va == null || va.isBlank() || "active".equalsIgnoreCase(va);
     }
 
+    /**
+     * Chỉ cập nhật DB trong transaction hiện tại. Gọi OnePay khoá VA sau commit —
+     * nếu gọi trong cùng txn mà OnePay lỗi thì Spring đánh rollback-only dù đã catch,
+     * khiến cả request thu hộ trả 500.
+     */
     private void closeQuietly(OnePayInvoice inv) {
+        boolean changed = false;
         if (OnePayInvoice.STATE_UNPAID.equals(inv.getState())) {
             inv.setState(OnePayInvoice.STATE_EXPIRED);
             inv.setUpdatedAt(Instant.now());
+            changed = true;
+        }
+        if (inv.getVaState() == null || !"inactive".equalsIgnoreCase(inv.getVaState())) {
+            inv.setVaState("inactive");
+            inv.setUpdatedAt(Instant.now());
+            changed = true;
+        }
+        if (changed) {
             invoices.save(inv);
         }
-        if (inv.getVaState() != null && "inactive".equalsIgnoreCase(inv.getVaState())) {
+        Long id = inv.getId();
+        if (id == null) {
             return;
         }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        deactivateRemoteQuietly(id);
+                    }
+                }
+            );
+        } else {
+            deactivateRemoteQuietly(id);
+        }
+    }
+
+    private void deactivateRemoteQuietly(Long invoiceId) {
         try {
-            onepay.setAccountState(inv.getId(), false);
+            onepay.setAccountState(invoiceId, false);
         } catch (RuntimeException ignored) {
-            inv.setVaState("inactive");
-            invoices.save(inv);
+            /* VA local đã hết hạn; khoá remote lỗi không được làm fail thu hộ */
         }
     }
 

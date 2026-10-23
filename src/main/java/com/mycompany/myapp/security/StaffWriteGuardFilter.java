@@ -183,7 +183,12 @@ public class StaffWriteGuardFilter extends OncePerRequestFilter {
         if ("POST".equals(method) && ("/api/ahamove/estimate-pickup-km".equals(path) || "/api/grab/estimate".equals(path))) {
             return true;
         }
-        if ("POST".equals(method) && ("/api/orders/track".equals(path) || path.startsWith("/api/orders/track/invoice"))) {
+        if (
+            "POST".equals(method) &&
+            ("/api/orders/track".equals(path) ||
+                path.startsWith("/api/orders/track/invoice") ||
+                path.startsWith("/api/orders/track/collect"))
+        ) {
             return true;
         }
         if ("POST".equals(method) && path.startsWith("/api/public/office-screen/")) {

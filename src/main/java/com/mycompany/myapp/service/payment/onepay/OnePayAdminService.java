@@ -383,7 +383,7 @@ public class OnePayAdminService {
 
         OnePayClient.Result r = client.call(c, "BATCH", ref, "POST", "/batchs", batch.toString());
         if (!r.ok()) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OnePay từ chối tạo tài khoản thu hộ");
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OnePay từ chối tạo tài khoản thu hộ — " + r.error());
         }
         OnePayInvoice inv = new OnePayInvoice();
         inv.setPurpose(OnePayInvoice.PURPOSE_ORDER);
