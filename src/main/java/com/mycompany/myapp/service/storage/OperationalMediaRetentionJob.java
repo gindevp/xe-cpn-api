@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * TTL ảnh vận hành trên MinIO: chấm công, chấm xe, kiểm kho (mặc định 60 ngày).
+ * TTL ảnh vận hành trên MinIO: chấm công / chấm xe (mặc định 60 ngày), kiểm kho (mặc định 30 ngày).
  * Xóa object MinIO rồi dọn DB: giữ bản ghi chấm công (null ảnh), xóa dòng ảnh xe / kiểm kho.
  */
 @Component
@@ -32,6 +32,7 @@ public class OperationalMediaRetentionJob {
     private final InventoryCheckPhotoRepository inventoryCheckPhotoRepository;
     private final TransactionTemplate tx;
     private final int retentionDays;
+    private final int inventoryRetentionDays;
 
     public OperationalMediaRetentionJob(
         StoredMedia storedMedia,
@@ -39,7 +40,8 @@ public class OperationalMediaRetentionJob {
         VehicleEventPhotoRepository vehicleEventPhotoRepository,
         InventoryCheckPhotoRepository inventoryCheckPhotoRepository,
         TransactionTemplate tx,
-        @Value("${cpn.media.operational-retention-days:60}") int retentionDays
+        @Value("${cpn.media.operational-retention-days:60}") int retentionDays,
+        @Value("${cpn.media.inventory-retention-days:30}") int inventoryRetentionDays
     ) {
         this.storedMedia = storedMedia;
         this.attendanceRecordRepository = attendanceRecordRepository;
@@ -47,20 +49,23 @@ public class OperationalMediaRetentionJob {
         this.inventoryCheckPhotoRepository = inventoryCheckPhotoRepository;
         this.tx = tx;
         this.retentionDays = Math.max(1, retentionDays);
+        this.inventoryRetentionDays = Math.max(1, inventoryRetentionDays);
     }
 
     @Scheduled(cron = "0 30 3 * * *", zone = "Asia/Ho_Chi_Minh")
     public void run() {
         Instant cutoff = Instant.now().minus(Duration.ofDays(retentionDays));
+        Instant inventoryCutoff = Instant.now().minus(Duration.ofDays(inventoryRetentionDays));
         int attendance = purgeAttendance(cutoff);
         int vehicle = purgeVehicle(cutoff);
-        int inventory = purgeInventory(cutoff);
+        int inventory = purgeInventory(inventoryCutoff);
         if (attendance > 0 || vehicle > 0 || inventory > 0) {
             LOG.info(
-                "Operational media retention ({}d): attendancePhotos={}, vehiclePhotos={}, inventoryPhotos={}",
+                "Operational media retention: attendance/vehicle={}d cleared={},{}; inventory={}d deleted={}",
                 retentionDays,
                 attendance,
                 vehicle,
+                inventoryRetentionDays,
                 inventory
             );
         }
