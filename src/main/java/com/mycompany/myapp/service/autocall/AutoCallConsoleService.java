@@ -46,8 +46,10 @@ public class AutoCallConsoleService {
     static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     static final int MAX_RANGE_DAYS = 31;
     static final int HHVN_PAGE_LIMIT = 200;
-    /** HHVN giới hạn 60 request/phút — tối đa 2000 cuộc gọi mỗi lần tải danh sách. */
-    static final int MAX_FETCH_PAGES = 10;
+    /** HHVN giới hạn 60 request/phút — tối đa ~10_000 cuộc gọi mỗi lần tải danh sách (50×200). */
+    static final int MAX_FETCH_PAGES = 50;
+    /** Phân trang trả FE (sau khi gom từ HHVN / DB) — không gắn với limit API HHVN. */
+    static final int MAX_RESPONSE_PAGE_SIZE = 10_000;
     static final Set<String> CALL_TYPES = Set.of("giao", "hoan");
     static final Set<String> CALL_STATUSES = Set.of("queued", "calling", "retrying", "completed", "failed", "cancelled");
     static final Set<String> CALL_RESULTS = Set.of("answered", "not_answered", "error", "cancelled");
@@ -121,7 +123,7 @@ public class AutoCallConsoleService {
         query.put("status", statusFilter);
         query.put("limit", String.valueOf(HHVN_PAGE_LIMIT));
         int pg = page == null || page < 1 ? 1 : page;
-        int lim = limit == null ? 50 : Math.max(1, Math.min(HHVN_PAGE_LIMIT, limit));
+        int lim = limit == null ? 50 : Math.max(1, Math.min(MAX_RESPONSE_PAGE_SIZE, limit));
 
         IntegrationConfig cfg = active;
         Map<String, Object> out = new LinkedHashMap<>();
@@ -222,7 +224,7 @@ public class AutoCallConsoleService {
         Integer limit
     ) {
         int pg = page == null || page < 1 ? 1 : page;
-        int lim = limit == null ? 50 : Math.max(1, Math.min(HHVN_PAGE_LIMIT, limit));
+        int lim = limit == null ? 50 : Math.max(1, Math.min(MAX_RESPONSE_PAGE_SIZE, limit));
         List<AutoCall> calls = autoCallRepository.findForConsole(
             IntegrationConfig.PROVIDER_VTECH,
             fromDate.atStartOfDay(VN).toInstant(),
