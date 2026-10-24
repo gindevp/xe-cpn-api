@@ -43,6 +43,11 @@ public class OnePayOrderCollectService {
         this.onepay = onepay;
     }
 
+    /** App/web hỏi nhanh thu hộ OnePay có bật không (không tạo VA). */
+    public boolean isCollectEnabled() {
+        return onepay.collectEnabled();
+    }
+
     @Transactional
     public Map<String, Object> view(String code, String phone, boolean refresh) {
         ShipmentOrder order = requireOrder(code, phone);

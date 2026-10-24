@@ -357,6 +357,15 @@ public class OrderFacadeResource {
         return orderFacadeService.track(request);
     }
 
+    /**
+     * Thu hộ OnePay đang bật hay không — public, không tạo VA.
+     * App ẩn QR / «Thanh toán ngay» khi tắt.
+     */
+    @GetMapping("/track/collect-status")
+    public Map<String, Object> trackCollectStatus() {
+        return Map.of("enabled", onePayOrderCollectService.isCollectEnabled());
+    }
+
     /** Thu cước qua VA. Chỉ mobile_service gọi, bằng khóa nội bộ. */
     @PostMapping("/track/collect")
     public Map<String, Object> trackCollect(@RequestBody TrackOrderRequest request, jakarta.servlet.http.HttpServletRequest http) {

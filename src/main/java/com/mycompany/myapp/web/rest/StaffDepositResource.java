@@ -37,6 +37,12 @@ public class StaffDepositResource {
         return staffDepositService.myReceipts();
     }
 
+    /** QR / VA thu tiền phiếu (tạo VA OnePay nếu đang bật thu hộ phiếu). Poll để biết đã tự xác nhận. */
+    @GetMapping("/api/my-deposits/{receiptCode}/pay-qr")
+    public MyReceipt payQr(@PathVariable String receiptCode) {
+        return staffDepositService.myPayQr(receiptCode);
+    }
+
     public record ProofRequest(String image) {}
 
     @PostMapping("/api/my-deposits/{receiptCode}/transfer-proof")

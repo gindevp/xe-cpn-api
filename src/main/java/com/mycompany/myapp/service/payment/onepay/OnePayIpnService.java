@@ -38,10 +38,16 @@ public class OnePayIpnService {
     private final BankTransactionRepository bankTransactionRepository;
     private final ObjectMapper objectMapper;
     private OnePayOrderPaidHandler paidHandler;
+    private OnePayReceiptPaidHandler receiptPaidHandler;
 
     @Autowired(required = false)
     public void setPaidHandler(OnePayOrderPaidHandler paidHandler) {
         this.paidHandler = paidHandler;
+    }
+
+    @Autowired(required = false)
+    public void setReceiptPaidHandler(OnePayReceiptPaidHandler receiptPaidHandler) {
+        this.receiptPaidHandler = receiptPaidHandler;
     }
 
     public OnePayIpnService(
@@ -136,7 +142,13 @@ public class OnePayIpnService {
         t.setCustomerId(cut(inv.getUserReference(), 40));
         t.setBillId(cut(inv.getInvoiceReference(), 40));
         t.setAmount(amount);
-        t.setTargetType(OnePayInvoice.PURPOSE_ORDER.equals(inv.getPurpose()) ? "ORDER" : BankTransaction.TARGET_ONEPAY_TEST);
+        if (OnePayInvoice.PURPOSE_ORDER.equals(inv.getPurpose())) {
+            t.setTargetType(BankTransaction.TARGET_ORDER);
+        } else if (OnePayInvoice.PURPOSE_RECEIPT.equals(inv.getPurpose())) {
+            t.setTargetType(BankTransaction.TARGET_RECEIPT);
+        } else {
+            t.setTargetType(BankTransaction.TARGET_ONEPAY_TEST);
+        }
         t.setTargetId(inv.getId());
         t.setCreatedAt(Instant.now());
         bankTransactionRepository.saveAndFlush(t);
@@ -158,8 +170,13 @@ public class OnePayIpnService {
         }
         inv.setUpdatedAt(Instant.now());
         invoiceRepository.save(inv);
-        if (paidHandler != null && "PAID".equals(result) && OnePayInvoice.PURPOSE_ORDER.equals(inv.getPurpose())) {
-            paidHandler.paid(inv.getOrderCode(), amount);
+        if ("PAID".equals(result)) {
+            if (paidHandler != null && OnePayInvoice.PURPOSE_ORDER.equals(inv.getPurpose())) {
+                paidHandler.paid(inv.getOrderCode(), amount);
+            }
+            if (receiptPaidHandler != null && OnePayInvoice.PURPOSE_RECEIPT.equals(inv.getPurpose())) {
+                receiptPaidHandler.paid(inv.getOrderCode(), amount, transId);
+            }
         }
         return accept(result, message + sigNote, inv.getUserReference(), transId, amount);
     }

@@ -19,6 +19,7 @@ import com.mycompany.myapp.repository.InventoryCheckPhotoRepository;
 import com.mycompany.myapp.repository.InventoryCheckRepository;
 import com.mycompany.myapp.repository.InventoryCheckScanRepository;
 import com.mycompany.myapp.repository.OfficeRepository;
+import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.security.StaffAccessService;
@@ -53,6 +54,9 @@ class InventoryCheckSessionServiceTest {
     private ShipmentOrderRepository orderRepository;
 
     @Mock
+    private OrderEventRepository orderEventRepository;
+
+    @Mock
     private InventoryCheckPhotoRepository photoRepository;
 
     @Mock
@@ -82,6 +86,7 @@ class InventoryCheckSessionServiceTest {
             checkRepository,
             scanRepository,
             orderRepository,
+            orderEventRepository,
             checkService,
             staffAccessService,
             staffProfileRepository,
@@ -90,6 +95,7 @@ class InventoryCheckSessionServiceTest {
         lenient().when(staffAccessService.scopedOfficeCode()).thenReturn(Optional.of("VP_HD"));
         lenient().when(checkRepository.saveAndFlush(any(InventoryCheck.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(checkRepository.save(any(InventoryCheck.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(orderEventRepository.latestEventAtByOrderIdsAndAction(any(), any())).thenReturn(List.of());
     }
 
     private static InventoryCheck open(long id, Instant openedAt) {

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261024100000-onepay-receipt-collect" author="cpn">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="onepay_config" columnName="receipt_collect_enabled"/>
+            </not>
+        </preConditions>
+        <comment>Bật thu hộ OnePay cho phiếu thu (web + app): VA riêng, IPN đủ tiền tự xác nhận đã thu.</comment>
+        <addColumn tableName="onepay_config">
+            <column name="receipt_collect_enabled" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

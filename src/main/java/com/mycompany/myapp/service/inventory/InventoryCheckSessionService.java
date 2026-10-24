@@ -10,6 +10,7 @@ import com.mycompany.myapp.domain.enumeration.ForwardStage;
 import com.mycompany.myapp.domain.enumeration.OrderStatus;
 import com.mycompany.myapp.repository.InventoryCheckRepository;
 import com.mycompany.myapp.repository.InventoryCheckScanRepository;
+import com.mycompany.myapp.repository.OrderEventRepository;
 import com.mycompany.myapp.repository.ShipmentOrderRepository;
 import com.mycompany.myapp.repository.StaffProfileRepository;
 import com.mycompany.myapp.security.SecurityUtils;
@@ -45,9 +46,17 @@ public class InventoryCheckSessionService {
     static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final String ENTITY = "inventoryCheck";
 
+    private static final List<String> WAREHOUSE_IN_ACTIONS = List.of("WAREHOUSE_RECEIVE", "WH_IN", "CONFIRM", "CREATE", "TRANSIT_HUB_IN");
+    private static final List<String> DEST_WAREHOUSE_IN_ACTIONS = List.of("SCAN_IN", "HUB_IN", "DEST_WH_IN");
+    private static final List<String> STOCK_ENTRY_ACTIONS = java.util.stream.Stream.concat(
+        WAREHOUSE_IN_ACTIONS.stream(),
+        DEST_WAREHOUSE_IN_ACTIONS.stream()
+    ).toList();
+
     private final InventoryCheckRepository checkRepository;
     private final InventoryCheckScanRepository scanRepository;
     private final ShipmentOrderRepository orderRepository;
+    private final OrderEventRepository orderEventRepository;
     private final InventoryCheckService checkService;
     private final StaffAccessService staffAccessService;
     private final StaffProfileRepository staffProfileRepository;
@@ -57,6 +66,7 @@ public class InventoryCheckSessionService {
         InventoryCheckRepository checkRepository,
         InventoryCheckScanRepository scanRepository,
         ShipmentOrderRepository orderRepository,
+        OrderEventRepository orderEventRepository,
         InventoryCheckService checkService,
         StaffAccessService staffAccessService,
         StaffProfileRepository staffProfileRepository,
@@ -65,6 +75,7 @@ public class InventoryCheckSessionService {
         this.checkRepository = checkRepository;
         this.scanRepository = scanRepository;
         this.orderRepository = orderRepository;
+        this.orderEventRepository = orderEventRepository;
         this.checkService = checkService;
         this.staffAccessService = staffAccessService;
         this.staffProfileRepository = staffProfileRepository;
@@ -84,7 +95,7 @@ public class InventoryCheckSessionService {
 
     /**
      * Máy bấm Hoàn tất gửi tồn kho (đơn → các kiện phải có trong kho).
-     * Máy chủ bỏ đơn tạo sau giờ mở phiên: kiểm lúc 20:00 không tính đơn phát sinh từ 20:01.
+     * Máy chủ bỏ đơn vào kho (nhập/hạ) sau giờ mở phiên — không tính hàng người khác hạ lúc đang kiểm.
      */
     public record CompleteRequest(List<ExpectedOrder> expected) {}
 
@@ -211,8 +222,8 @@ public class InventoryCheckSessionService {
     }
 
     /**
-     * Bỏ đơn không thuộc phiên: tạo sau giờ mở, hoặc chưa có hàng trong kho
-     * (chờ nhận / chờ lấy / đang lấy / lấy thành công chưa nhập kho).
+     * Bỏ đơn không thuộc phiên: vào kho (nhập gửi / hạ nhận) sau giờ mở,
+     * tạo sau giờ mở, hoặc chưa có hàng trong kho.
      */
     private void dropOrdersOutsideSession(Map<String, Set<Integer>> expected, Instant openedAt) {
         if (expected.isEmpty()) {
@@ -222,16 +233,46 @@ public class InventoryCheckSessionService {
         if (orders == null) {
             return;
         }
+        Map<Long, Instant> stockEnteredAt = stockEnteredAtByOrderId(
+            orders.stream().map(ShipmentOrder::getId).filter(java.util.Objects::nonNull).toList()
+        );
         for (ShipmentOrder order : orders) {
             if (order.getOrderCode() == null) {
                 continue;
             }
             String code = order.getOrderCode().trim().toUpperCase(Locale.ROOT);
-            boolean createdAfterOpen = openedAt != null && order.getCreatedAt() != null && order.getCreatedAt().isAfter(openedAt);
-            if (createdAfterOpen || !inWarehouseStock(order)) {
+            Instant entered = stockEnteredAt.get(order.getId());
+            if (entered == null) {
+                entered = order.getPickedUpAt() != null ? order.getPickedUpAt() : order.getCreatedAt();
+            }
+            boolean afterOpen = openedAt != null && entered != null && entered.isAfter(openedAt);
+            if (afterOpen || !inWarehouseStock(order)) {
                 expected.remove(code);
             }
         }
+    }
+
+    /**
+     * orderId → lần vào kho sớm nhất (min các mốc WH_IN / DEST_WH_IN…).
+     * Đơn đã nhập kho gửi trước phiên rồi hạ nhận trong lúc kiểm vẫn giữ (mốc sớm ≤ mở phiên).
+     */
+    private Map<Long, Instant> stockEnteredAtByOrderId(List<Long> orderIds) {
+        if (orderIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Instant> out = new HashMap<>();
+        for (Object[] row : orderEventRepository.latestEventAtByOrderIdsAndAction(orderIds, STOCK_ENTRY_ACTIONS)) {
+            if (row[0] == null || row[2] == null) {
+                continue;
+            }
+            Long id = (Long) row[0];
+            Instant at = (Instant) row[2];
+            Instant prev = out.get(id);
+            if (prev == null || at.isBefore(prev)) {
+                out.put(id, at);
+            }
+        }
+        return out;
     }
 
     /**

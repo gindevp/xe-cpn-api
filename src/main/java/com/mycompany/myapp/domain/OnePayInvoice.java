@@ -20,6 +20,8 @@ public class OnePayInvoice implements Serializable {
     public static final String PURPOSE_TEST = "TEST";
     /** Tài khoản ảo thu cước đơn app. */
     public static final String PURPOSE_ORDER = "ORDER";
+    /** Tài khoản ảo thu tiền phiếu thu (web / app Nộp tiền). order_code = mã phiếu. */
+    public static final String PURPOSE_RECEIPT = "RECEIPT";
     public static final String STATE_UNPAID = "UNPAID";
     public static final String STATE_PAID = "PAID";
     public static final String STATE_EXPIRED = "EXPIRED";

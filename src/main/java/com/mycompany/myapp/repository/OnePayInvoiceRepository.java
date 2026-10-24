@@ -22,6 +22,8 @@ public interface OnePayInvoiceRepository extends JpaRepository<OnePayInvoice, Lo
 
     Optional<OnePayInvoice> findFirstByOrderCodeOrderByIdDesc(String orderCode);
 
+    Optional<OnePayInvoice> findFirstByPurposeAndOrderCodeOrderByIdDesc(String purpose, String orderCode);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from OnePayInvoice i where i.id = :id")
     Optional<OnePayInvoice> findByIdForUpdate(@Param("id") Long id);

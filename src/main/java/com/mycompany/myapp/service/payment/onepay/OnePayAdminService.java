@@ -78,6 +78,7 @@ public class OnePayAdminService {
 
     public record ConfigView(
         boolean enabled,
+        boolean receiptCollectEnabled,
         String environment,
         String baseUrl,
         String partnerId,
@@ -92,6 +93,7 @@ public class OnePayAdminService {
     /** null = giữ nguyên. partnerKey trống = giữ key cũ. Ngân hàng VA do OnePay quyết định — không gửi bank_id. */
     public record ConfigUpdate(
         Boolean enabled,
+        Boolean receiptCollectEnabled,
         String environment,
         String partnerId,
         String partnerKey,
@@ -157,6 +159,18 @@ public class OnePayAdminService {
                 throw bad("Bật OnePay cần nhập Partner ID và Partner key");
             }
             c.setEnabled(in.enabled());
+            if (!in.enabled()) {
+                c.setReceiptCollectEnabled(false);
+            }
+        }
+        if (in.receiptCollectEnabled() != null) {
+            if (
+                in.receiptCollectEnabled() &&
+                (!Boolean.TRUE.equals(c.getEnabled()) || !notBlank(c.getPartnerId()) || !notBlank(c.getPartnerKey()))
+            ) {
+                throw bad("Bật thu hộ phiếu thu cần bật OnePay và có Partner ID / key");
+            }
+            c.setReceiptCollectEnabled(Boolean.TRUE.equals(c.getEnabled()) && in.receiptCollectEnabled());
         }
         c.setUpdatedAt(Instant.now());
         c = configRepository.save(c);
@@ -165,6 +179,8 @@ public class OnePayAdminService {
             AUDIT_ENTITY,
             "onepay",
             (Boolean.TRUE.equals(c.getEnabled()) ? "Bật" : "Tắt") +
+            " · phiếu thu " +
+            (Boolean.TRUE.equals(c.getReceiptCollectEnabled()) ? "bật" : "tắt") +
             " · " +
             c.getEnvironment() +
             " · partner " +
@@ -215,6 +231,7 @@ public class OnePayAdminService {
     private static ConfigView toView(OnePayConfig c) {
         return new ConfigView(
             Boolean.TRUE.equals(c.getEnabled()),
+            Boolean.TRUE.equals(c.getReceiptCollectEnabled()),
             c.getEnvironment(),
             OnePayClient.baseUrl(c),
             c.getPartnerId(),
@@ -406,6 +423,92 @@ public class OnePayAdminService {
             .findFirstByOrderByIdAsc()
             .map(c -> Boolean.TRUE.equals(c.getEnabled()) && notBlank(c.getPartnerId()) && notBlank(c.getPartnerKey()))
             .orElse(false);
+    }
+
+    /** Thu hộ OnePay cho phiếu thu (web + app Nộp tiền). */
+    public boolean receiptCollectEnabled() {
+        return configRepository
+            .findFirstByOrderByIdAsc()
+            .map(
+                c ->
+                    Boolean.TRUE.equals(c.getEnabled()) &&
+                    Boolean.TRUE.equals(c.getReceiptCollectEnabled()) &&
+                    notBlank(c.getPartnerId()) &&
+                    notBlank(c.getPartnerKey())
+            )
+            .orElse(false);
+    }
+
+    /**
+     * Tài khoản ảo thu một phiếu thu. Chủ TK = tên merchant. order_code lưu mã phiếu.
+     * OnePay từ chối thì không lưu hoá đơn.
+     */
+    public OnePayInvoice createForReceipt(String receiptCode, BigDecimal amount) {
+        if (receiptCode == null || receiptCode.isBlank()) {
+            throw bad("Thiếu mã phiếu thu");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            throw bad("Phiếu không còn số tiền cần thu");
+        }
+        if (!receiptCollectEnabled()) {
+            throw bad("Chưa bật thu hộ OnePay cho phiếu thu");
+        }
+        OnePayConfig c = requireCredentials(true);
+        String partner = c.getPartnerId().trim();
+        String ref = newReference();
+        int hours = c.getInvoiceTtlHours() == null ? 24 : c.getInvoiceTtlHours();
+        Instant expiresAt = Instant.now().plus(Duration.ofHours(hours));
+        String holder = asciiName(collectHolder);
+        if (holder.isEmpty()) {
+            holder = "XEVIETNAM";
+        }
+        String code = receiptCode.trim();
+        String desc = ascii("PT " + code);
+        if (desc.length() > 20) {
+            desc = desc.substring(0, 20);
+        }
+
+        ObjectNode user = objectMapper.createObjectNode();
+        user.put("name", holder);
+        user.put("description", desc);
+        user.put("expired_time", EXPIRED_TIME.format(expiresAt));
+        ObjectNode invoice = objectMapper.createObjectNode();
+        invoice.put("amount", amount.setScale(0, java.math.RoundingMode.DOWN).toPlainString());
+        invoice.put("description", desc);
+        ArrayNode batch = objectMapper.createArrayNode();
+        batch
+            .addObject()
+            .put("name", "user")
+            .put("do_on", "always")
+            .put("method", "PUT")
+            .put("href", "/partners/" + partner + "/users/" + ref)
+            .set("body", user);
+        batch
+            .addObject()
+            .put("name", "invoice")
+            .put("do_on", "$user.response.status == 201")
+            .put("method", "PUT")
+            .put("href", "/partners/" + partner + "/users/" + ref + "/invoices/" + ref)
+            .set("body", invoice);
+
+        OnePayClient.Result r = client.call(c, "BATCH", ref, "POST", "/batchs", batch.toString());
+        if (!r.ok()) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OnePay từ chối tạo tài khoản thu hộ phiếu — " + r.error());
+        }
+        OnePayInvoice inv = new OnePayInvoice();
+        inv.setPurpose(OnePayInvoice.PURPOSE_RECEIPT);
+        inv.setOrderCode(code);
+        inv.setUserReference(ref);
+        inv.setInvoiceReference(ref);
+        inv.setPayerName(holder);
+        inv.setAmount(amount.setScale(0, java.math.RoundingMode.DOWN));
+        inv.setDescription(desc);
+        inv.setState(OnePayInvoice.STATE_UNPAID);
+        inv.setExpiresAt(expiresAt);
+        applyBatchResponse(inv, r.json());
+        inv.setCreatedAt(Instant.now());
+        inv.setUpdatedAt(inv.getCreatedAt());
+        return invoiceRepository.save(inv);
     }
 
     static void applyBatchResponse(OnePayInvoice inv, JsonNode json) {

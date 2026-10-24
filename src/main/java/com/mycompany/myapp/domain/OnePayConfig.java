@@ -25,6 +25,14 @@ public class OnePayConfig implements Serializable {
     @Column(name = "enabled", nullable = false)
     private Boolean enabled = false;
 
+    /**
+     * Bật thu hộ OnePay cho phiếu thu (web tạo phiếu + app Nộp tiền).
+     * Khi bật: QR dùng tài khoản ảo OnePay; IPN đủ tiền → tự xác nhận đã thu (không cần KT confirm).
+     */
+    @NotNull
+    @Column(name = "receipt_collect_enabled", nullable = false)
+    private Boolean receiptCollectEnabled = false;
+
     /** SANDBOX = mtf.onepay.vn, PRODUCTION = onepay.vn. */
     @NotNull
     @Size(max = 12)
@@ -82,6 +90,14 @@ public class OnePayConfig implements Serializable {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public Boolean getReceiptCollectEnabled() {
+        return receiptCollectEnabled;
+    }
+
+    public void setReceiptCollectEnabled(Boolean receiptCollectEnabled) {
+        this.receiptCollectEnabled = receiptCollectEnabled;
     }
 
     public String getEnvironment() {

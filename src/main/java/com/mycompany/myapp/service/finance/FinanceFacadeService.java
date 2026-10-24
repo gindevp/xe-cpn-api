@@ -1081,6 +1081,37 @@ public class FinanceFacadeService {
     }
 
     /**
+     * Tự xác nhận phiếu khi thu hộ OnePay báo đủ tiền (IPN) — không cần ảnh chứng từ / KT bấm xác nhận.
+     * Idempotent nếu phiếu đã confirmed.
+     */
+    public void confirmReceiptByCollection(String receiptCode, String note) {
+        if (receiptCode == null || receiptCode.isBlank()) {
+            return;
+        }
+        Receipt receipt = receiptRepository.findOneByReceiptCode(receiptCode.trim()).orElse(null);
+        if (receipt == null) {
+            return;
+        }
+        if (receipt.getConfirmedAt() != null) {
+            return;
+        }
+        String n = notBlank(note) ? note.trim() : "Tự xác nhận thu hộ OnePay";
+        if (n.length() > 1000) {
+            n = n.substring(0, 1000);
+        }
+        receipt.setConfirmedAt(Instant.now());
+        receipt.setConfirmedByUsername("ONEPAY");
+        receipt.setConfirmNote(n);
+        receiptRepository.save(receipt);
+        auditRecorder.record(
+            "RECEIPT_CONFIRM_ONEPAY",
+            AUDIT_RECEIPT,
+            receipt.getReceiptCode(),
+            "Thu hộ OnePay tự xác nhận · " + money(receipt.getTotalAmount()) + " · " + n
+        );
+    }
+
+    /**
      * Hoàn tác xác nhận thu — chỉ trong cùng ngày lịch (Asia/Ho_Chi_Minh) với lúc xác nhận.
      * Sau 0h đêm không hoàn tác phiếu đã tích ngày hôm trước. Idempotent nếu chưa confirm.
      */

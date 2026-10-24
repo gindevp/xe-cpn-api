@@ -75,6 +75,12 @@ public class FinanceFacadeResource {
         return images.isEmpty() ? Map.of() : Map.of("image", images.get(0), "images", images);
     }
 
+    /** QR VietQR thu tiền phiếu (sau tạo phiếu trên web). Poll để biết KT đã xác nhận thu. */
+    @GetMapping("/api/receipts/{receiptCode}/transfer-qr")
+    public StaffDepositService.ReceiptPayQr transferQr(@PathVariable String receiptCode) {
+        return staffDepositService.payQr(receiptCode);
+    }
+
     @PostMapping("/api/receipts")
     @ResponseStatus(HttpStatus.CREATED)
     public ReceiptDTO create(@RequestBody CreateReceiptRequest request) {

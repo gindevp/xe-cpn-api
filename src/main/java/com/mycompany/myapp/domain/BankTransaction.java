@@ -20,6 +20,10 @@ public class BankTransaction implements Serializable {
     public static final String TARGET_TEST = "TEST";
     /** target_id = onepay_invoice.id */
     public static final String TARGET_ONEPAY_TEST = "ONEPAY_TEST";
+    /** target_id = onepay_invoice.id — hoá đơn thu phiếu thu */
+    public static final String TARGET_RECEIPT = "RECEIPT";
+    /** target_id = onepay_invoice.id — hoá đơn thu cước đơn */
+    public static final String TARGET_ORDER = "ORDER";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
